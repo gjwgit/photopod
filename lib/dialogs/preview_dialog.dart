@@ -68,7 +68,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
 
   Future<void> _load() async {
     try {
-      var bytes = await PodMediaService.readBytes(widget.item.url);
+      var bytes = await PodMediaService.readBytes(widget.item);
 
       // TIFF has no Flutter codec, so those photos are re-encoded as PNG on a
       // background isolate before they can be shown.

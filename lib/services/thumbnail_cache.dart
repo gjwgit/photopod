@@ -29,6 +29,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:image/image.dart' as img;
 
+import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_media_service.dart';
 
 /// The longest edge, in pixels, of a generated thumbnail. Large enough to
@@ -67,10 +68,12 @@ class ThumbnailCache {
   final List<Completer<void>> _waiting = [];
   int _active = 0;
 
-  /// The thumbnail for the photo at [url], or null when the file could not be
-  /// read or decoded. Repeated calls for the same URL share one fetch.
+  /// The thumbnail for the photo [item] holds, or null when the file could
+  /// not be read or decoded. Repeated calls for the same photo share one
+  /// fetch.
 
-  Future<Uint8List?> thumbnail(String url) {
+  Future<Uint8List?> thumbnail(MediaItem item) {
+    final url = item.url;
     final cached = _thumbnails.remove(url);
     if (cached != null) {
       // Reinsert so the most recently used entry sits at the end.
@@ -82,7 +85,7 @@ class ThumbnailCache {
     return _inFlight.putIfAbsent(url, () async {
       await _acquire();
       try {
-        final bytes = await PodMediaService.readBytes(url);
+        final bytes = await PodMediaService.readBytes(item);
         final thumb = await compute(buildThumbnail, bytes);
         if (thumb != null) _store(url, thumb);
         return thumb;

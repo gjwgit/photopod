@@ -61,6 +61,15 @@ class MediaItem {
 
   final bool isFolder;
 
+  /// Whether the file is stored in solidpod's encrypted Turtle envelope, and
+  /// so has to be decrypted before its bytes can be used.
+  ///
+  /// Everything PhotoPod writes is encrypted. The flag exists because a file
+  /// put into the album by something else, or by an earlier build of this
+  /// app, may be a plain resource, and those stay readable.
+
+  final bool isEncrypted;
+
   /// Server-reported modification time, absent when the server does not
   /// publish one in its container listing.
 
@@ -76,6 +85,7 @@ class MediaItem {
     required this.path,
     required this.url,
     required this.isFolder,
+    this.isEncrypted = false,
     this.modified,
     this.size,
   });

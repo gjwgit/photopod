@@ -122,11 +122,16 @@ extension MediaBrowserActions on MediaBrowserState {
 
     if (picked.isEmpty || !context.mounted) return;
 
+    // Everything is written encrypted, so the security key has to be in hand
+    // before the first file goes up rather than part way through the batch.
+
+    if (!await _ensureSecurityKey(context)) return;
+    if (!context.mounted) return;
+
     final failed = <String, String>{};
     var added = 0;
 
     await showWorking(context, 'Adding to your Pod...', () async {
-      final folderUrl = await PodMediaService.folderUrl(_path);
       for (final file in picked) {
         try {
           if (kindOf(file.name) != widget.kind) {
@@ -139,10 +144,10 @@ extension MediaBrowserActions on MediaBrowserState {
             false,
           );
           final bytes = await file.readAsBytes();
-          await PodMediaService.writeBytes(
-            '$folderUrl${Uri.encodeComponent(name)}',
-            bytes,
-            name,
+          await PodMediaService.writeMedia(
+            podPath: _path,
+            displayName: name,
+            bytes: bytes,
           );
           added++;
         } on Object catch (e) {
@@ -217,6 +222,27 @@ extension MediaBrowserActions on MediaBrowserState {
         'Some items could not be deleted',
         result.failed.entries.map((e) => '${e.key}: ${e.value}').join('\n\n'),
       );
+    }
+  }
+
+  /// Make sure the security key is available before reading or writing
+  /// encrypted media, prompting for it once per session.
+  ///
+  /// Returns false when the key could not be obtained, in which case the
+  /// caller should give up rather than fail on every file in turn.
+
+  Future<bool> _ensureSecurityKey(BuildContext context) async {
+    try {
+      await getKeyFromUserIfRequired(
+        context,
+        const Text('Please enter your security key to unlock your album'),
+      );
+      return await KeyManager.hasSecurityKey();
+    } on Object catch (e) {
+      if (context.mounted) {
+        await showErrorDialog(context, 'Security key needed', '$e');
+      }
+      return false;
     }
   }
 

@@ -29,7 +29,8 @@ import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
-import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
+import 'package:solidpod/solidpod.dart' show KeyManager, isUserLoggedIn;
+import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/destination_dialog.dart';
@@ -44,6 +45,7 @@ import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
+import 'package:photopod/utils/destination_path.dart';
 import 'package:photopod/widgets/breadcrumb_bar.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
@@ -168,6 +170,14 @@ class MediaBrowserState extends State<MediaBrowser> {
         _loading = false;
         _selected.removeWhere((id) => !items.any((item) => item.id == id));
       });
+
+      // Every thumbnail in this folder has to be decrypted before it can be
+      // shown. Asking for the security key once, here, beats letting each
+      // tile fail on its own and leaving a grid of broken images.
+
+      if (mounted && items.any((item) => item.isEncrypted)) {
+        await _ensureSecurityKey(context);
+      }
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {

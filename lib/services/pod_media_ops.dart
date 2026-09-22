@@ -48,6 +48,33 @@ class PodMediaOps {
     await PodMediaService.ensureFolder(url);
   }
 
+  /// Create [podPath] and every folder along the way that is missing.
+  ///
+  /// [rootPath] is taken as already there and is never created; only the
+  /// segments below it are. Servers differ on whether a write creates the
+  /// containers above it, so each one is asked for explicitly.
+
+  static Future<void> createFolderPath(String rootPath, String podPath) async {
+    if (!podPath.startsWith(rootPath)) {
+      throw PodMediaException(
+        'The destination "$podPath" is outside "$rootPath".',
+      );
+    }
+
+    var built = rootPath;
+    final tail = podPath
+        .substring(rootPath.length)
+        .split('/')
+        .where((segment) => segment.isNotEmpty);
+
+    for (final segment in tail) {
+      built = '$built/$segment';
+      await PodMediaService.ensureFolder(
+        await PodMediaService.folderUrl(built),
+      );
+    }
+  }
+
   /// Copy [items] into the folder at [destPodPath].
   ///
   /// A name already in use at the destination is given a numeric suffix
@@ -61,6 +88,40 @@ class PodMediaOps {
     for (final item in items) {
       await _copyInto(item, destPodPath);
     }
+  }
+
+  /// Copy [item] into [destPodPath] under exactly [newName].
+  ///
+  /// Unlike [copyItems], a name the user has typed is never quietly given a
+  /// numeric suffix: being handed `sunset.jpg` and silently producing
+  /// `sunset (2).jpg` would be worse than saying the name is taken.
+
+  static Future<void> copyAs(
+    MediaItem item,
+    String destPodPath,
+    String newName,
+  ) async {
+    if (await PodMediaService.mediaExists(destPodPath, newName)) {
+      throw PodMediaException(
+        'Something called "$newName" is already in "$destPodPath".',
+      );
+    }
+    await _copyAs(item, destPodPath, newName);
+  }
+
+  /// Move [item] into [destPodPath] under exactly [newName].
+  ///
+  /// Moving into the folder the item is already in is how a rename is
+  /// expressed through the destination field, and works the same way: the
+  /// item is written under its new name and the original removed.
+
+  static Future<void> moveAs(
+    MediaItem item,
+    String destPodPath,
+    String newName,
+  ) async {
+    await copyAs(item, destPodPath, newName);
+    await _delete(item);
   }
 
   /// Move [items] into the folder at [destPodPath], by copying and then
@@ -86,13 +147,12 @@ class PodMediaOps {
   static Future<void> rename(MediaItem item, String newName) async {
     final parent = item.parentPath;
     final parentUrl = await PodMediaService.folderUrl(parent);
-    final target =
-        '$parentUrl${Uri.encodeComponent(newName)}'
-        '${item.isFolder ? '/' : ''}';
 
     final clashes = item.isFolder
-        ? await PodMediaService.folderExists(target)
-        : await PodMediaService.fileExists(target);
+        ? await PodMediaService.folderExists(
+            '$parentUrl${Uri.encodeComponent(newName)}/',
+          )
+        : await PodMediaService.mediaExists(parent, newName);
     if (clashes) {
       throw PodMediaException(
         'Something called "$newName" already exists in this folder.',
@@ -109,15 +169,33 @@ class PodMediaOps {
   static Future<BatchDeleteResult> deleteAll(
     String parentPodPath,
     List<MediaItem> items,
-  ) => deleteItems(
-    parentPath: parentPodPath,
-    fileNames: [
+  ) {
+    final names = storedNamesOf(items);
+    return deleteItems(
+      parentPath: parentPodPath,
+      fileNames: names.files,
+      directoryNames: names.folders,
+    );
+  }
+
+  /// The names [items] carry ON THE SERVER, split into files and folders.
+  ///
+  /// This has to be the stored name, `beach.jpg.enc.ttl`, and never the name
+  /// shown to the user, `beach.jpg`. Asking the server to delete a name that
+  /// is not there answers 404, which the delete helper deliberately counts as
+  /// success — so a display name makes delete and rename report that they
+  /// worked while quietly leaving the file in place.
+
+  static ({List<String> files, List<String> folders}) storedNamesOf(
+    List<MediaItem> items,
+  ) => (
+    files: [
       for (final item in items)
-        if (!item.isFolder) item.name,
+        if (!item.isFolder) item.rawName,
     ],
-    directoryNames: [
+    folders: [
       for (final item in items)
-        if (item.isFolder) item.name,
+        if (item.isFolder) item.rawName,
     ],
   );
 
@@ -139,9 +217,13 @@ class PodMediaOps {
     final encoded = Uri.encodeComponent(name);
 
     if (!item.isFolder) {
-      final bytes = await PodMediaService.readBytes(item.url);
+      final bytes = await PodMediaService.readBytes(item);
       await PodMediaService.ensureFolder(destUrl);
-      await PodMediaService.writeBytes('$destUrl$encoded', bytes, name);
+      await PodMediaService.writeMedia(
+        podPath: destPodPath,
+        displayName: name,
+        bytes: bytes,
+      );
       return;
     }
 
@@ -181,10 +263,12 @@ class PodMediaOps {
     final destUrl = await PodMediaService.folderUrl(destPodPath);
 
     Future<bool> taken(String name) async {
-      final url = '$destUrl${Uri.encodeComponent(name)}${isFolder ? '/' : ''}';
-      return isFolder
-          ? PodMediaService.folderExists(url)
-          : PodMediaService.fileExists(url);
+      if (isFolder) {
+        return PodMediaService.folderExists(
+          '$destUrl${Uri.encodeComponent(name)}/',
+        );
+      }
+      return PodMediaService.mediaExists(destPodPath, name);
     }
 
     if (!await taken(wanted)) return wanted;

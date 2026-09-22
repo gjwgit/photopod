@@ -23,19 +23,49 @@
 
 library;
 
-/// The Pod-relative destination path for [typed], or null when it would lead
-/// out of [rootPath].
+import 'package:photopod/constants/media.dart';
+
+/// Where a copy or a move should put its items, and what to call them.
+
+class Destination {
+  /// The Pod-relative path of the folder to write into, with each segment
+  /// percent-encoded.
+
+  final String folderPath;
+
+  /// The name to give the item once it is there, or null to keep its own.
+  ///
+  /// This is a display name, so `beach.jpg` rather than `beach.jpg.enc.ttl`.
+
+  final String? newName;
+
+  const Destination(this.folderPath, {this.newName});
+
+  /// Whether the user asked for the item to be renamed on the way.
+
+  bool get renames => newName != null;
+}
+
+/// Read [typed] as a destination inside [rootPath], or return null when it
+/// would lead out of the album.
+///
+/// The last part of the path is taken as a new file name when it carries an
+/// extension PhotoPod displays, so `holiday/sunset.jpg` means "put it in
+/// holiday and call it sunset.jpg" while `holiday/2026` means "put it in the
+/// 2026 folder". A trailing slash always says folder, which is the way to
+/// name a folder that would otherwise look like a file.
 ///
 /// The album root is a fixed prefix rather than a starting suggestion. A `..`
 /// segment is refused rather than quietly dropped, so that a copy or a move
 /// can never reach the profile, the encryption keys, or anything else in the
 /// Pod that PhotoPod has no business writing to. A root that has been pasted
-/// back in is tolerated and dropped, since the field already shows it, and
-/// each remaining segment is percent-encoded so a folder name with a space in
-/// it still produces a usable URL.
+/// back in is tolerated and dropped, since the field already shows it.
 
-String? resolveDestination(String rootPath, String typed) {
-  var text = typed.trim().replaceAll(RegExp(r'^/+|/+$'), '');
+Destination? resolveDestination(String rootPath, String typed) {
+  final trimmed = typed.trim();
+  final saysFolder = trimmed.endsWith('/');
+
+  var text = trimmed.replaceAll(RegExp(r'^/+|/+$'), '');
 
   if (text == rootPath) {
     text = '';
@@ -53,7 +83,17 @@ String? resolveDestination(String rootPath, String typed) {
     return null;
   }
 
-  if (segments.isEmpty) return rootPath;
+  if (segments.isEmpty) return Destination(rootPath);
 
-  return '$rootPath/${segments.map(Uri.encodeComponent).join('/')}';
+  final last = segments.last;
+  final namesFile = !saysFolder && kindOf(last) != null;
+  final folders = namesFile
+      ? segments.sublist(0, segments.length - 1)
+      : segments;
+
+  final folderPath = folders.isEmpty
+      ? rootPath
+      : '$rootPath/${folders.map(Uri.encodeComponent).join('/')}';
+
+  return Destination(folderPath, newName: namesFile ? last : null);
 }

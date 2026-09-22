@@ -115,6 +115,29 @@ MediaKind? kindOf(String name) {
 String contentTypeOf(String name) =>
     mediaContentTypes[extensionOf(name)] ?? 'application/octet-stream';
 
+/// The suffix solidpod gives an encrypted resource.
+///
+/// Every Pod app in this family stores its data encrypted and in Turtle, and
+/// solidpod refuses to encrypt a resource whose name does not end in `.ttl`.
+/// A photo called `beach.jpg` is therefore stored as `beach.jpg.enc.ttl`,
+/// which is also the only shape the shared file browsers will show.
+
+const String encryptedSuffix = '.enc.ttl';
+
+/// The name to show the user for a resource stored as [storedName].
+///
+/// Strips the encryption suffix, so `beach.jpg.enc.ttl` reads as `beach.jpg`.
+/// A name without the suffix is returned unchanged, which is what keeps any
+/// plain file already sitting in the album visible.
+
+String displayNameOf(String storedName) => storedName.endsWith(encryptedSuffix)
+    ? storedName.substring(0, storedName.length - encryptedSuffix.length)
+    : storedName;
+
+/// The resource name to store a file called [displayName] under.
+
+String storedNameOf(String displayName) => '$displayName$encryptedSuffix';
+
 /// TIFF has no Flutter codec, so those files take the slower path through the
 /// `image` package before they can be displayed.
 

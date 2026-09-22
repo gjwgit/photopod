@@ -65,7 +65,7 @@ class _MediaThumbnailState extends State<MediaThumbnail> {
 
   void _request() {
     _thumbnail = widget.item.isPhoto
-        ? ThumbnailCache.instance.thumbnail(widget.item.url)
+        ? ThumbnailCache.instance.thumbnail(widget.item)
         : null;
   }
 

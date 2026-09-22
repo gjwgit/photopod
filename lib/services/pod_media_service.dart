@@ -23,6 +23,7 @@
 
 library;
 
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -48,11 +49,17 @@ class PodMediaException implements Exception {
 
 /// Reading and writing the photo and video files themselves.
 ///
-/// PhotoPod stores media as ordinary binary resources under `photopod/data/`,
-/// keeping each file's own name and content type, rather than wrapping them
-/// in solidpod's encrypted Turtle envelope. That keeps an album readable by
-/// any other Solid client, lets a shared photo be opened directly from its
-/// URL, and is what makes thumbnails and video playback possible at all.
+/// Media is stored the way every Pod app in this family stores its data:
+/// through solidpod's [writePod], which encrypts the content, wraps it in
+/// Turtle and writes an accompanying `.acl`. A photo added as `beach.jpg`
+/// becomes `beach.jpg.enc.ttl` on the server, and PhotoPod shows the name
+/// without that suffix.
+///
+/// The alternative — writing the raw bytes under their own name — leaves the
+/// files invisible to the shared file browsers, which list only `.ttl`
+/// resources, and with no access control list to share through. Reading still
+/// copes with a plain resource so that anything already in the album, or put
+/// there by another tool, is not lost from view.
 
 class PodMediaService {
   const PodMediaService._();
@@ -90,7 +97,12 @@ class PodMediaService {
           : entry.rawName;
       if (raw.isEmpty || raw.startsWith('.')) continue;
 
-      final name = decodeName(raw);
+      // The server name carries the encryption suffix; the user never sees
+      // it, and the extension that decides which section a file belongs to is
+      // the one underneath.
+
+      final storedName = decodeName(raw);
+      final name = isFolder ? storedName : displayNameOf(storedName);
       if (!isFolder && kind != null && kindOf(name) != kind) continue;
 
       items.add(
@@ -100,6 +112,7 @@ class PodMediaService {
           path: '$podPath/$raw',
           url: '${_withSlash(url)}$raw${isFolder ? '/' : ''}',
           isFolder: isFolder,
+          isEncrypted: !isFolder && storedName.endsWith(encryptedSuffix),
           modified: entry.modified,
           size: isFolder ? null : entry.size,
         ),
@@ -108,9 +121,59 @@ class PodMediaService {
     return items;
   }
 
-  /// The bytes of the resource at [url].
+  /// The bytes of the photo or video [item] holds.
+  ///
+  /// An encrypted resource is read and decrypted through solidpod, which
+  /// needs the security key to be available first, and its content is base64
+  /// so that binary survives the Turtle envelope. A plain resource is fetched
+  /// directly.
 
-  static Future<Uint8List> readBytes(String url) async {
+  static Future<Uint8List> readBytes(MediaItem item) async {
+    if (!item.isEncrypted) return _readRaw(item.url);
+
+    final content = await readPod(item.path, pathType: PathType.relativeToPod);
+
+    try {
+      return base64Decode(content.trim());
+    } on FormatException {
+      throw PodMediaException(
+        'The contents of "${item.name}" are not in the format PhotoPod '
+        'stores media in.',
+      );
+    }
+  }
+
+  /// Store [bytes] as a file called [displayName] inside [podPath].
+  ///
+  /// The file is encrypted and given an access control list, so it shows up
+  /// in the shared file browsers and can be shared with another WebID. The
+  /// caller must have secured the security key first, with SolidUI's
+  /// `getKeyFromUserIfRequired`.
+
+  static Future<void> writeMedia({
+    required String podPath,
+    required String displayName,
+    required Uint8List bytes,
+  }) async {
+    final stored = storedNameOf(Uri.encodeComponent(displayName));
+    await writePod(
+      '$podPath/$stored',
+      base64Encode(bytes),
+      pathType: PathType.relativeToPod,
+    );
+  }
+
+  /// Whether a file called [displayName] is already in [podPath], under
+  /// either the encrypted name or a plain one.
+
+  static Future<bool> mediaExists(String podPath, String displayName) async {
+    final dirUrl = await folderUrl(podPath);
+    final encoded = Uri.encodeComponent(displayName);
+    return await fileExists('$dirUrl${storedNameOf(encoded)}') ||
+        await fileExists('$dirUrl$encoded');
+  }
+
+  static Future<Uint8List> _readRaw(String url) async {
     final (:accessToken, :dPopToken) = await getTokensForResource(url, 'GET');
     final response = await http.get(
       Uri.parse(url),
@@ -126,34 +189,6 @@ class PodMediaService {
       );
     }
     return response.bodyBytes;
-  }
-
-  /// Store [bytes] at [url], replacing whatever is there.
-  ///
-  /// The content type is taken from the file name so the server records the
-  /// media type rather than a generic binary blob.
-
-  static Future<void> writeBytes(
-    String url,
-    Uint8List bytes,
-    String fileName,
-  ) async {
-    final (:accessToken, :dPopToken) = await getTokensForResource(url, 'PUT');
-    final response = await http.put(
-      Uri.parse(url),
-      headers: {
-        'Accept': '*/*',
-        'Authorization': 'DPoP $accessToken',
-        'Content-Type': contentTypeOf(fileName),
-        'DPoP': dPopToken,
-      },
-      body: bytes,
-    );
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw PodMediaException(
-        _describe(response.statusCode, 'saving the file'),
-      );
-    }
   }
 
   /// Whether a container exists at [url].

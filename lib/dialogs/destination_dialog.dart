@@ -29,8 +29,10 @@ import 'package:gap/gap.dart';
 
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/utils/destination_path.dart';
+import 'package:photopod/utils/name_validator.dart';
 
 /// Ask where a copy or move should put its items.
 ///
@@ -42,21 +44,37 @@ import 'package:photopod/utils/destination_path.dart';
 ///
 /// Returns the Pod-relative destination path, or null if the user cancels.
 
-Future<String?> showDestinationDialog(
+Future<Destination?> showDestinationDialog(
   BuildContext context, {
   required String rootPath,
   required String startPath,
   required String title,
   required String actionLabel,
-}) => showDialog<String>(
+  String? renameableFile,
+}) => showDialog<Destination>(
   context: context,
   builder: (context) => _DestinationDialog(
     rootPath: rootPath,
     startPath: startPath,
     title: title,
     actionLabel: actionLabel,
+    renameableFile: renameableFile,
   ),
 );
+
+/// What the Pod holds at a destination the user has given.
+
+enum _Destination {
+  /// A folder, which is what the operation needs.
+
+  folder,
+
+  /// A file, so the user has named an item rather than a place.
+  file,
+
+  /// Nothing at all, so it can be created.
+  missing,
+}
 
 class _DestinationDialog extends StatefulWidget {
   const _DestinationDialog({
@@ -64,12 +82,19 @@ class _DestinationDialog extends StatefulWidget {
     required this.startPath,
     required this.title,
     required this.actionLabel,
+    this.renameableFile,
   });
 
   final String rootPath;
   final String startPath;
   final String title;
   final String actionLabel;
+
+  /// The name of the one file being copied or moved, when the selection is a
+  /// single file and so can be given a new name on the way. Null when the
+  /// selection is anything else, which makes a typed file name an error.
+
+  final String? renameableFile;
 
   @override
   State<_DestinationDialog> createState() => _DestinationDialogState();
@@ -109,14 +134,14 @@ class _DestinationDialogState extends State<_DestinationDialog> {
     return tail.split('/').map(PodMediaService.decodeName).join('/');
   }
 
-  String? _absolute(String relative) =>
+  Destination? _absolute(String relative) =>
       resolveDestination(widget.rootPath, relative);
 
   Future<void> _load() async {
     setState(() => _loading = true);
     try {
       final items = await PodMediaService.listFolder(
-        _absolute(_browsing) ?? widget.rootPath,
+        _absolute(_browsing)?.folderPath ?? widget.rootPath,
       );
       if (!mounted) return;
       final folders = items.where((item) => item.isFolder).toList()
@@ -155,35 +180,159 @@ class _DestinationDialogState extends State<_DestinationDialog> {
       return;
     }
 
-    final url = await PodMediaService.folderUrl(destination);
+    if (destination.renames && !await _nameIsUsable(destination.newName!)) {
+      return;
+    }
 
-    var exists = false;
+    final _Destination found;
     try {
-      exists = await PodMediaService.folderExists(url);
+      found = await _inspect(destination.folderPath);
     } on Object catch (e) {
       if (!mounted) return;
       await showErrorDialog(
         context,
         'Could not check the destination',
-        'The Pod could not be reached to confirm that "$destination" '
-            'exists.\n\n$e',
+        'The Pod could not be reached to confirm that '
+            '"${destination.folderPath}" exists.\n\n$e',
       );
       return;
     }
 
     if (!mounted) return;
 
-    if (!exists) {
+    switch (found) {
+      case _Destination.folder:
+        Navigator.of(context).pop(destination);
+
+      case _Destination.file:
+        await showErrorDialog(
+          context,
+          'That is a file, not a folder',
+          'There is already a file at "${destination.folderPath}". The '
+              'destination is the folder the items should be put INTO. '
+              'Choose a folder such as "${widget.rootPath}", or one inside '
+              'it, and add a file name after it only to rename what you are '
+              'copying.',
+        );
+
+      case _Destination.missing:
+        await _offerToCreate(destination);
+    }
+  }
+
+  /// Whether [newName] may be given to the file being copied or moved,
+  /// reporting the reason if not.
+  ///
+  /// Only one file can be given a name, and the same rules apply as to a
+  /// rename, so a photo cannot be turned into a video by way of a copy.
+
+  Future<bool> _nameIsUsable(String newName) async {
+    final original = widget.renameableFile;
+
+    if (original == null) {
       await showErrorDialog(
         context,
-        'Destination not found',
-        'There is no folder at "$destination" on your Pod. Choose an '
-            'existing folder, or create it first, and try again.',
+        'Cannot rename this selection',
+        'Ending the destination with a file name renames what is copied, '
+            'which only works when a single file is selected. Give a folder '
+            'instead, or end the path with "/" if that is a folder name.',
       );
+      return false;
+    }
+
+    final problem = validateName(
+      newName,
+      isFolder: false,
+      originalName: original,
+    );
+    if (problem != null) {
+      await showErrorDialog(context, 'That name cannot be used', problem);
+      return false;
+    }
+
+    return true;
+  }
+
+  /// What, if anything, is at [destination] on the Pod.
+
+  Future<_Destination> _inspect(String destination) async {
+    if (await PodMediaService.folderExists(
+      await PodMediaService.folderUrl(destination),
+    )) {
+      return _Destination.folder;
+    }
+
+    // Typing the path of a photo instead of the folder to put it in is an
+    // easy mistake, and worth naming precisely rather than reporting as a
+    // missing folder.
+
+    final slash = destination.lastIndexOf('/');
+    if (slash > 0) {
+      final parent = destination.substring(0, slash);
+      final leaf = PodMediaService.decodeName(destination.substring(slash + 1));
+      if (await PodMediaService.mediaExists(parent, leaf)) {
+        return _Destination.file;
+      }
+    }
+
+    return _Destination.missing;
+  }
+
+  /// Offer to create a destination that is not there yet.
+  ///
+  /// An album often has no subfolders at all, so refusing an unknown path
+  /// would leave the user with nowhere to copy to and no way to make one.
+
+  Future<void> _offerToCreate(Destination destination) async {
+    final problem = _invalidSegment(destination.folderPath);
+    if (problem != null) {
+      await showErrorDialog(context, 'Destination not allowed', problem);
+      return;
+    }
+
+    final create = await showConfirmDialog(
+      context,
+      title: 'Create this folder?',
+      message:
+          'There is no folder at "$destination" on your Pod. Create it '
+          'and continue?',
+      confirmLabel: 'Create',
+      destructive: false,
+    );
+    if (!create || !mounted) return;
+
+    try {
+      await PodMediaOps.createFolderPath(
+        widget.rootPath,
+        destination.folderPath,
+      );
+    } on Object catch (e) {
+      if (mounted) {
+        await showErrorDialog(context, 'Could not create the folder', '$e');
+      }
       return;
     }
 
     if (mounted) Navigator.of(context).pop(destination);
+  }
+
+  /// The reason a folder along [destination] cannot be created, or null when
+  /// every name is usable.
+
+  String? _invalidSegment(String destination) {
+    final tail = destination
+        .substring(widget.rootPath.length)
+        .split('/')
+        .where((segment) => segment.isNotEmpty);
+
+    for (final segment in tail) {
+      final name = PodMediaService.decodeName(segment);
+      final problem = validateName(name, isFolder: true);
+      if (problem != null) {
+        return '"$name" cannot be used as a folder name. $problem';
+      }
+    }
+    return null;
   }
 
   @override
@@ -204,7 +353,16 @@ class _DestinationDialogState extends State<_DestinationDialog> {
               controller: _controller,
               decoration: InputDecoration(
                 labelText: 'Destination folder',
-                helperText: 'Always inside ${widget.rootPath}',
+
+                helperText: widget.renameableFile == null
+                    ? 'The folder to put the items in, always inside '
+                          '${widget.rootPath}. A folder that is not there yet '
+                          'can be created.'
+                    : 'The folder to put the file in, always inside '
+                          '${widget.rootPath}. End with a file name to rename '
+                          'it on the way.',
+
+                helperMaxLines: 3,
 
                 // The root is part of the decoration rather than the text, so
                 // it cannot be edited away. Floating the label always keeps it

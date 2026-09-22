@@ -42,21 +42,38 @@ extension MediaBrowserTransfers on MediaBrowserState {
         ? '"${items.first.name}"'
         : '${items.length} items';
 
+    // A single selected file can be given a new name by ending the
+    // destination with one, so tell the dialogue which file that would be.
+
+    final renameable = items.length == 1 && !items.first.isFolder
+        ? items.first.name
+        : null;
+
     final destination = await showDestinationDialog(
       context,
       rootPath: _root,
       startPath: _path,
       title: '$verb $subject',
       actionLabel: verb,
+      renameableFile: renameable,
     );
 
     if (destination == null || !context.mounted) return;
 
-    if (move && destination == _path) {
+    // Both halves of a copy touch encrypted resources: the source has to be
+    // decrypted and the new copy encrypted again.
+
+    if (!await _ensureSecurityKey(context)) return;
+    if (!context.mounted) return;
+
+    // Moving into the folder the items already sit in does nothing, unless a
+    // new name came with it, which makes the move a rename.
+
+    if (move && destination.folderPath == _path && !destination.renames) {
       await showErrorDialog(
         context,
         'Nothing to move',
-        'The items are already in "$destination".',
+        'The items are already in "${destination.folderPath}".',
       );
       return;
     }
@@ -67,9 +84,7 @@ extension MediaBrowserTransfers on MediaBrowserState {
       () => showWorking(
         context,
         '${move ? 'Moving' : 'Copying'}...',
-        () => move
-            ? PodMediaOps.moveItems(items, destination)
-            : PodMediaOps.copyItems(items, destination),
+        () => _apply(items, destination, move: move),
       ),
     );
 
@@ -79,6 +94,27 @@ extension MediaBrowserTransfers on MediaBrowserState {
       }
     }
     await reload();
+  }
+
+  /// Carry out the copy or the move that [destination] describes.
+
+  Future<void> _apply(
+    List<MediaItem> items,
+    Destination destination, {
+    required bool move,
+  }) {
+    final newName = destination.newName;
+    if (newName != null) {
+      // The dialogue only accepts a name when exactly one file is selected.
+
+      return move
+          ? PodMediaOps.moveAs(items.first, destination.folderPath, newName)
+          : PodMediaOps.copyAs(items.first, destination.folderPath, newName);
+    }
+
+    return move
+        ? PodMediaOps.moveItems(items, destination.folderPath)
+        : PodMediaOps.copyItems(items, destination.folderPath);
   }
 
   /// Rename the first selected item.
@@ -95,6 +131,12 @@ extension MediaBrowserTransfers on MediaBrowserState {
     final item = items.first;
     final name = await showRenameDialog(context, item);
     if (name == null || !context.mounted) return;
+
+    // Solid has no rename, so the item is rewritten under its new name, which
+    // means decrypting and re-encrypting it.
+
+    if (!await _ensureSecurityKey(context)) return;
+    if (!context.mounted) return;
 
     await _guard(
       context,
