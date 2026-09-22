@@ -23,6 +23,7 @@
 
 library;
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -57,14 +58,41 @@ class VideoPreview extends StatefulWidget {
 }
 
 class _VideoPreviewState extends State<VideoPreview> {
-  late final Player _player = Player();
-  late final VideoController _controller = VideoController(_player);
+  late final Player _player;
+  late final VideoController _controller;
+  StreamSubscription<VideoParams>? _params;
+  double? _aspectRatio;
   bool _ready = false;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+
+    // The player and its video output have to exist BEFORE the media is
+    // opened. A `late final` field is only built when it is first read, so
+    // creating the controller lazily in `build` attached the video output to
+    // a player that had already begun decoding: the sound played and the
+    // picture never appeared. Creating both here, eagerly and in order, is
+    // what markdown_widget_builder does too.
+
+    _player = Player();
+    _controller = VideoController(_player);
+
+    // The real frame size only becomes known once decoding starts, so the
+    // viewport follows it rather than assuming every clip is widescreen. A
+    // portrait video from a phone would otherwise be a sliver in a 16:9 box.
+
+    _params = _player.stream.videoParams.listen((params) {
+      final width = params.dw ?? params.w;
+      final height = params.dh ?? params.h;
+      if (width == null || height == null || width <= 0 || height <= 0) return;
+      final ratio = width / height;
+      if (mounted && ratio != _aspectRatio) {
+        setState(() => _aspectRatio = ratio);
+      }
+    });
+
     _open();
   }
 
@@ -83,18 +111,30 @@ class _VideoPreviewState extends State<VideoPreview> {
 
   @override
   void dispose() {
+    _params?.cancel();
     _player.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_error != null) {
+    // The viewport keeps its shape through loading, playback and failure, so
+    // the dialogue does not jump about as the video becomes ready.
+
+    return AspectRatio(
+      aspectRatio: _aspectRatio ?? 16 / 9,
+      child: _buildContent(),
+    );
+  }
+
+  Widget _buildContent() {
+    final error = _error;
+    if (error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'This video could not be played.\n\n$_error',
+            'This video could not be played.\n\n$error',
             textAlign: TextAlign.center,
           ),
         ),

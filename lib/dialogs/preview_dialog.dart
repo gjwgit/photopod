@@ -170,10 +170,11 @@ class _PreviewDialogState extends State<_PreviewDialog> {
     }
 
     if (widget.item.isVideo) {
-      return AspectRatio(
-        aspectRatio: 16 / 9,
-        child: VideoPreview(bytes: bytes, fileName: widget.item.name),
-      );
+      // No aspect ratio is imposed here: the player sizes its own viewport
+      // once the frame size is known, so a portrait clip is shown upright
+      // rather than letterboxed into a widescreen box.
+
+      return VideoPreview(bytes: bytes, fileName: widget.item.name);
     }
 
     return InteractiveViewer(
