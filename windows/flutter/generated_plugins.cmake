@@ -5,11 +5,14 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   fast_rsa
   flutter_secure_storage_windows
+  media_kit_libs_windows_video
+  media_kit_video
   oidc_windows
   printing
   screen_retriever_windows
   share_plus
   url_launcher_windows
+  volume_controller
   window_manager
   window_to_front
 )

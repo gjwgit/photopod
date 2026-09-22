@@ -1,5 +1,5 @@
 name: photopod
-version: 0.0.1
+version: 0.1.0
 summary: Privacy preserving photo manager.
 description: |
   PhotoPod collects your photos and securely stores them encrypted in
