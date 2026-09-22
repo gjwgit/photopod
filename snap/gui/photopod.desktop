@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=PhotoPod
+Comment=Simple, Private, Secure Flutter Photo Manager
+Exec=photopod
+Icon=${SNAP}/meta/gui/icon.png
+Terminal=false
+Type=Application
+Categories=Graphics;Photography;
