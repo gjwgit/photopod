@@ -31,23 +31,34 @@ import 'package:solidui/solidui.dart';
 
 import 'package:photopod/app_scaffold.dart';
 import 'package:photopod/constants/app.dart';
+import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/view_prefs.dart';
+import 'package:photopod/services/media_index.dart';
 
 /// The root of the application.
 ///
 /// On startup [SolidLogin] connects to the user's Pod on their chosen Solid
 /// server through the standard Solid-OIDC flow, and only then hands over to
-/// the app scaffold. The display preferences are provided above the login
-/// screen so that the browser finds them already loaded whichever section
-/// the user lands on.
+/// the app scaffold. The three stores are provided above the login screen so
+/// that whichever section the user lands on finds them already in place: the
+/// display preferences, which are device-local; the favourites, which are
+/// read from the Pod once the scaffold appears; and the album index, which
+/// the flat sections and the map all share rather than walking the folders
+/// three times over.
 
 class App extends StatelessWidget {
   const App({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<ViewPrefs>(
-      create: (context) => ViewPrefs()..load(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider<ViewPrefs>(
+          create: (context) => ViewPrefs()..load(),
+        ),
+        ChangeNotifierProvider<Favourites>(create: (context) => Favourites()),
+        ChangeNotifierProvider<MediaIndex>(create: (context) => MediaIndex()),
+      ],
       child: SolidThemeApp(
         title: appTitle,
         theme: ThemeData(

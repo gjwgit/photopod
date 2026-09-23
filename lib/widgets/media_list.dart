@@ -44,8 +44,10 @@ class MediaList extends StatelessWidget {
     super.key,
     required this.items,
     required this.isSelected,
+    required this.isFavourite,
     required this.onTap,
     required this.onActivate,
+    required this.onToggleFavourite,
   });
 
   /// The folders and files on the current page.
@@ -56,6 +58,10 @@ class MediaList extends StatelessWidget {
 
   final bool Function(MediaItem) isSelected;
 
+  /// Whether an item carries a heart.
+
+  final bool Function(MediaItem) isFavourite;
+
   /// Called on a single tap, which changes the selection.
 
   final void Function(MediaItem) onTap;
@@ -63,6 +69,10 @@ class MediaList extends StatelessWidget {
   /// Called on a double tap, which opens a folder or previews a file.
 
   final void Function(MediaItem) onActivate;
+
+  /// Called when the heart beside a row is tapped.
+
+  final void Function(MediaItem) onToggleFavourite;
 
   @override
   Widget build(BuildContext context) {
@@ -101,39 +111,54 @@ class MediaList extends StatelessWidget {
             ),
           ),
           subtitle: wide ? null : Text(_details(item)),
-          trailing: wide
-              ? SizedBox(
-                  width: 260,
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          _kindLabel(item),
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                      SizedBox(
-                        width: 80,
-                        child: Text(
-                          item.isFolder ? '' : formatBytes(item.size),
-                          textAlign: TextAlign.right,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                      const Gap(12),
-                      SizedBox(
-                        width: 120,
-                        child: Text(
-                          formatDateTime(item.modified),
-                          textAlign: TextAlign.right,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
-                    ],
+          trailing: SizedBox(
+            width: wide ? 300 : 40,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (wide) ...[
+                  Expanded(
+                    child: Text(
+                      _kindLabel(item),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
-                )
-              : null,
+                  SizedBox(
+                    width: 80,
+                    child: Text(
+                      item.isFolder ? '' : formatBytes(item.size),
+                      textAlign: TextAlign.right,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const Gap(12),
+                  SizedBox(
+                    width: 120,
+                    child: Text(
+                      formatDateTime(item.modified),
+                      textAlign: TextAlign.right,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                ],
+                if (!item.isFolder)
+                  IconButton(
+                    iconSize: 18,
+                    visualDensity: VisualDensity.compact,
+                    tooltip: isFavourite(item)
+                        ? 'Remove from Favourites'
+                        : 'Add to Favourites',
+                    icon: Icon(
+                      isFavourite(item)
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      color: isFavourite(item) ? const Color(0xFFE53935) : null,
+                    ),
+                    onPressed: () => onToggleFavourite(item),
+                  ),
+              ],
+            ),
+          ),
         );
       },
     );

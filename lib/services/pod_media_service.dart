@@ -74,16 +74,17 @@ class PodMediaService {
 
   /// The folders and media files directly inside [podPath].
   ///
-  /// When a [kind] is given, only files of that kind are returned, so the
-  /// Photos section never shows videos and the Videos section never shows
-  /// photos; pass null to list every file, as the recursive copy and move
-  /// operations need to. Folders are always included, because a folder may
-  /// hold either kind. Nothing from a subfolder is included; the user has to
-  /// open it first.
+  /// When [kinds] is given, only files of those kinds are returned, which is
+  /// what keeps the Videos section free of photos and keeps PhotoPod's own
+  /// bookkeeping files, such as the list of favourites, out of the album
+  /// altogether. Pass null to list every resource, as the recursive copy and
+  /// move operations need to. Folders are always included, because a folder
+  /// may hold either kind. Nothing from a subfolder is included; the user has
+  /// to open it first.
 
   static Future<List<MediaItem>> listFolder(
     String podPath, {
-    MediaKind? kind,
+    Set<MediaKind>? kinds,
   }) async {
     final url = await folderUrl(podPath);
     final body = await _get(url, 'listing the folder');
@@ -103,7 +104,9 @@ class PodMediaService {
 
       final storedName = decodeName(raw);
       final name = isFolder ? storedName : displayNameOf(storedName);
-      if (!isFolder && kind != null && kindOf(name) != kind) continue;
+      if (!isFolder && kinds != null && !kinds.contains(kindOf(name))) {
+        continue;
+      }
 
       items.add(
         MediaItem(
@@ -155,13 +158,22 @@ class PodMediaService {
     required String displayName,
     required Uint8List bytes,
   }) async {
-    final stored = storedNameOf(Uri.encodeComponent(displayName));
     await writePod(
-      '$podPath/$stored',
+      storedPath(podPath, displayName),
       base64Encode(bytes),
       pathType: PathType.relativeToPod,
     );
   }
+
+  /// The Pod-relative path a file called [displayName] takes when [writeMedia]
+  /// stores it inside [podPath].
+  ///
+  /// Favourites are recorded against this path, so the two have to agree
+  /// exactly: the name is percent-encoded and carries the encryption suffix,
+  /// just as it does on the server.
+
+  static String storedPath(String podPath, String displayName) =>
+      '$podPath/${storedNameOf(Uri.encodeComponent(displayName))}';
 
   /// Whether a file called [displayName] is already in [podPath], under
   /// either the encrypted name or a plain one.

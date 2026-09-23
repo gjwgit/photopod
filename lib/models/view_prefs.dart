@@ -30,9 +30,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// How items are laid out in the main content area.
 
 enum MediaViewMode {
-  /// Thumbnails in a wrapping grid, with the name beneath each tile.
+  /// Photos and videos as a wall of tiles, the way a photo album is usually
+  /// looked at. No file names, so nothing competes with the pictures.
 
-  grid('Thumbnails', Icons.grid_view),
+  grid('Tiles', Icons.grid_view),
 
   /// One row per item, with name, size and date in separate columns.
 
@@ -86,6 +87,36 @@ enum MediaSortOption {
   String get displayLabel => '$fieldLabel: $directionLabel';
 }
 
+/// How big a tile is in the tiled layout.
+///
+/// The value is the widest a tile may be; the grid fits as many of them
+/// across the window as will go and shares out what is left over, so the
+/// tiles stay square whatever the window is doing.
+
+enum MediaTileSize {
+  /// A contact sheet: a great many photos at once.
+
+  small('Small', 96),
+
+  /// The default, which suits a desktop window and a tablet alike.
+
+  medium('Medium', 140),
+
+  /// Fewer, bigger tiles, which is what a phone wants.
+
+  large('Large', 200);
+
+  /// Label shown in the View dialogue.
+
+  final String label;
+
+  /// The widest a tile may be, in logical pixels.
+
+  final double extent;
+
+  const MediaTileSize(this.label, this.extent);
+}
+
 /// The page sizes offered in the View dialogue.
 
 const List<int> pageSizeChoices = [20, 50, 100, 200];
@@ -100,9 +131,11 @@ class ViewPrefs extends ChangeNotifier {
   static const _viewModeKey = 'photopod.viewMode';
   static const _sortKey = 'photopod.sortOption';
   static const _pageSizeKey = 'photopod.itemsPerPage';
+  static const _tileSizeKey = 'photopod.tileSize';
 
   MediaViewMode _viewMode = MediaViewMode.grid;
   MediaSortOption _sortOption = MediaSortOption.nameAscending;
+  MediaTileSize _tileSize = MediaTileSize.medium;
   int _itemsPerPage = pageSizeChoices.first;
 
   /// The current layout.
@@ -112,6 +145,10 @@ class ViewPrefs extends ChangeNotifier {
   /// The current ordering.
 
   MediaSortOption get sortOption => _sortOption;
+
+  /// How big the tiles are in the tiled layout.
+
+  MediaTileSize get tileSize => _tileSize;
 
   /// How many items are shown on one page.
 
@@ -128,6 +165,9 @@ class ViewPrefs extends ChangeNotifier {
     _sortOption =
         _byName(MediaSortOption.values, prefs.getString(_sortKey)) ??
         _sortOption;
+    _tileSize =
+        _byName(MediaTileSize.values, prefs.getString(_tileSizeKey)) ??
+        _tileSize;
     final stored = prefs.getInt(_pageSizeKey);
     if (stored != null && pageSizeChoices.contains(stored)) {
       _itemsPerPage = stored;
@@ -153,6 +193,16 @@ class ViewPrefs extends ChangeNotifier {
     notifyListeners();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_sortKey, option.name);
+  }
+
+  /// Change how big the tiles are.
+
+  Future<void> setTileSize(MediaTileSize size) async {
+    if (size == _tileSize) return;
+    _tileSize = size;
+    notifyListeners();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_tileSizeKey, size.name);
   }
 
   /// Change how many items appear on a page.

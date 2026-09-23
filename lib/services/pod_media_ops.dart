@@ -80,14 +80,21 @@ class PodMediaOps {
   /// A name already in use at the destination is given a numeric suffix
   /// rather than being overwritten, so copying into the folder an item came
   /// from produces `beach (2).jpg` and nothing is ever lost.
+  ///
+  /// Returns where each item ended up, keyed by the Pod-relative path it
+  /// started from. A move needs that map to carry the hearts across with the
+  /// files, since the destination name is not known until the clash has been
+  /// resolved.
 
-  static Future<void> copyItems(
+  static Future<Map<String, String>> copyItems(
     List<MediaItem> items,
     String destPodPath,
   ) async {
+    final moved = <String, String>{};
     for (final item in items) {
-      await _copyInto(item, destPodPath);
+      moved[item.path] = await _copyInto(item, destPodPath);
     }
+    return moved;
   }
 
   /// Copy [item] into [destPodPath] under exactly [newName].
@@ -96,7 +103,7 @@ class PodMediaOps {
   /// numeric suffix: being handed `sunset.jpg` and silently producing
   /// `sunset (2).jpg` would be worse than saying the name is taken.
 
-  static Future<void> copyAs(
+  static Future<String> copyAs(
     MediaItem item,
     String destPodPath,
     String newName,
@@ -107,6 +114,7 @@ class PodMediaOps {
       );
     }
     await _copyAs(item, destPodPath, newName);
+    return newPathOf(item, destPodPath, newName);
   }
 
   /// Move [item] into [destPodPath] under exactly [newName].
@@ -115,36 +123,40 @@ class PodMediaOps {
   /// expressed through the destination field, and works the same way: the
   /// item is written under its new name and the original removed.
 
-  static Future<void> moveAs(
+  static Future<Map<String, String>> moveAs(
     MediaItem item,
     String destPodPath,
     String newName,
   ) async {
-    await copyAs(item, destPodPath, newName);
+    final moved = await copyAs(item, destPodPath, newName);
     await _delete(item);
+    return {item.path: moved};
   }
 
   /// Move [items] into the folder at [destPodPath], by copying and then
   /// removing the originals. Anything that fails to copy is left in place.
 
-  static Future<void> moveItems(
+  static Future<Map<String, String>> moveItems(
     List<MediaItem> items,
     String destPodPath,
   ) async {
+    final moved = <String, String>{};
     for (final item in items) {
       if (item.isFolder && _isInside(destPodPath, item.path)) {
         throw PodMediaException(
           'A folder cannot be moved into itself: "${item.name}".',
         );
       }
-      await _copyInto(item, destPodPath);
+      moved[item.path] = await _copyInto(item, destPodPath);
       await _delete(item);
     }
+    return moved;
   }
 
-  /// Rename [item] to [newName] within its own folder.
+  /// Rename [item] to [newName] within its own folder, returning the
+  /// Pod-relative path it now has.
 
-  static Future<void> rename(MediaItem item, String newName) async {
+  static Future<String> rename(MediaItem item, String newName) async {
     final parent = item.parentPath;
     final parentUrl = await PodMediaService.folderUrl(parent);
 
@@ -161,7 +173,18 @@ class PodMediaOps {
 
     await _copyAs(item, parent, newName);
     await _delete(item);
+    return newPathOf(item, parent, newName);
   }
+
+  /// The Pod-relative path [item] takes when it is written into [destPodPath]
+  /// under [name]. A file picks up the percent-encoding and the encryption
+  /// suffix that [PodMediaService.writeMedia] gives it; a folder is simply
+  /// its encoded name.
+
+  static String newPathOf(MediaItem item, String destPodPath, String name) =>
+      item.isFolder
+      ? '$destPodPath/${Uri.encodeComponent(name)}'
+      : PodMediaService.storedPath(destPodPath, name);
 
   /// Delete [items], which all sit in [parentPodPath]. Folders are removed
   /// with everything inside them.
@@ -199,11 +222,13 @@ class PodMediaOps {
     ],
   );
 
-  // Copy [item] into [destPodPath], choosing a name that is free there.
+  // Copy [item] into [destPodPath], choosing a name that is free there, and
+  // report the Pod-relative path the copy was written to.
 
-  static Future<void> _copyInto(MediaItem item, String destPodPath) async {
+  static Future<String> _copyInto(MediaItem item, String destPodPath) async {
     final name = await freeName(destPodPath, item.name, item.isFolder);
     await _copyAs(item, destPodPath, name);
+    return newPathOf(item, destPodPath, name);
   }
 
   // Copy [item] into [destPodPath] under exactly [name].

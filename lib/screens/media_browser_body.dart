@@ -1,4 +1,4 @@
-/// Lay out the media browser.
+/// The visual side of the media browser.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -27,11 +27,18 @@ part of 'media_browser.dart';
 /// so that neither file grows unwieldy.
 
 extension MediaBrowserBody on MediaBrowserState {
-  /// The whole section: path and toolbar along the top, the items in the
-  /// middle, and the page controls underneath.
+  /// The whole section: the path or the section heading along the top, the
+  /// items in the middle, and the page controls underneath.
 
   Widget _buildBrowser(BuildContext context) {
+    // Watched here, at the top of the build, so that everything below can
+    // simply read them: the album index feeds the two flat sections, and the
+    // hearts decide both what Favourites holds and which tiles show one.
+
     final prefs = context.watch<ViewPrefs>();
+    context.watch<Favourites>();
+    context.watch<MediaIndex>();
+
     final sorted = _sorted;
     final pageCount = _pageCount(sorted.length, prefs.itemsPerPage);
     final page = _page.clamp(0, pageCount - 1);
@@ -62,25 +69,31 @@ extension MediaBrowserBody on MediaBrowserState {
   // a narrow one, so neither has to be squeezed or scrolled on a phone.
 
   Widget _buildHeader(BuildContext context) {
-    final breadcrumbs = BreadcrumbBar(
-      segments: _segmentLabels,
-      onNavigate: (keep) =>
-          _goTo(keep == 0 ? _root : '$_root/${_segments.take(keep).join('/')}'),
-      onUp: _segments.isEmpty
-          ? null
-          : () => _goTo(
-              _segments.length == 1
-                  ? _root
-                  : '$_root/'
-                        '${_segments.take(_segments.length - 1).join('/')}',
+    final files = _selectedFiles;
+
+    final leading = widget.section.browsesFolders
+        ? BreadcrumbBar(
+            segments: _segmentLabels,
+            onNavigate: (keep) => _goTo(
+              keep == 0 ? _root : '$_root/${_segments.take(keep).join('/')}',
             ),
-    );
+            onUp: _segments.isEmpty
+                ? null
+                : () => _goTo(
+                    _segments.length == 1
+                        ? _root
+                        : '$_root/'
+                              '${_segments.take(_segments.length - 1).join('/')}',
+                  ),
+          )
+        : _buildSectionTitle(context);
 
     final toolbar = MediaToolbar(
-      kind: widget.kind,
+      section: widget.section,
       selectionCount: _selected.length,
-      canPreview: _selectedItems.any((item) => !item.isFolder),
-      sortOption: context.watch<ViewPrefs>().sortOption,
+      fileCount: files.length,
+      allFavourite: context.read<Favourites>().containsAll(files),
+      sortOption: context.read<ViewPrefs>().sortOption,
       actions: _actions(context),
     );
 
@@ -88,14 +101,63 @@ extension MediaBrowserBody on MediaBrowserState {
       builder: (context, constraints) => constraints.maxWidth >= 860
           ? Row(
               children: [
-                Expanded(child: breadcrumbs),
+                Expanded(child: leading),
                 toolbar,
               ],
             )
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [breadcrumbs, toolbar],
+              children: [leading, toolbar],
             ),
+    );
+  }
+
+  // The flat sections have no folder to name, so the left of the header says
+  // which of them is on screen and how far across the album it has looked.
+
+  Widget _buildSectionTitle(BuildContext context) {
+    final index = context.read<MediaIndex>();
+    final scanned = index.scannedAt;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+      child: Row(
+        children: [
+          Icon(
+            widget.section.icon,
+            size: 20,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+          const Gap(8),
+          Text(
+            widget.section.label,
+            style: Theme.of(context).textTheme.titleSmall,
+          ),
+          if (index.isTruncated) ...[
+            const Gap(8),
+            Tooltip(
+              message:
+                  'Only the first $maxScannedFolders folders of your album '
+                  'were read, so some items may be missing.',
+              child: Icon(
+                Icons.info_outline,
+                size: 16,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
+          ],
+          if (scanned != null) ...[
+            const Gap(12),
+            Flexible(
+              child: Text(
+                'Album read at ${formatDateTime(scanned)}',
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -105,19 +167,19 @@ extension MediaBrowserBody on MediaBrowserState {
     List<MediaItem> visible,
     List<MediaItem> all,
   ) {
-    if (_loading) {
+    if (_isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final error = _error;
+    final error = _errorText;
     if (error != null) {
       return _buildMessage(
         context,
         icon: Icons.cloud_off,
-        title: 'Could not read this folder',
+        title: 'Could not read your album',
         message: error,
         action: FilledButton.icon(
-          onPressed: reload,
+          onPressed: () => reload(force: true),
           icon: const Icon(Icons.refresh),
           label: const Text('Try again'),
         ),
@@ -127,13 +189,13 @@ extension MediaBrowserBody on MediaBrowserState {
     if (all.isEmpty) {
       return _buildMessage(
         context,
-        icon: widget.kind.icon,
+        icon: widget.section.icon,
         title: 'Nothing here yet',
-        message:
-            'This folder holds no ${widget.kind.label.toLowerCase()} '
-            'and no subfolders. Use Add to put some in.',
+        message: _emptyMessage(),
       );
     }
+
+    final favourites = context.read<Favourites>();
 
     // Tapping the background is how the selection is cleared, which matters
     // because a tap on an item toggles rather than replaces the selection.
@@ -146,18 +208,36 @@ extension MediaBrowserBody on MediaBrowserState {
       child: prefs.viewMode == MediaViewMode.grid
           ? MediaGrid(
               items: visible,
+              tileExtent: prefs.tileSize.extent,
               isSelected: (item) => _selected.contains(item.id),
+              isFavourite: favourites.contains,
               onTap: (item) => _handleTap(item, visible),
               onActivate: _handleActivate,
+              onToggleFavourite: (item) => _toggleFavourite(context, [item]),
             )
           : MediaList(
               items: visible,
               isSelected: (item) => _selected.contains(item.id),
+              isFavourite: favourites.contains,
               onTap: (item) => _handleTap(item, visible),
               onActivate: _handleActivate,
+              onToggleFavourite: (item) => _toggleFavourite(context, [item]),
             ),
     );
   }
+
+  String _emptyMessage() => switch (widget.section) {
+    LibrarySection.library =>
+      'This folder holds no photos, no videos and no subfolders. Use Add to '
+          'put some in.',
+    LibrarySection.favourites =>
+      'Nothing carries a heart yet. Select a photo or a video anywhere in '
+          'your album and tap the heart to bring it here.',
+    LibrarySection.videos =>
+      'There are no videos anywhere in your album yet. Use Add in the '
+          'Library to put some in.',
+    LibrarySection.maps => 'Nothing to map.',
+  };
 
   Widget _buildMessage(
     BuildContext context, {

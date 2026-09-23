@@ -72,6 +72,20 @@ class _ViewOptionsDialog extends StatelessWidget {
               onSelectionChanged: (selection) =>
                   prefs.setViewMode(selection.first),
             ),
+            if (prefs.viewMode == MediaViewMode.grid) ...[
+              const Gap(24),
+              Text('Tile size', style: labels),
+              const Gap(8),
+              SegmentedButton<MediaTileSize>(
+                segments: [
+                  for (final size in MediaTileSize.values)
+                    ButtonSegment(value: size, label: Text(size.label)),
+                ],
+                selected: {prefs.tileSize},
+                onSelectionChanged: (selection) =>
+                    prefs.setTileSize(selection.first),
+              ),
+            ],
             const Gap(24),
             Text('Items per page', style: labels),
             const Gap(8),
@@ -88,8 +102,10 @@ class _ViewOptionsDialog extends StatelessWidget {
             ),
             const Gap(12),
             Text(
-              'Large albums are shown a page at a time so that the Pod is '
-              'asked for only as many thumbnails as are on screen.',
+              'Tiles show the pictures alone, with no file names; the '
+              'details of any one of them are a tap on Get Info away. Large '
+              'albums are shown a page at a time so that the Pod is asked '
+              'for only as many thumbnails as are on screen.',
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ],

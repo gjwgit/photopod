@@ -22,6 +22,12 @@ dependencies:
   # location when downloading a file back out of the Pod.
   file_picker: ^12.3.0
 
+  # OpenStreetMap-backed map for the Maps section, which places each photo by
+  # the GPS coordinates its camera wrote into the file. flutter_map is pure
+  # Flutter and needs no API key or platform-specific map SDK, so the same
+  # code works on every platform PhotoPod builds for.
+  flutter_map: ^8.3.1
+
   # Small fixed-size spacing widget, used throughout the layout in place of
   # bare SizedBoxes.
   gap: ^3.0.1
@@ -41,6 +47,9 @@ dependencies:
   media_kit: ^1.1.11
   media_kit_video: ^1.2.5
   media_kit_libs_video: ^1.0.5
+
+  # The latitude/longitude pair flutter_map speaks in.
+  latlong2: ^0.9.1
 
   # Graham's own drop-in Tooltip replacement with Markdown rendering and a
   # popup delay, used for every tooltip in the app.

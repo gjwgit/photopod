@@ -1,4 +1,4 @@
-/// Browse the photos or videos held in the Pod.
+/// Browse the photos and videos held in the Pod.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -35,17 +35,22 @@ import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/destination_dialog.dart';
 import 'package:photopod/dialogs/folder_name_dialog.dart';
+import 'package:photopod/dialogs/info_dialog.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/dialogs/preview_dialog.dart';
 import 'package:photopod/dialogs/rename_dialog.dart';
 import 'package:photopod/dialogs/share_dialog.dart';
 import 'package:photopod/dialogs/view_options_dialog.dart';
+import 'package:photopod/models/favourites.dart';
+import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
+import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/destination_path.dart';
+import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/breadcrumb_bar.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
@@ -56,20 +61,20 @@ part 'media_browser_actions.dart';
 part 'media_browser_body.dart';
 part 'media_browser_transfers.dart';
 
-/// The Photos or the Videos section of the app.
+/// The Library, Favourites or Videos section of the app.
 ///
-/// One widget serves both, because the only thing that differs is which file
-/// extensions are shown; folders, navigation, selection and every toolbar
-/// action behave identically. The folder being looked at is held here rather
-/// than in a shared store, so switching between the two sections in the
-/// navigation bar leaves each one where the user left it.
+/// One widget serves all three, because the only thing that differs is where
+/// the items come from. The Library walks the folders in the Pod and shows
+/// one of them at a time; Favourites and Videos are filters over the whole
+/// album at once, and so read from the shared [MediaIndex] instead. Selection,
+/// the tiles and every toolbar action behave identically in each.
 
 class MediaBrowser extends StatefulWidget {
-  const MediaBrowser({super.key, required this.kind});
+  const MediaBrowser({super.key, required this.section});
 
-  /// Whether this instance shows photos or videos.
+  /// Which of the sections this instance is showing.
 
-  final MediaKind kind;
+  final LibrarySection section;
 
   @override
   State<MediaBrowser> createState() => MediaBrowserState();
@@ -80,11 +85,13 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   String _root = '';
 
-  /// The Pod-relative path of the folder currently being shown.
+  /// The Pod-relative path of the folder currently being shown. Only the
+  /// Library moves away from the root.
 
   String _path = '';
 
-  /// Everything in the current folder, unsorted.
+  /// Everything in the current folder, unsorted. Used by the Library only;
+  /// the other sections read from the album index.
 
   List<MediaItem> _items = const [];
 
@@ -125,7 +132,7 @@ class MediaBrowserState extends State<MediaBrowser> {
             _loading = false;
             _error =
                 'Please log in to your Pod to see your '
-                '${widget.kind.label.toLowerCase()}.';
+                '${widget.section.noun}.';
           });
         }
         return;
@@ -155,35 +162,65 @@ class MediaBrowserState extends State<MediaBrowser> {
     }
   }
 
-  /// Read the current folder from the Pod again.
+  /// Read what this section shows from the Pod again.
+  ///
+  /// The Library re-reads the one folder it is looking at. The flat sections
+  /// walk the whole album, which is the only way to answer "every favourite"
+  /// or "every video" across folders.
+  ///
+  /// Only the section being looked at is built, so moving between sections
+  /// starts each one afresh. A walk of the whole album is far too expensive
+  /// to repeat every time the user taps Favourites, so the flat sections
+  /// reuse the last scan unless something has changed it or [force] says
+  /// otherwise — which is what the Refresh button asks for.
 
-  Future<void> reload() async {
+  Future<void> reload({bool force = false}) async {
+    if (!widget.section.browsesFolders) {
+      final index = context.read<MediaIndex>();
+      await index.refresh(force: force);
+      if (!mounted) return;
+      setState(
+        () => _selected.removeWhere(
+          (id) => !index.items.any((item) => item.id == id),
+        ),
+      );
+      await _ensureKeyForEncrypted(index.items);
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
     });
     try {
-      final items = await PodMediaService.listFolder(_path, kind: widget.kind);
+      final items = await PodMediaService.listFolder(
+        _path,
+        kinds: widget.section.kinds,
+      );
       if (!mounted) return;
       setState(() {
         _items = items;
         _loading = false;
         _selected.removeWhere((id) => !items.any((item) => item.id == id));
       });
-
-      // Every thumbnail in this folder has to be decrypted before it can be
-      // shown. Asking for the security key once, here, beats letting each
-      // tile fail on its own and leaving a grid of broken images.
-
-      if (mounted && items.any((item) => item.isEncrypted)) {
-        await _ensureSecurityKey(context);
-      }
+      await _ensureKeyForEncrypted(items);
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
         _error = e.toString();
       });
+    }
+  }
+
+  // Every thumbnail of an encrypted photo has to be decrypted before it can
+  // be shown. Asking for the security key once, here, beats letting each tile
+  // fail on its own and leaving a grid of broken images.
+
+  Future<void> _ensureKeyForEncrypted(List<MediaItem> items) async {
+    if (!mounted) return;
+    if (items.any((item) => item.isEncrypted)) {
+      await _ensureSecurityKey(context);
     }
   }
 
@@ -214,13 +251,50 @@ class MediaBrowserState extends State<MediaBrowser> {
   List<String> get _segmentLabels =>
       _segments.map(PodMediaService.decodeName).toList();
 
-  /// Everything in the current folder, folders first and then files, each
-  /// group in the order the user has chosen.
+  /// Everything this section shows, before sorting.
+  ///
+  /// The Library reports the folder it is looking at. Favourites and Videos
+  /// filter the album index, so both show items from every folder at once and
+  /// neither shows a folder of its own.
+
+  List<MediaItem> get _source {
+    switch (widget.section) {
+      case LibrarySection.library:
+        return _items;
+      case LibrarySection.favourites:
+        final favourites = context.read<Favourites>();
+        return context
+            .read<MediaIndex>()
+            .items
+            .where(favourites.contains)
+            .toList();
+      case LibrarySection.videos:
+        return context.read<MediaIndex>().videos;
+      case LibrarySection.maps:
+        return const [];
+    }
+  }
+
+  /// Whether this section is still waiting on the Pod.
+
+  bool get _isLoading => widget.section.browsesFolders
+      ? _loading
+      : context.read<MediaIndex>().isLoading;
+
+  /// What went wrong, if anything.
+
+  String? get _errorText => widget.section.browsesFolders
+      ? _error
+      : _error ?? context.read<MediaIndex>().error;
+
+  /// Everything this section shows, folders first and then files, each group
+  /// in the order the user has chosen.
 
   List<MediaItem> get _sorted {
     final option = context.read<ViewPrefs>().sortOption;
-    final folders = _items.where((item) => item.isFolder).toList();
-    final files = _items.where((item) => !item.isFolder).toList();
+    final all = _source;
+    final folders = all.where((item) => item.isFolder).toList();
+    final files = all.where((item) => !item.isFolder).toList();
     _sortInPlace(folders, option);
     _sortInPlace(files, option);
     return [...folders, ...files];
@@ -260,6 +334,11 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   List<MediaItem> get _selectedItems =>
       _sorted.where((item) => _selected.contains(item.id)).toList();
+
+  /// The selected photos and videos, leaving out any selected folder.
+
+  List<MediaItem> get _selectedFiles =>
+      _selectedItems.where((item) => !item.isFolder).toList();
 
   @override
   Widget build(BuildContext context) => _buildBrowser(context);

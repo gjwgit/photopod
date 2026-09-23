@@ -1,4 +1,4 @@
-/// The actions available on the current selection.
+/// The row of actions above the album.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -27,7 +27,7 @@ import 'package:flutter/material.dart';
 
 import 'package:markdown_tooltip/markdown_tooltip.dart';
 
-import 'package:photopod/constants/media.dart';
+import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/view_prefs.dart';
 
 /// What the toolbar can do, gathered in one place so the browser passes a
@@ -62,7 +62,7 @@ class MediaActions {
 
   final VoidCallback onShare;
 
-  /// Change the layout and page size.
+  /// Change the layout, the tile size and the page size.
 
   final VoidCallback onView;
 
@@ -70,7 +70,15 @@ class MediaActions {
 
   final VoidCallback onPreview;
 
-  /// Re-read the current folder from the Pod.
+  /// Show everything known about the first selected file.
+
+  final VoidCallback onGetInfo;
+
+  /// Add a heart to the selected files, or take it away.
+
+  final VoidCallback onToggleFavourite;
+
+  /// Re-read the album from the Pod.
 
   final VoidCallback onRefresh;
 
@@ -88,6 +96,8 @@ class MediaActions {
     required this.onShare,
     required this.onView,
     required this.onPreview,
+    required this.onGetInfo,
+    required this.onToggleFavourite,
     required this.onRefresh,
     required this.onSort,
   });
@@ -98,29 +108,38 @@ class MediaActions {
 /// Everything that acts on a selection is greyed out until something is
 /// selected, so the toolbar itself shows what is and is not currently
 /// possible. It wraps onto a second line on a narrow window rather than
-/// overflowing.
+/// overflowing. Which buttons appear at all depends on the section: only the
+/// Library browses folders, so only the Library offers to add to one, or to
+/// copy, move and rename what is in it.
 
 class MediaToolbar extends StatelessWidget {
   const MediaToolbar({
     super.key,
-    required this.kind,
+    required this.section,
     required this.selectionCount,
-    required this.canPreview,
+    required this.fileCount,
+    required this.allFavourite,
     required this.sortOption,
     required this.actions,
   });
 
-  /// Whether this is the Photos or the Videos section.
+  /// Which section of the app this toolbar sits in.
 
-  final MediaKind kind;
+  final LibrarySection section;
 
-  /// How many items are currently selected.
+  /// How many items are currently selected, folders included.
 
   final int selectionCount;
 
-  /// Whether the first selected item is a file that can be previewed.
+  /// How many of the selected items are files rather than folders. A folder
+  /// has nothing to preview, nothing to describe and no heart to give.
 
-  final bool canPreview;
+  final int fileCount;
+
+  /// Whether every selected file already carries a heart, which decides
+  /// whether the heart button offers to add one or to take it away.
+
+  final bool allFavourite;
 
   /// The order currently in force, ticked in the Sort menu.
 
@@ -133,68 +152,50 @@ class MediaToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasSelection = selectionCount > 0;
+    final hasFiles = fileCount > 0;
     final many = selectionCount > 1;
+    final browsing = section.browsesFolders;
 
     return Wrap(
       alignment: WrapAlignment.end,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        _AddButton(kind: kind, actions: actions),
-        _button(
-          icon: Icons.delete_outline,
-          label: 'Delete',
-          enabled: hasSelection,
-          onPressed: actions.onDelete,
-          tooltip: '''
-
-          **Delete**
-
-          Remove the selected items from your Pod. Folders are removed with
-          everything inside them, and nothing can be undone.
-
-          ''',
+        if (browsing) _AddButton(actions: actions),
+        _FavouriteButton(
+          enabled: hasFiles,
+          favourite: allFavourite,
+          many: fileCount > 1,
+          onPressed: actions.onToggleFavourite,
         ),
         _button(
-          icon: Icons.content_copy,
-          label: 'Copy',
-          enabled: hasSelection,
-          onPressed: actions.onCopy,
-          tooltip: '''
-
-          **Copy**
-
-          Put a second copy of the selected items into another folder. You
-          will be asked where, and the destination is checked before anything
-          is copied.
-
-          ''',
-        ),
-        _button(
-          icon: Icons.drive_file_move_outline,
-          label: 'Move',
-          enabled: hasSelection,
-          onPressed: actions.onMove,
-          tooltip: '''
-
-          **Move**
-
-          Move the selected items into another folder. You will be asked
-          where, and the destination is checked before anything is moved.
-
-          ''',
-        ),
-        _button(
-          icon: Icons.drive_file_rename_outline,
-          label: 'Rename',
-          enabled: hasSelection,
-          onPressed: actions.onRename,
+          icon: Icons.info_outline,
+          label: 'Get Info',
+          enabled: hasFiles,
+          onPressed: actions.onGetInfo,
           tooltip:
               '''
 
-          **Rename**
+          **Get Info**
 
-          Give a new name to the selected item.
-          ${many ? 'With several selected, the first one is renamed.' : ''}
+          Show everything known about the selected item: its size, when it was
+          added, how big the picture is, which camera took it and where.
+          ${many ? 'With several selected, the first one is described.' : ''}
+
+          ''',
+        ),
+        _button(
+          icon: Icons.visibility_outlined,
+          label: 'Preview',
+          enabled: hasFiles,
+          onPressed: actions.onPreview,
+          tooltip:
+              '''
+
+          **Preview**
+
+          Open the selected photo or video full size. Double tapping its tile
+          does the same thing.
+          ${many ? 'With several selected, the first one is shown.' : ''}
 
           ''',
         ),
@@ -213,21 +214,20 @@ class MediaToolbar extends StatelessWidget {
           ''',
         ),
         _button(
-          icon: Icons.visibility_outlined,
-          label: 'Preview',
-          enabled: canPreview,
-          onPressed: actions.onPreview,
-          tooltip:
-              '''
+          icon: Icons.delete_outline,
+          label: 'Delete',
+          enabled: hasSelection,
+          onPressed: actions.onDelete,
+          tooltip: '''
 
-          **Preview**
+          **Delete**
 
-          Open the selected ${kind.noun} full size. Double tapping it does the
-          same thing.
-          ${many ? 'With several selected, the first one is shown.' : ''}
+          Remove the selected items from your Pod. Folders are removed with
+          everything inside them, and nothing can be undone.
 
           ''',
         ),
+        if (browsing) _OrganiseButton(enabled: hasSelection, actions: actions),
         _SortButton(sortOption: sortOption, onSort: actions.onSort),
         _button(
           icon: Icons.tune,
@@ -238,8 +238,8 @@ class MediaToolbar extends StatelessWidget {
 
           **View**
 
-          Switch between thumbnails and the detailed list, and choose how many
-          items appear on a page.
+          Switch between the tiles and the detailed list, choose how big the
+          tiles are, and choose how many items appear on a page.
 
           ''',
         ),
@@ -252,7 +252,7 @@ class MediaToolbar extends StatelessWidget {
 
           **Refresh**
 
-          Read this folder from your Pod again.
+          Read the album from your Pod again.
 
           ''',
         ),
@@ -283,42 +283,144 @@ class MediaToolbar extends StatelessWidget {
   );
 }
 
-class _AddButton extends StatelessWidget {
-  const _AddButton({required this.kind, required this.actions});
+class _FavouriteButton extends StatelessWidget {
+  const _FavouriteButton({
+    required this.enabled,
+    required this.favourite,
+    required this.many,
+    required this.onPressed,
+  });
 
-  final MediaKind kind;
+  final bool enabled;
+  final bool favourite;
+  final bool many;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = favourite ? 'Remove from Favourites' : 'Add to Favourites';
+
+    return MarkdownTooltip(
+      message:
+          '''
+
+      **$label**
+
+      ${favourite ? 'Take the heart away from' : 'Put a heart on'} the
+      selected ${many ? 'items' : 'item'}, so ${many ? 'they' : 'it'}
+      ${favourite ? 'no longer appears' : 'appears'} in the Favourites
+      section. Hearts are kept in your Pod, so they follow you from one
+      device to the next.
+
+      ''',
+      child: Semantics(
+        label: label,
+        button: true,
+        child: IconButton(
+          icon: Icon(
+            favourite ? Icons.favorite : Icons.favorite_border,
+            color: enabled && favourite ? const Color(0xFFE53935) : null,
+          ),
+          onPressed: enabled ? onPressed : null,
+        ),
+      ),
+    );
+  }
+}
+
+class _AddButton extends StatelessWidget {
+  const _AddButton({required this.actions});
+
   final MediaActions actions;
 
   @override
   Widget build(BuildContext context) => MarkdownTooltip(
-    message:
-        '''
+    message: '''
 
         **Add**
 
-        Put ${kind.label.toLowerCase()} from this device into the folder you
-        are looking at, or create a new folder to organise them.
+        Put photos and videos from this device into the folder you are
+        looking at, or create a new folder to organise them.
 
         ''',
     child: PopupMenuButton<int>(
       icon: const Icon(Icons.add),
       onSelected: (value) =>
           value == 0 ? actions.onAddFiles() : actions.onNewFolder(),
-      itemBuilder: (context) => [
+      itemBuilder: (context) => const [
         PopupMenuItem(
           value: 0,
           child: ListTile(
             dense: true,
-            leading: Icon(kind.icon),
-            title: Text('Add ${kind.label.toLowerCase()}...'),
+            leading: Icon(Icons.add_photo_alternate_outlined),
+            title: Text('Add photos and videos...'),
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 1,
           child: ListTile(
             dense: true,
             leading: Icon(Icons.create_new_folder_outlined),
             title: Text('New folder...'),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// Copy, move and rename, which belong together and are reached for far less
+/// often than the rest, so they sit behind one menu rather than taking three
+/// more places in the row.
+
+class _OrganiseButton extends StatelessWidget {
+  const _OrganiseButton({required this.enabled, required this.actions});
+
+  final bool enabled;
+  final MediaActions actions;
+
+  @override
+  Widget build(BuildContext context) => MarkdownTooltip(
+    message: '''
+
+        **Organise**
+
+        Copy or move the selected items into another folder, or give the
+        first of them a new name. A destination folder that is not there yet
+        can be created along the way.
+
+        ''',
+    child: PopupMenuButton<int>(
+      icon: const Icon(Icons.more_horiz),
+      enabled: enabled,
+      onSelected: (value) => switch (value) {
+        0 => actions.onCopy(),
+        1 => actions.onMove(),
+        _ => actions.onRename(),
+      },
+      itemBuilder: (context) => const [
+        PopupMenuItem(
+          value: 0,
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.content_copy),
+            title: Text('Copy to...'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 1,
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.drive_file_move_outline),
+            title: Text('Move to...'),
+          ),
+        ),
+        PopupMenuItem(
+          value: 2,
+          child: ListTile(
+            dense: true,
+            leading: Icon(Icons.drive_file_rename_outline),
+            title: Text('Rename...'),
           ),
         ),
       ],

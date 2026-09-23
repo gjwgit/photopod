@@ -25,10 +25,13 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:provider/provider.dart';
 import 'package:solidui/solidui.dart';
 
 import 'package:photopod/constants/app.dart';
-import 'package:photopod/constants/media.dart';
+import 'package:photopod/models/favourites.dart';
+import 'package:photopod/models/library_section.dart';
+import 'package:photopod/screens/map_view.dart';
 import 'package:photopod/screens/media_browser.dart';
 
 final _scaffoldController = SolidScaffoldController();
@@ -38,15 +41,33 @@ final _scaffoldController = SolidScaffoldController();
 
 const appScaffold = AppScaffold();
 
-/// The application frame: navigation bar, app bar, status bar and the section
-/// currently being looked at.
+/// The application frame: navigation rail, app bar, status bar and the
+/// section currently being looked at.
 ///
-/// The two sections are given distinct keys because both are a [MediaBrowser]
-/// and, without them, moving between Photos and Videos would reuse one
-/// section's state — and so its folder and selection — for the other.
+/// Each section is given a distinct key because three of the four are a
+/// [MediaBrowser] and, without them, moving between Library and Videos would
+/// reuse one section's state — and so its folder and its selection — for the
+/// other.
 
-class AppScaffold extends StatelessWidget {
+class AppScaffold extends StatefulWidget {
   const AppScaffold({super.key});
+
+  @override
+  State<AppScaffold> createState() => _AppScaffoldState();
+}
+
+class _AppScaffoldState extends State<AppScaffold> {
+  @override
+  void initState() {
+    super.initState();
+
+    // The hearts live in the Pod, so they can only be read once the login
+    // flow has finished — which is exactly when this scaffold first appears.
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<Favourites>().load();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,36 +78,65 @@ class AppScaffold extends StatelessWidget {
       onLogout: (context) => SolidAuthHandler.instance.handleLogout(context),
       menu: const [
         SolidMenuItem(
-          icon: Icons.photo_library,
-          title: 'Photos',
+          icon: Icons.photo_library_outlined,
+          title: 'Library',
           tooltip: '''
 
-            **Photos**
+            **Library**
 
-            Tap here for the photos in your Pod. JPG, PNG, GIF and TIFF files
-            are shown, along with the folders they are organised into.
+            Tap here for everything in your Pod. Photos and videos are mixed
+            together as tiles, alongside the folders they are organised into.
 
             ''',
           child: MediaBrowser(
-            key: ValueKey(MediaKind.photo),
-            kind: MediaKind.photo,
+            key: ValueKey(LibrarySection.library),
+            section: LibrarySection.library,
           ),
         ),
         SolidMenuItem(
-          icon: Icons.video_library,
+          icon: Icons.favorite_outline,
+          title: 'Favourites',
+          tooltip: '''
+
+            **Favourites**
+
+            Tap here for everything you have put a heart on, gathered from
+            every folder in your album.
+
+            ''',
+          child: MediaBrowser(
+            key: ValueKey(LibrarySection.favourites),
+            section: LibrarySection.favourites,
+          ),
+        ),
+        SolidMenuItem(
+          icon: Icons.movie_outlined,
           title: 'Videos',
           tooltip: '''
 
             **Videos**
 
-            Tap here for the videos in your Pod. MP4 and MOV files are shown,
-            along with the folders they are organised into.
+            Tap here for every video in your album, wherever it is filed.
+            MP4 and MOV files are shown.
 
             ''',
           child: MediaBrowser(
-            key: ValueKey(MediaKind.video),
-            kind: MediaKind.video,
+            key: ValueKey(LibrarySection.videos),
+            section: LibrarySection.videos,
           ),
+        ),
+        SolidMenuItem(
+          icon: Icons.map_outlined,
+          title: 'Maps',
+          tooltip: '''
+
+            **Maps**
+
+            Tap here to see your photos on a map, placed by the GPS
+            coordinates their cameras recorded in them.
+
+            ''',
+          child: MapView(key: ValueKey(LibrarySection.maps)),
         ),
       ],
       appBar: const SolidAppBarConfig(
@@ -122,7 +172,13 @@ class AppScaffold extends StatelessWidget {
 
         Key features:
 
-        🖼️ Browse photos as thumbnails or as a detailed list;
+        🖼️ Browse the album as a wall of tiles, photos and videos together;
+
+        ❤️ Put a heart on anything and find it again under Favourites;
+
+        🗺️ See where your photos were taken, on a map;
+
+        ℹ️ Get Info for the size, the camera, the settings and the place;
 
         🎬 Play videos without leaving the app;
 
@@ -150,8 +206,8 @@ class AppScaffold extends StatelessWidget {
       ),
       inviteConfig: inviteOthersConfig,
       child: const MediaBrowser(
-        key: ValueKey(MediaKind.photo),
-        kind: MediaKind.photo,
+        key: ValueKey(LibrarySection.library),
+        section: LibrarySection.library,
       ),
     );
   }

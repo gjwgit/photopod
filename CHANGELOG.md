@@ -35,3 +35,9 @@ Williams](https://togaware.com/Graham.Williams.html).
 ## 0.1 Initial App
 
 + Initial photo and video album app [0.1.0 20260922 tonypioneer]
++ Maps section places geotagged photos on a map [0.1.0 20260923 tonypioneer]
++ Get Info describes the selected photo or video [0.1.0 20260923 tonypioneer]
++ Favourites: put a heart on anything, kept in your Pod [0.1.0 20260923 
+  tonypioneer]
++ Videos section gathers every video in the album [0.1.0 20260923 tonypioneer]
++ Library shows photos and videos together as tiles [0.1.0 20260923 tonypioneer]

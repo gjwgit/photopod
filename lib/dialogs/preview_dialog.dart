@@ -27,8 +27,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:gap/gap.dart';
+import 'package:provider/provider.dart';
 
 import 'package:photopod/constants/media.dart';
+import 'package:photopod/dialogs/info_dialog.dart';
+import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
@@ -111,6 +114,9 @@ class _PreviewDialogState extends State<_PreviewDialog> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final favourites = context.watch<Favourites>();
+    final favourite = favourites.contains(widget.item);
+
     final details = [
       if (widget.item.size != null) formatBytes(widget.item.size),
       if (widget.item.modified != null) formatDateTime(widget.item.modified),
@@ -138,6 +144,19 @@ class _PreviewDialogState extends State<_PreviewDialog> {
                   Text(details, style: Theme.of(context).textTheme.bodySmall),
               ],
             ),
+          ),
+          IconButton(
+            icon: Icon(
+              favourite ? Icons.favorite : Icons.favorite_border,
+              color: favourite ? const Color(0xFFE53935) : null,
+            ),
+            tooltip: favourite ? 'Remove from Favourites' : 'Add to Favourites',
+            onPressed: () => favourites.toggleAll([widget.item]),
+          ),
+          IconButton(
+            icon: const Icon(Icons.info_outline),
+            tooltip: 'Get Info',
+            onPressed: () => showInfoDialog(context, widget.item),
           ),
           IconButton(
             icon: const Icon(Icons.close),

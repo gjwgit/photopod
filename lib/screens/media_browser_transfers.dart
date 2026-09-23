@@ -78,13 +78,17 @@ extension MediaBrowserTransfers on MediaBrowserState {
       return;
     }
 
+    final favourites = context.read<Favourites>();
+    final index = context.read<MediaIndex>();
+    var moved = const <String, String>{};
+
     await _guard(
       context,
       'Could not ${verb.toLowerCase()} the items',
       () => showWorking(
         context,
         '${move ? 'Moving' : 'Copying'}...',
-        () => _apply(items, destination, move: move),
+        () async => moved = await _apply(items, destination, move: move),
       ),
     );
 
@@ -92,24 +96,35 @@ extension MediaBrowserTransfers on MediaBrowserState {
       for (final item in items) {
         ThumbnailCache.instance.evict(item.url);
       }
+
+      // A heart belongs to the photo, not to the folder it happens to sit in,
+      // so a move carries it along to wherever the file has landed. A copy
+      // does not: the new copy is a new photo and starts without one.
+
+      await favourites.retarget(moved);
     }
+
+    index.invalidate();
     await reload();
   }
 
-  /// Carry out the copy or the move that [destination] describes.
+  /// Carry out the copy or the move that [destination] describes, reporting
+  /// where each item ended up.
 
-  Future<void> _apply(
+  Future<Map<String, String>> _apply(
     List<MediaItem> items,
     Destination destination, {
     required bool move,
-  }) {
+  }) async {
     final newName = destination.newName;
     if (newName != null) {
       // The dialogue only accepts a name when exactly one file is selected.
 
-      return move
-          ? PodMediaOps.moveAs(items.first, destination.folderPath, newName)
-          : PodMediaOps.copyAs(items.first, destination.folderPath, newName);
+      if (move) {
+        return PodMediaOps.moveAs(items.first, destination.folderPath, newName);
+      }
+      await PodMediaOps.copyAs(items.first, destination.folderPath, newName);
+      return const {};
     }
 
     return move
@@ -138,17 +153,25 @@ extension MediaBrowserTransfers on MediaBrowserState {
     if (!await _ensureSecurityKey(context)) return;
     if (!context.mounted) return;
 
+    final favourites = context.read<Favourites>();
+    final index = context.read<MediaIndex>();
+    String? renamed;
+
     await _guard(
       context,
       'Could not rename "${item.name}"',
       () => showWorking(
         context,
         'Renaming...',
-        () => PodMediaOps.rename(item, name),
+        () async => renamed = await PodMediaOps.rename(item, name),
       ),
     );
 
     ThumbnailCache.instance.evict(item.url);
+    if (renamed != null) {
+      await favourites.retarget({item.path: renamed!});
+    }
+    index.invalidate();
     await reload();
   }
 }
