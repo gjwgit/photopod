@@ -32,6 +32,7 @@ import 'package:solidpod/solidpod.dart';
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/container_listing.dart';
+import 'package:photopod/utils/resource_name.dart';
 
 /// Raised when the Solid server refuses or fails a request. The message is
 /// written for the user, since it is what the error dialogues display.
@@ -169,20 +170,20 @@ class PodMediaService {
   /// stores it inside [podPath].
   ///
   /// Favourites are recorded against this path, so the two have to agree
-  /// exactly: the name is percent-encoded and carries the encryption suffix,
-  /// just as it does on the server.
+  /// exactly: the name is reduced to one that needs no percent-escaping and
+  /// carries the encryption suffix, just as it does on the server.
 
   static String storedPath(String podPath, String displayName) =>
-      '$podPath/${storedNameOf(Uri.encodeComponent(displayName))}';
+      '$podPath/${storedNameOf(safeResourceName(displayName))}';
 
   /// Whether a file called [displayName] is already in [podPath], under
   /// either the encrypted name or a plain one.
 
   static Future<bool> mediaExists(String podPath, String displayName) async {
     final dirUrl = await folderUrl(podPath);
-    final encoded = Uri.encodeComponent(displayName);
-    return await fileExists('$dirUrl${storedNameOf(encoded)}') ||
-        await fileExists('$dirUrl$encoded');
+    final name = safeResourceName(displayName);
+    return await fileExists('$dirUrl${storedNameOf(name)}') ||
+        await fileExists('$dirUrl$name');
   }
 
   static Future<Uint8List> _readRaw(String url) async {

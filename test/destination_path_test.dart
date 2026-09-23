@@ -68,10 +68,14 @@ void main() {
       );
     });
 
-    test('a folder name with a space is encoded for the URL', () {
+    test('a folder name with a space is tidied rather than escaped', () {
+      // A percent-escaped name loses its encryption key, because solidpod
+      // decodes the escapes when it works out where to file the key and does
+      // not put them back when it looks the key up again.
+
       expect(
         resolveDestination(_root, 'Family Holiday')?.folderPath,
-        '$_root/Family%20Holiday',
+        '$_root/Family_Holiday',
       );
     });
 
@@ -129,12 +133,14 @@ void main() {
       expect(destination?.renames, isFalse);
     });
 
-    test('a new name with a space is left readable, not encoded', () {
-      // The folder part goes into a URL and is escaped; the name is handed
-      // to the write layer, which does its own escaping.
+    test('the folder is tidied while the new name is left as typed', () {
+      // The folder part goes straight into a URL, so it is reduced to
+      // characters that need no escaping. The name is reported as typed and
+      // is checked by the dialogue, which refuses a space rather than
+      // silently renaming what the user has just written.
 
       final destination = resolveDestination(_root, 'My Trip/sun set.jpg');
-      expect(destination?.folderPath, '$_root/My%20Trip');
+      expect(destination?.folderPath, '$_root/My_Trip');
       expect(destination?.newName, 'sun set.jpg');
     });
   });

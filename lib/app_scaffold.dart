@@ -33,6 +33,8 @@ import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/screens/map_view.dart';
 import 'package:photopod/screens/media_browser.dart';
+import 'package:photopod/services/pod_keys.dart';
+import 'package:photopod/services/thumbnail_cache.dart';
 
 final _scaffoldController = SolidScaffoldController();
 
@@ -75,7 +77,14 @@ class _AppScaffoldState extends State<AppScaffold> {
       controller: _scaffoldController,
       hideNavRail: false,
       enableProfile: true,
-      onLogout: (context) => SolidAuthHandler.instance.handleLogout(context),
+      onLogout: (context) {
+        // Nothing held for the Pod that has just been left should be waiting
+        // for whoever logs in next.
+
+        PodKeys.reset();
+        ThumbnailCache.instance.clear();
+        SolidAuthHandler.instance.handleLogout(context);
+      },
       menu: const [
         SolidMenuItem(
           icon: Icons.photo_library_outlined,

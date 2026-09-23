@@ -46,11 +46,13 @@ import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/media_index.dart';
+import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/destination_path.dart';
 import 'package:photopod/utils/formatting.dart';
+import 'package:photopod/utils/resource_name.dart';
 import 'package:photopod/widgets/breadcrumb_bar.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
@@ -179,12 +181,13 @@ class MediaBrowserState extends State<MediaBrowser> {
       final index = context.read<MediaIndex>();
       await index.refresh(force: force);
       if (!mounted) return;
+      await _ensureKeyForEncrypted(index.items);
+      if (!mounted) return;
       setState(
         () => _selected.removeWhere(
           (id) => !index.items.any((item) => item.id == id),
         ),
       );
-      await _ensureKeyForEncrypted(index.items);
       return;
     }
 
@@ -198,12 +201,20 @@ class MediaBrowserState extends State<MediaBrowser> {
         kinds: widget.section.kinds,
       );
       if (!mounted) return;
+
+      // The keys are settled before the tiles appear, not after. A tile asks
+      // for its thumbnail the moment it is built, and a page of them asking
+      // at once is exactly what must not happen while solidpod is still
+      // reading its key file for the first time.
+
+      await _ensureKeyForEncrypted(items);
+      if (!mounted) return;
+
       setState(() {
         _items = items;
         _loading = false;
         _selected.removeWhere((id) => !items.any((item) => item.id == id));
       });
-      await _ensureKeyForEncrypted(items);
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {
@@ -215,13 +226,14 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   // Every thumbnail of an encrypted photo has to be decrypted before it can
   // be shown. Asking for the security key once, here, beats letting each tile
-  // fail on its own and leaving a grid of broken images.
+  // fail on its own and leaving a grid of broken images, and reading the keys
+  // into memory once, here, keeps a page of tiles from all reading them at
+  // the same time.
 
   Future<void> _ensureKeyForEncrypted(List<MediaItem> items) async {
     if (!mounted) return;
-    if (items.any((item) => item.isEncrypted)) {
-      await _ensureSecurityKey(context);
-    }
+    if (!items.any((item) => item.isEncrypted)) return;
+    await _ensureSecurityKey(context);
   }
 
   /// Move to [path], clearing the selection and returning to the first page.

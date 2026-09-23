@@ -64,10 +64,10 @@ dependencies:
 
   # Solid Pod storage and sharing: read/write the photo and video files on
   # the user's Pod and grant access permissions to other WebIDs.
-  solidpod: ^1.0.22
+  solidpod: ^1.0.24
 
   # Solid app scaffold, login flow, sharing UI, and shared settings/about UI.
-  solidui: ^1.0.41
+  solidui: ^1.1.0
 
   # Restore the last window size/position on Linux/macOS/Windows desktop.
   window_manager: ^0.5.1

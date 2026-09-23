@@ -24,6 +24,7 @@
 library;
 
 import 'package:photopod/constants/media.dart';
+import 'package:photopod/utils/resource_name.dart';
 
 /// Where a copy or a move should put its items, and what to call them.
 
@@ -93,7 +94,7 @@ Destination? resolveDestination(String rootPath, String typed) {
 
   final folderPath = folders.isEmpty
       ? rootPath
-      : '$rootPath/${folders.map(Uri.encodeComponent).join('/')}';
+      : '$rootPath/${folders.map(safeResourceName).join('/')}';
 
   return Destination(folderPath, newName: namesFile ? last : null);
 }

@@ -62,6 +62,26 @@ memory and fetched only for the page on screen.
 Reading still copes with a plain, unencrypted resource, so anything
 already in the album, or put there by another tool, stays visible.
 
+### Resource names
+
+A name on the Pod may hold only letters, digits and `- _ . ! ~ ' ( )`. A file
+added from this device has anything else — a space, an accent, a character
+outside the Latin alphabet — replaced with an underscore, and PhotoPod says
+which files it renamed on the way in. A folder name typed into a dialogue is
+refused rather than quietly changed.
+
+The restriction is not cosmetic. solidpod files a resource's encryption key
+under a URL it rebuilds from the resource's own URL, and the two halves of
+that round trip disagree about escaping: the path is taken out of the URL
+with `Uri.pathSegments`, which decodes each segment, and the URL is put back
+together by joining the segments verbatim, which does not encode them again.
+A photo stored as `my%20photo.jpg.enc.ttl` therefore has its key filed under
+`.../my photo.jpg.enc.ttl`, where nothing ever looks for it, and the key file
+is left holding a subject IRI with a raw space in it — which is not valid
+Turtle, and which costs every key written after it when that file is next
+read back. Keeping every name inside the unescaped set makes the round trip
+the identity, and the problem disappears.
+
 The hearts live in `photopod/data/favourites.json`, a small list of the
 Pod-relative paths that carry one. It is deliberately not encrypted:
 asking for the security key merely to find out which photos are

@@ -131,6 +131,9 @@ extension MediaBrowserActions on MediaBrowserState {
   /// lands.
 
   Future<void> _addFiles(BuildContext context) async {
+    if (!await _folderIsWritable(context)) return;
+    if (!context.mounted) return;
+
     final List<PlatformFile> picked;
     try {
       picked = await FilePicker.pickFiles(
@@ -154,6 +157,7 @@ extension MediaBrowserActions on MediaBrowserState {
     if (!context.mounted) return;
 
     final failed = <String, String>{};
+    final renamed = <String, String>{};
     var added = 0;
 
     await showWorking(context, 'Adding to your Pod...', () async {
@@ -165,7 +169,7 @@ extension MediaBrowserActions on MediaBrowserState {
           }
           final name = await PodMediaOps.freeName(
             _path,
-            _tidyName(file.name),
+            safeResourceName(file.name),
             false,
           );
           final bytes = await file.readAsBytes();
@@ -174,6 +178,7 @@ extension MediaBrowserActions on MediaBrowserState {
             displayName: name,
             bytes: bytes,
           );
+          if (name != file.name) renamed[file.name] = name;
           added++;
         } on Object catch (e) {
           failed[file.name] = '$e';
@@ -191,12 +196,54 @@ extension MediaBrowserActions on MediaBrowserState {
         added == 0 ? 'Nothing could be added' : 'Some files were not added',
         failed.entries.map((e) => '${e.key}: ${e.value}').join('\n\n'),
       );
+      return;
     }
+
+    // A name is quietly tidied rather than refused, so that a photo straight
+    // off a camera always lands. Saying so beats letting the user wonder why
+    // the name on the tile is not the one they picked.
+
+    if (renamed.isNotEmpty && context.mounted) {
+      await showErrorDialog(
+        context,
+        renamed.length == 1
+            ? 'One file was renamed'
+            : 'Some files were renamed',
+        'A name on the Pod can hold only letters, digits and '
+        "- _ . ! ~ * ' ( ), so anything else was replaced with an "
+        'underscore.\n\n'
+        '${renamed.entries.map((e) => '${e.key}  →  ${e.value}').join('\n')}',
+      );
+    }
+  }
+
+  // Refuse to write into a folder whose own name would have to be escaped in
+  // a URL, since anything put there would lose its encryption key. Such a
+  // folder can only have been made by an earlier build of PhotoPod, and
+  // renaming it puts everything right.
+
+  Future<bool> _folderIsWritable(BuildContext context) async {
+    final segment = unsafeSegmentOf(_path);
+    if (segment == null) return true;
+
+    await showErrorDialog(
+      context,
+      'This folder cannot be written to',
+      'The folder "${PodMediaService.decodeName(segment)}" has a name that '
+          'has to be escaped inside a web address, and anything written into '
+          'it would be stored in a way PhotoPod could not read back.\n\n'
+          'Rename the folder — letters, digits and '
+          "- _ . ! ~ ' ( ) only — and then try again.",
+    );
+    return false;
   }
 
   /// Create a folder inside the folder being shown.
 
   Future<void> _newFolder(BuildContext context) async {
+    if (!await _folderIsWritable(context)) return;
+    if (!context.mounted) return;
+
     final name = await showFolderNameDialog(context);
     if (name == null || !context.mounted) return;
 
@@ -311,7 +358,13 @@ extension MediaBrowserActions on MediaBrowserState {
         context,
         const Text('Please enter your security key to unlock your album'),
       );
-      return await KeyManager.hasSecurityKey();
+      if (!await KeyManager.hasSecurityKey()) return false;
+
+      // Read the keys into memory now, while nothing else is asking for
+      // them. See [PodKeys] for what happens when several callers do.
+
+      await PodKeys.prime();
+      return true;
     } on Object catch (e) {
       if (context.mounted) {
         await showErrorDialog(context, 'Security key needed', '$e');
@@ -333,11 +386,4 @@ extension MediaBrowserActions on MediaBrowserState {
       if (context.mounted) await showErrorDialog(context, title, '$e');
     }
   }
-
-  // Replace anything that cannot appear in a Solid resource name, so that a
-  // file called "holiday #1 (50%).jpg" becomes one that can be addressed by
-  // URL.
-
-  static String _tidyName(String name) =>
-      name.replaceAll(RegExp(r'[\\/:*?"<>|#%\x00-\x1f]'), '_').trim();
 }

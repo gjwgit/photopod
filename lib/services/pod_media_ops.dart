@@ -27,6 +27,7 @@ import 'package:solidpod/solidpod.dart';
 
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/utils/resource_name.dart';
 
 /// The operations the toolbar performs on whole items rather than on bytes.
 ///
@@ -41,7 +42,7 @@ class PodMediaOps {
 
   static Future<void> createFolder(String parentPodPath, String name) async {
     final parentUrl = await PodMediaService.folderUrl(parentPodPath);
-    final url = '$parentUrl${Uri.encodeComponent(name)}/';
+    final url = '$parentUrl${safeResourceName(name)}/';
     if (await PodMediaService.folderExists(url)) {
       throw PodMediaException('A folder called "$name" already exists here.');
     }
@@ -162,7 +163,7 @@ class PodMediaOps {
 
     final clashes = item.isFolder
         ? await PodMediaService.folderExists(
-            '$parentUrl${Uri.encodeComponent(newName)}/',
+            '$parentUrl${safeResourceName(newName)}/',
           )
         : await PodMediaService.mediaExists(parent, newName);
     if (clashes) {
@@ -183,7 +184,7 @@ class PodMediaOps {
 
   static String newPathOf(MediaItem item, String destPodPath, String name) =>
       item.isFolder
-      ? '$destPodPath/${Uri.encodeComponent(name)}'
+      ? '$destPodPath/${safeResourceName(name)}'
       : PodMediaService.storedPath(destPodPath, name);
 
   /// Delete [items], which all sit in [parentPodPath]. Folders are removed
@@ -239,7 +240,7 @@ class PodMediaOps {
     String name,
   ) async {
     final destUrl = await PodMediaService.folderUrl(destPodPath);
-    final encoded = Uri.encodeComponent(name);
+    final encoded = safeResourceName(name);
 
     if (!item.isFolder) {
       final bytes = await PodMediaService.readBytes(item);
@@ -290,7 +291,7 @@ class PodMediaOps {
     Future<bool> taken(String name) async {
       if (isFolder) {
         return PodMediaService.folderExists(
-          '$destUrl${Uri.encodeComponent(name)}/',
+          '$destUrl${safeResourceName(name)}/',
         );
       }
       return PodMediaService.mediaExists(destPodPath, name);

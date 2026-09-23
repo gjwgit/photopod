@@ -36,6 +36,7 @@ import 'package:photopod/dialogs/preview_dialog.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/media_index.dart';
+import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 
@@ -140,6 +141,11 @@ class _MapViewState extends State<MapView> {
         if (!await KeyManager.hasSecurityKey()) {
           throw Exception('The security key is needed to read your photos.');
         }
+
+        // Read the keys into memory before the batches start, so that four
+        // concurrent reads do not each try to read them.
+
+        await PodKeys.prime();
       } on Object catch (e) {
         if (mounted) {
           setState(() {

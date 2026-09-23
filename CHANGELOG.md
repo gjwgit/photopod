@@ -41,3 +41,7 @@ Williams](https://togaware.com/Graham.Williams.html).
   tonypioneer]
 + Videos section gathers every video in the album [0.1.0 20260923 tonypioneer]
 + Library shows photos and videos together as tiles [0.1.0 20260923 tonypioneer]
++ Fix files losing their encryption key when the name held a space or a
+  character outside the Latin alphabet [0.1.0 20260923 tonypioneer]
++ Read the Pod's encryption keys once at the start rather than from every
+  tile at once [0.1.0 20260923 tonypioneer]

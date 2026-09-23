@@ -24,6 +24,7 @@
 library;
 
 import 'package:photopod/constants/media.dart';
+import 'package:photopod/utils/resource_name.dart';
 
 /// The longest name PhotoPod will accept.
 ///
@@ -32,12 +33,6 @@ import 'package:photopod/constants/media.dart';
 /// within the limits of every common file system.
 
 const int maxNameLength = 128;
-
-// Characters that either carry meaning inside a URL or are rejected by common
-// file systems. Backslash and the Windows reserved set are included because a
-// photo taken out of the Pod has to land somewhere.
-
-final RegExp _invalidChars = RegExp(r'[\\/:*?"<>|#%\x00-\x1f]');
 
 /// Check [name] as a new name for a file or folder, returning the reason it
 /// cannot be used, or null when it is fine.
@@ -66,14 +61,19 @@ String? validateName(
     return 'The name cannot begin or end with a space.';
   }
 
-  final invalid = _invalidChars.firstMatch(name);
+  // A name that would have to be percent-escaped inside a URL cannot be used,
+  // because the encryption key for the resource would then be filed under a
+  // different URL from the one it is looked up by. See [safeResourceName].
+
+  final invalid = firstUnsafeCharacter(name);
   if (invalid != null) {
-    final shown = invalid.group(0)!;
-    final display = shown.codeUnitAt(0) < 0x20
+    final display = invalid == ' '
+        ? 'a space'
+        : invalid.codeUnitAt(0) < 0x20
         ? 'a control character'
-        : '"$shown"';
-    return 'The name cannot contain $display. '
-        r'Avoid \ / : * ? " < > | # and %.';
+        : '"$invalid"';
+    return 'The name cannot contain $display. Please use letters, digits, '
+        "and any of - _ . ! ~ * ' ( ) only.";
   }
 
   if (trimmed == '.' || trimmed == '..') {
