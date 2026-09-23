@@ -8,15 +8,13 @@ You can run the app in your
 install locally the latest version from the [Solid Community
 AU](https://solidcommunity.au) or directly: for **Android** as
 [aab](https://solidcommunity.au/installers/photopod.aab) or
-[apk](https://solidcommunity.au/installers/photopod.apk); for
-**GNU/Linux** as
+[apk](https://solidcommunity.au/installers/photopod.apk); for **GNU/Linux** as
 [deb](https://solidcommunity.au/installers/photopod_amd64.deb) or
 [snap](https://solidcommunity.au/installers/photopod_amd64.snap) or
-[zip](https://solidcommunity.au/installers/photopod-linux.zip); for
-**macOS** as
+[zip](https://solidcommunity.au/installers/photopod-linux.zip); for **macOS** as
 [dmg](https://solidcommunity.au/installers/photopod-macos.dmg) or
-[zip](https://solidcommunity.au/installers/photopod-macos.zip); for
-**Windows** as
+[zip](https://solidcommunity.au/installers/photopod-macos.zip); for **Windows**
+as
 [exe](https://solidcommunity.au/installers/photopod-windows-inno.exe)
 or [zip](https://solidcommunity.au/installers/photopod-windows.zip).
 
@@ -37,7 +35,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 + Initial photo and video album app [0.1.0 20260922 tonypioneer]
 + Maps section places geotagged photos on a map [0.1.0 20260923 tonypioneer]
 + Get Info describes the selected photo or video [0.1.0 20260923 tonypioneer]
-+ Favourites: put a heart on anything, kept in your Pod [0.1.0 20260923 
++ Favourites: put a heart on anything, kept in your Pod [0.1.0 20260923
   tonypioneer]
 + Videos section gathers every video in the album [0.1.0 20260923 tonypioneer]
 + Library shows photos and videos together as tiles [0.1.0 20260923 tonypioneer]
