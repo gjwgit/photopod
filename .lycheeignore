@@ -97,6 +97,11 @@ https://github.com/anusii/
 https://anusii.github.io/
 https://dev.empwr.au/mypod/
 https://server/alice/
+https://solid.dev.empwr.au/alice/profile/card#me
+https://solid.dev.empwr.au/Analyser
+https://www.heart.org/
+https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings
+https://solid.dev.empwr.au/bob/profile/card#me
 
 # 20260605 gjw Failing solid servers
 
@@ -140,3 +145,13 @@ https://photopod.solidcommunity.au/
 https://gjwgit.github.io/photopod/client-profile.jsonld
 https://github.com/gjwgit/photopod/.*
 https://solidcommunity.au/installers/photopod.*
+# 20260924 radiopod
+
+http://x
+https://live-radio01.mediahubaustralia.com/2FMW/mp3/
+http://live-radio01.mediahubaustralia.com/PBW/mp3/
+https://mediaserviceslive.akamaized.net/hls/live/newsradio.m3u8
+
+# 20260924 Locations that do not accept connection from githb
+
+https://snapcraft.io/
