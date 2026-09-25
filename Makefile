@@ -2,7 +2,7 @@
 #
 # Generic Makefile
 #
-# Time-stamp: <Monday 2026-08-03 05:30:27 +1000 Graham Williams>
+# Time-stamp: <Sunday 2026-09-20 13:13:38 +1000 Graham Williams>
 #
 # Copyright (c) Graham.Williams@togaware.com
 #
@@ -40,6 +40,14 @@ else
   REPO=solidcommunity.au
   RLOC=/var/www/html/web/installers/
   DWLD=https://$(REPO)/installers/
+endif
+
+# Set user for ssh to server
+
+ifeq ($(USER),u9904893)
+  IUSER=jmoore
+else
+  IUSER=$(USER)
 endif
 
 ########################################################################
