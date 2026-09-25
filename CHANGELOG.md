@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 0.1 Initial App
 
++ Fix the GNU/Linux installer builds, which failed to package [0.1.8 20260925 gjw]
 + Initial photo and video album app [0.1.7 20260922 tonypioneer]
 + Maps section places geotagged photos on a map [0.1.6 20260923 tonypioneer]
 + Get Info describes the selected photo or video [0.1.5 20260923 tonypioneer]
