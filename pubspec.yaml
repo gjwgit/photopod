@@ -1,7 +1,7 @@
 name: photopod
 description: "Photo Pod - Photo Management with Secure and Private Storage"
 publish_to: 'none'
-version: 0.0.1+1
+version: 0.1.0+1
 
 environment:
   sdk: ^3.11.3
@@ -18,43 +18,56 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Graham's own text field with Emacs-style keybindings, used for the photo
-  # caption editor in the photo details dialog.
-  emacs_text_field: ^0.1.3
-
-  # Pick photos to upload, and choose a save location when exporting a photo
-  # or a whole album back out of the Pod.
+  # Pick photos and videos to add to the Pod, and choose a local save
+  # location when downloading a file back out of the Pod.
   file_picker: ^12.3.0
+
+  # OpenStreetMap-backed map for the Maps section, which places each photo by
+  # the GPS coordinates its camera wrote into the file. flutter_map is pure
+  # Flutter and needs no API key or platform-specific map SDK, so the same
+  # code works on every platform PhotoPod builds for.
+  flutter_map: ^8.3.1
 
   # Small fixed-size spacing widget, used throughout the layout in place of
   # bare SizedBoxes.
   gap: ^3.0.1
 
-  # JPEG encoding of the downscaled thumbnails generated at upload time. The
-  # decode/downscale itself goes through dart:ui (the platform codec), so this
-  # only ever encodes a small image.
+  # Authenticated REST calls to the Solid server. The DPoP tokens themselves
+  # come from solidpod; we issue the GET/PUT/DELETE requests ourselves so
+  # photos and videos are stored as ordinary binary resources.
+  http: ^1.2.0
+
+  # TIFF decoding (Flutter has no built-in TIFF codec) and downscaling of
+  # photos into the small thumbnails shown in the grid.
   image: ^4.8.0
+
+  # Video playback for the preview dialog. media_kit is used in preference to
+  # video_player because it covers Linux and Windows as well as Android, iOS,
+  # macOS and the web.
+  media_kit: ^1.1.11
+  media_kit_video: ^1.2.5
+  media_kit_libs_video: ^1.0.5
+
+  # The latitude/longitude pair flutter_map speaks in.
+  latlong2: ^0.9.1
 
   # Graham's own drop-in Tooltip replacement with Markdown rendering and a
   # popup delay, used for every tooltip in the app.
   markdown_tooltip: ^0.0.10
 
-  # State management: AppProvider is a ChangeNotifier read/watched via
+  # State management: the view preferences notifier is read/watched via
   # provider throughout the screens.
   provider: ^6.1.5
 
   # Device-local display preferences (ViewPrefs), never synced to the Pod.
   shared_preferences: ^2.3.0
 
-  # Solid Pod storage and encryption: read/write the encrypted photo files
-  # and the photo index on the user's Pod.
-  solidpod: ^1.0.22
+  # Solid Pod storage and sharing: read/write the photo and video files on
+  # the user's Pod and grant access permissions to other WebIDs.
+  solidpod: ^1.0.24
 
-  # Solid app scaffold, login flow, and shared settings/about UI.
-  solidui: ^1.0.41
-
-  # Generate stable unique identifiers for each photo.
-  uuid: ^4.5.3
+  # Solid app scaffold, login flow, sharing UI, and shared settings/about UI.
+  solidui: ^1.1.0
 
   # Restore the last window size/position on Linux/macOS/Windows desktop.
   window_manager: ^0.5.1

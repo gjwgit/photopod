@@ -5,10 +5,13 @@
 list(APPEND FLUTTER_PLUGIN_LIST
   fast_rsa
   flutter_secure_storage_linux
+  media_kit_libs_linux
+  media_kit_video
   oidc_linux
   printing
   screen_retriever_linux
   url_launcher_linux
+  volume_controller
   window_manager
   window_to_front
 )

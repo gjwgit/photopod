@@ -137,6 +137,14 @@ https://rdrr.io/rforge/tm/man/stopwords.html
 
 https://query1.finance.yahoo.com/
 
+# 20260922 tonypioneer PhotoPod is not yet published, so its own app URL,
+# client profile and installers are all expected to 404 until the first
+# release goes out.
+
+https://photopod.solidcommunity.au/
+https://gjwgit.github.io/photopod/client-profile.jsonld
+https://github.com/gjwgit/photopod/.*
+https://solidcommunity.au/installers/photopod.*
 # 20260924 radiopod
 
 http://x
