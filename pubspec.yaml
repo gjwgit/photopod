@@ -1,7 +1,7 @@
 name: photopod
 description: "Photo Pod - Photo Management with Secure and Private Storage"
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.7+1
 
 environment:
   sdk: ^3.11.3
@@ -67,7 +67,7 @@ dependencies:
   solidpod: ^1.0.24
 
   # Solid app scaffold, login flow, sharing UI, and shared settings/about UI.
-  solidui: ^1.1.0
+  solidui: ^1.1.3
 
   # Restore the last window size/position on Linux/macOS/Windows desktop.
   window_manager: ^0.5.1

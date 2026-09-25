@@ -32,14 +32,13 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 0.1 Initial App
 
-+ Initial photo and video album app [0.1.0 20260922 tonypioneer]
-+ Maps section places geotagged photos on a map [0.1.0 20260923 tonypioneer]
-+ Get Info describes the selected photo or video [0.1.0 20260923 tonypioneer]
-+ Favourites: put a heart on anything, kept in your Pod [0.1.0 20260923
-  tonypioneer]
-+ Videos section gathers every video in the album [0.1.0 20260923 tonypioneer]
-+ Library shows photos and videos together as tiles [0.1.0 20260923 tonypioneer]
++ Initial photo and video album app [0.1.7 20260922 tonypioneer]
++ Maps section places geotagged photos on a map [0.1.6 20260923 tonypioneer]
++ Get Info describes the selected photo or video [0.1.5 20260923 tonypioneer]
++ Favourites: heart on anything, kept in your Pod [0.1.4 20260923 tonypioneer]
++ Videos section gathers every video in the album [0.1.3 20260923 tonypioneer]
++ Library shows photos and videos as tiles [0.1.2 20260923 tonypioneer]
 + Fix files losing their encryption key when the name held a space or a
-  character outside the Latin alphabet [0.1.0 20260923 tonypioneer]
+  character outside the Latin alphabet [0.1.1 20260923 tonypioneer]
 + Read the Pod's encryption keys once at the start rather than from every
   tile at once [0.1.0 20260923 tonypioneer]
