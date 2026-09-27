@@ -40,7 +40,7 @@ const String appUrl = 'https://photopod.solidcommunity.au/';
 
 /// The GitHub repository for the application.
 
-const String appRepo = 'https://github.com/anusii/photopod';
+const String appRepo = 'https://github.com/gjwgit/photopod';
 
 /// Application-wide Invite Others configuration shared by the AppBar share
 /// button and the App Info dialog so that users can invite others to set up
