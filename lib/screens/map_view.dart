@@ -296,7 +296,7 @@ class _MapViewState extends State<MapView> {
                   'location services switched on will appear here.'
             : 'None of the photos currently in your album carry GPS coordinates. A '
                   'camera only writes them when location services are '
-                  'switched on, and some applications (WhatsApp and Signal for example) '
+                  'switched on, and some applications (WhatsApp and Signal, for example) '
                   'strip them out when a '
                   'photo is exported or shared.',
       );
