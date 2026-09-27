@@ -1,8 +1,10 @@
-/// TITLE.
+/// DESCRIBE THE PURPOSE OF THIS SOURCE FILE
 ///
-/// Copyright (C) 2026, Togaware Pty Ltd.
+// Time-stamp: <Monday 2026-09-21 17:03:18 +1000 Graham Williams>
 ///
-/// Licensed under the GNU General Public License, Version 3 (the "License").
+/// Copyright (C) 2026, Togaware Pty Ltd
+///
+/// Licensed under the GNU General Public License, Version 3 (the "License");
 ///
 /// License: https://opensource.org/license/gpl-3-0
 //
