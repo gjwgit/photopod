@@ -292,11 +292,12 @@ class _MapViewState extends State<MapView> {
         icon: Icons.location_off_outlined,
         title: 'Nothing to map yet',
         message: index.photos.isEmpty
-            ? 'Add some photos to your album and any that were taken with '
+            ? 'Add photos to your album and any that were taken with '
                   'location services switched on will appear here.'
-            : 'None of the photos in your album carry GPS coordinates. A '
+            : 'None of the photos currently in your album carry GPS coordinates. A '
                   'camera only writes them when location services are '
-                  'switched on, and some applications strip them out when a '
+                  'switched on, and some applications (WhatsApp and Signal for example) '
+                  'strip them out when a '
                   'photo is exported or shared.',
       );
     }
