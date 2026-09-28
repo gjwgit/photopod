@@ -30,16 +30,17 @@ extension MediaBrowserActions on MediaBrowserState {
 
   MediaActions _actions(BuildContext context) => MediaActions(
     onAddFiles: () => _addFiles(context),
-    onNewFolder: () => _newFolder(context),
     onDelete: () => _delete(context),
-    onCopy: () => _transfer(context, move: false),
-    onMove: () => _transfer(context, move: true),
+    onDuplicate: () => _duplicate(context),
     onRename: () => _rename(context),
     onShare: () => showShareDialog(context, _selectedItems),
     onView: () => showViewOptionsDialog(context),
     onPreview: () => _previewFirst(context),
     onGetInfo: () => _getInfo(context),
     onToggleFavourite: () => _toggleFavourite(context, _selectedFiles),
+    onAddToAlbum: (album) => _addToAlbum(context, album, _selectedFiles),
+    onCreateAlbum: () => _createAlbum(context, _selectedFiles),
+    onRemoveFromAlbum: () => _removeFromAlbum(context),
     onRefresh: () => reload(force: true),
     onSort: (option) {
       context.read<ViewPrefs>().setSortOption(option);
@@ -238,22 +239,6 @@ extension MediaBrowserActions on MediaBrowserState {
     return false;
   }
 
-  /// Create a folder inside the folder being shown.
-
-  Future<void> _newFolder(BuildContext context) async {
-    if (!await _folderIsWritable(context)) return;
-    if (!context.mounted) return;
-
-    final name = await showFolderNameDialog(context);
-    if (name == null || !context.mounted) return;
-
-    await _guard(context, 'Could not create the folder', () async {
-      await PodMediaOps.createFolder(_path, name);
-    });
-    if (context.mounted) context.read<MediaIndex>().invalidate();
-    await reload();
-  }
-
   /// Remove the selected items, after checking that is really wanted.
   ///
   /// The flat sections show items from every folder at once, so the selection
@@ -284,6 +269,7 @@ extension MediaBrowserActions on MediaBrowserState {
     if (!confirmed || !context.mounted) return;
 
     final favourites = context.read<Favourites>();
+    final albums = context.read<Albums>();
     final index = context.read<MediaIndex>();
 
     final failed = await showWorking(
@@ -297,12 +283,14 @@ extension MediaBrowserActions on MediaBrowserState {
     }
 
     // Only what actually went is forgotten, so an item the server refused to
-    // remove keeps its heart.
+    // remove keeps its heart and its place in every album.
 
-    await favourites.forget([
+    final gone = [
       for (final item in items)
         if (!failed.containsKey(item)) item.path,
-    ]);
+    ];
+    await favourites.forget(gone);
+    await albums.forget(gone);
     index.invalidate();
     await reload();
 

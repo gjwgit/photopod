@@ -33,14 +33,14 @@ import 'package:solidpod/solidpod.dart' show KeyManager, isUserLoggedIn;
 import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 
 import 'package:photopod/constants/media.dart';
-import 'package:photopod/dialogs/destination_dialog.dart';
-import 'package:photopod/dialogs/folder_name_dialog.dart';
+import 'package:photopod/dialogs/album_name_dialog.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/dialogs/preview_dialog.dart';
 import 'package:photopod/dialogs/rename_dialog.dart';
 import 'package:photopod/dialogs/share_dialog.dart';
 import 'package:photopod/dialogs/view_options_dialog.dart';
+import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
@@ -50,9 +50,9 @@ import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
-import 'package:photopod/utils/destination_path.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/utils/resource_name.dart';
+import 'package:photopod/widgets/album_list.dart';
 import 'package:photopod/widgets/breadcrumb_bar.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
@@ -60,16 +60,18 @@ import 'package:photopod/widgets/media_toolbar.dart';
 import 'package:photopod/widgets/pagination_bar.dart';
 
 part 'media_browser_actions.dart';
+part 'media_browser_albums.dart';
 part 'media_browser_body.dart';
 part 'media_browser_transfers.dart';
 
-/// The Library, Favourites or Videos section of the app.
+/// The Library, Favourites, Albums or Videos section of the app.
 ///
-/// One widget serves all three, because the only thing that differs is where
-/// the items come from. The Library walks the folders in the Pod and shows
-/// one of them at a time; Favourites and Videos are filters over the whole
-/// album at once, and so read from the shared [MediaIndex] instead. Selection,
-/// the tiles and every toolbar action behave identically in each.
+/// One widget serves all four, because the only thing that differs is where
+/// the items come from and how they are laid out. The Library walks the
+/// folders in the Pod and shows one of them at a time; Favourites, Albums and
+/// Videos are views over the whole album at once, and so read from the shared
+/// [MediaIndex] instead. Selection and every toolbar action behave
+/// identically in each.
 
 class MediaBrowser extends StatefulWidget {
   const MediaBrowser({super.key, required this.section});
@@ -100,6 +102,13 @@ class MediaBrowserState extends State<MediaBrowser> {
   /// The URLs of the selected items.
 
   final Set<String> _selected = <String>{};
+
+  /// In the Albums section, the album the selection was made in. A photo can
+  /// sit in several albums at once, so the selection is kept to one album at
+  /// a time, which is what lets Remove from album know which album to take
+  /// it out of.
+
+  String? _selectedAlbum;
 
   /// Where a shift-tap range starts from.
 
@@ -179,6 +188,16 @@ class MediaBrowserState extends State<MediaBrowser> {
   Future<void> reload({bool force = false}) async {
     if (!widget.section.browsesFolders) {
       final index = context.read<MediaIndex>();
+
+      // The albums are read once at login. Refresh reads them again, in case
+      // another device has changed them since.
+
+      if (force && widget.section == LibrarySection.albums) {
+        final favourites = context.read<Favourites>();
+        await context.read<Albums>().load();
+        await favourites.load();
+      }
+      if (!mounted) return;
       await index.refresh(force: force);
       if (!mounted) return;
       await _ensureKeyForEncrypted(index.items);
@@ -279,6 +298,18 @@ class MediaBrowserState extends State<MediaBrowser> {
             .read<MediaIndex>()
             .items
             .where(favourites.contains)
+            .toList();
+      case LibrarySection.albums:
+        final favourites = context.read<Favourites>();
+        final albums = context.read<Albums>();
+        final paths = {
+          ...favourites.paths,
+          for (final name in albums.names) ...albums.pathsOf(name),
+        };
+        return context
+            .read<MediaIndex>()
+            .items
+            .where((item) => paths.contains(item.path))
             .toList();
       case LibrarySection.videos:
         return context.read<MediaIndex>().videos;

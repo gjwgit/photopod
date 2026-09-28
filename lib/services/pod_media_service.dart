@@ -30,6 +30,7 @@ import 'package:http/http.dart' as http;
 import 'package:solidpod/solidpod.dart';
 
 import 'package:photopod/constants/media.dart';
+import 'package:photopod/models/albums.dart' show albumsFolderName;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/container_listing.dart';
 import 'package:photopod/utils/resource_name.dart';
@@ -91,6 +92,12 @@ class PodMediaService {
     final body = await _get(url, 'listing the folder');
     final entries = parseContainerListing(body);
 
+    // The album files are PhotoPod's own bookkeeping, filed in a folder of
+    // their own at the top of the album, and never shown as one of the
+    // user's folders.
+
+    final atRoot = podPath == await rootPath();
+
     final items = <MediaItem>[];
     for (final entry in entries) {
       final isFolder = entry.isContainer || entry.rawName.endsWith('/');
@@ -98,6 +105,7 @@ class PodMediaService {
           ? entry.rawName.substring(0, entry.rawName.length - 1)
           : entry.rawName;
       if (raw.isEmpty || raw.startsWith('.')) continue;
+      if (atRoot && isFolder && raw == albumsFolderName) continue;
 
       // The server name carries the encryption suffix; the user never sees
       // it, and the extension that decides which section a file belongs to is
