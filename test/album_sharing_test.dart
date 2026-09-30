@@ -24,7 +24,6 @@
 library;
 
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:solidpod/solidpod.dart' show RecipientType;
 
 import 'package:photopod/services/album_sharing.dart';

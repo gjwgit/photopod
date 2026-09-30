@@ -31,9 +31,9 @@ import 'package:provider/provider.dart';
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/favourites.dart';
-import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
+import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
