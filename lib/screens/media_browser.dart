@@ -26,6 +26,7 @@ library;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
@@ -111,6 +112,10 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   bool _loading = true;
   String? _error;
+
+  /// Whether files are being dragged over the Library right now.
+
+  bool _dragging = false;
 
   @override
   void initState() {
