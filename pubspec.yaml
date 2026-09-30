@@ -18,6 +18,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Accept photos and videos dragged from the desktop onto the Library, as
+  # an alternative to picking them with the Add button.
+  desktop_drop: ^0.8.4
+
   # Pick photos and videos to add to the Pod, and choose a local save
   # location when downloading a file back out of the Pod.
   file_picker: ^12.3.0
@@ -71,7 +75,6 @@ dependencies:
 
   # Restore the last window size/position on Linux/macOS/Windows desktop.
   window_manager: ^0.5.1
-
 dev_dependencies:
   flutter_test:
     sdk: flutter

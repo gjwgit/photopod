@@ -51,7 +51,12 @@ extension MediaBrowserBody on MediaBrowserState {
           child: _buildHeader(context),
         ),
         const Divider(height: 1),
-        Expanded(child: _buildContent(context, prefs, visible, sorted)),
+        Expanded(
+          child: _buildDropTarget(
+            context,
+            _buildContent(context, prefs, visible, sorted),
+          ),
+        ),
         const Divider(height: 1),
         PaginationBar(
           page: page,
@@ -62,6 +67,65 @@ extension MediaBrowserBody on MediaBrowserState {
           onPage: (next) => updateState(() => _page = next),
         ),
       ],
+    );
+  }
+
+  // Only the Library has a folder to put things in, so it alone takes files
+  // dragged from the desktop, and only once it knows which folder that is.
+  // While a drag hovers the content is outlined and says where the files
+  // will go, so the drop is not a leap of faith.
+
+  Widget _buildDropTarget(BuildContext context, Widget child) {
+    final enabled =
+        widget.section == LibrarySection.library && _root.isNotEmpty;
+    final scheme = Theme.of(context).colorScheme;
+    final folder = _segmentLabels.isEmpty ? 'your album' : _segmentLabels.last;
+
+    return DropTarget(
+      enable: enabled,
+      onDragEntered: (_) => updateState(() => _dragging = true),
+      onDragExited: (_) => updateState(() => _dragging = false),
+      onDragDone: (details) {
+        updateState(() => _dragging = false);
+        _dropFiles(context, details.files);
+      },
+      child: Stack(
+        children: [
+          Positioned.fill(child: child),
+          if (enabled && _dragging)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Container(
+                  margin: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: scheme.primaryContainer.withValues(alpha: 0.85),
+                    border: Border.all(color: scheme.primary, width: 2),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.file_upload_outlined,
+                          size: 56,
+                          color: scheme.onPrimaryContainer,
+                        ),
+                        const Gap(12),
+                        Text(
+                          'Drop photos and videos to add them to $folder',
+                          textAlign: TextAlign.center,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(color: scheme.onPrimaryContainer),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -228,8 +292,8 @@ extension MediaBrowserBody on MediaBrowserState {
 
   String _emptyMessage() => switch (widget.section) {
     LibrarySection.library =>
-      'This folder holds no photos, no videos and no subfolders. Use Add to '
-          'put some in.',
+      'This folder holds no photos, no videos and no subfolders. Use Add, or '
+          'drag photos and videos here, to put some in.',
     LibrarySection.favourites =>
       'Nothing carries a heart yet. Select a photo or a video anywhere in '
           'your album and tap the heart to bring it here.',
