@@ -28,6 +28,12 @@ part of 'media_browser.dart';
 ///
 /// Favourites is treated throughout as one more album, the only one that
 /// cannot be renamed or deleted.
+///
+/// Sharing an album shares the photos and videos in it, and every change to
+/// what a shared album holds, or to who it is shared with, goes through
+/// [_syncSharing] so that the photos keep up. Albums other people have shared
+/// with the user are listed after the user's own, and are theirs to change,
+/// not the user's.
 
 extension MediaBrowserAlbums on MediaBrowserState {
   /// Every album as the Albums section lists it: Favourites first, then the
@@ -38,6 +44,8 @@ extension MediaBrowserAlbums on MediaBrowserState {
     final option = context.read<ViewPrefs>().sortOption;
     final favourites = context.read<Favourites>();
     final albums = context.read<Albums>();
+    final sharing = context.read<AlbumSharing>();
+    final shared = context.read<SharedWithMe>();
     final all = context.read<MediaIndex>().items;
 
     List<MediaItem> resolve(Set<String> paths) {
@@ -51,13 +59,25 @@ extension MediaBrowserAlbums on MediaBrowserState {
         name: favouritesAlbumName,
         items: resolve(favourites.paths),
         isSystem: true,
+        isSharedOut: sharing.isShared(favouritesAlbumName),
       ),
       for (final name in albums.names)
-        AlbumEntry(name: name, items: resolve(albums.pathsOf(name))),
+        AlbumEntry(
+          name: name,
+          items: resolve(albums.pathsOf(name)),
+          isSharedOut: sharing.isShared(name),
+        ),
+      for (final album in shared.albums)
+        AlbumEntry(
+          id: album.url,
+          name: album.name,
+          items: resolve(album.itemUrls),
+          sharedBy: album.ownerWebId,
+        ),
     ];
   }
 
-  /// Handle a tap on [item] in the album called [album].
+  /// Handle a tap on [item] in the album whose [AlbumEntry.id] is [album].
   ///
   /// The selection belongs to one album at a time, so a tap in a different
   /// album starts a new selection there rather than adding to the old one.
@@ -90,14 +110,24 @@ extension MediaBrowserAlbums on MediaBrowserState {
 
       final missing = items.where((item) => !favourites.contains(item));
       if (missing.isEmpty) return;
-      if (await favourites.toggleAll(missing) || !context.mounted) return;
-      await _albumSaveFailed(context, favourites.error);
+      final saved = await favourites.toggleAll(missing);
+      if (!context.mounted) return;
+      if (!saved) {
+        await _albumSaveFailed(context, favourites.error);
+        return;
+      }
+      await _syncSharing(context);
       return;
     }
 
     final albums = context.read<Albums>();
-    if (await albums.add(album, items) || !context.mounted) return;
-    await _albumSaveFailed(context, albums.error);
+    final saved = await albums.add(album, items);
+    if (!context.mounted) return;
+    if (!saved) {
+      await _albumSaveFailed(context, albums.error);
+      return;
+    }
+    await _syncSharing(context);
   }
 
   /// Ask for a name, make the album, and put [items] into it.
@@ -124,7 +154,7 @@ extension MediaBrowserAlbums on MediaBrowserState {
   Future<void> _removeFromAlbum(BuildContext context) async {
     final album = _selectedAlbum;
     final items = _selectedFiles;
-    if (album == null || items.isEmpty) return;
+    if (album == null || !_inOwnAlbum || items.isEmpty) return;
 
     final bool saved;
     final String? error;
@@ -141,10 +171,107 @@ extension MediaBrowserAlbums on MediaBrowserState {
     if (!context.mounted) return;
     if (saved) {
       updateState(_selected.clear);
+      await _syncSharing(context);
       return;
     }
     await _albumSaveFailed(context, error);
   }
+
+  /// Share the album called [album], which holds [items], with other Solid
+  /// users, through the same dialogue as sharing photos, and then bring the
+  /// photos and videos in it into line with whatever the dialogue changed.
+
+  Future<void> _shareAlbum(
+    BuildContext context,
+    String album,
+    List<MediaItem> items,
+  ) async {
+    final String fileUrl;
+    try {
+      fileUrl = await _albumFileUrl(album);
+    } on Object catch (e) {
+      if (context.mounted) {
+        await showErrorDialog(
+          context,
+          'Cannot share',
+          'The album could not be found in your Pod.\n\n$e',
+        );
+      }
+      return;
+    }
+    if (!context.mounted) return;
+
+    // solidpod will not grant access to anything without the security key,
+    // so it is asked for now rather than failing inside the dialogue.
+
+    if (!await _ensureSecurityKey(context)) return;
+    if (!context.mounted) return;
+
+    // Only the user's own photos can be shared on, so anything in the album
+    // that was itself shared with the user is not counted.
+
+    await showAlbumShareDialog(
+      context,
+      albumName: album,
+      albumFileUrl: fileUrl,
+      itemCount: items.where((item) => !item.isShared).length,
+    );
+    if (!context.mounted) return;
+
+    await context.read<AlbumSharing>().refresh(album, fileUrl);
+    if (!context.mounted) return;
+    await _syncSharing(context);
+  }
+
+  /// Share and unshare photos and videos until each is shared with exactly
+  /// the people its albums are shared with.
+  ///
+  /// Nothing is asked of the Pod, and no security key is needed, when
+  /// nothing has to change, which is the case for everyone who has never
+  /// shared an album.
+
+  Future<void> _syncSharing(BuildContext context) async {
+    final sharing = context.read<AlbumSharing>();
+    final favourites = context.read<Favourites>();
+    final albums = context.read<Albums>();
+
+    final List<SharingChange> changes;
+    try {
+      changes = await sharing.plan({
+        favouritesAlbumName: favourites.paths,
+        for (final name in albums.names) name: albums.pathsOf(name),
+      });
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not plan album sharing: $e');
+      return;
+    }
+    if (changes.isEmpty || !context.mounted) return;
+
+    // Sharing an encrypted photo shares its key, so the key has to be in
+    // hand first.
+
+    if (!await _ensureSecurityKey(context)) return;
+    if (!context.mounted) return;
+
+    final failed = await showWorking(
+      context,
+      'Updating sharing...',
+      () => sharing.apply(changes),
+    );
+    if (failed.isEmpty || !context.mounted) return;
+
+    await showErrorDialog(
+      context,
+      'Some photos could not be shared or unshared',
+      'The albums are as you left them, and PhotoPod will try these again '
+          'the next time a shared album changes or you refresh the '
+          'albums.\n\n${failed.join('\n\n')}',
+    );
+  }
+
+  Future<String> _albumFileUrl(String album) => album == favouritesAlbumName
+      ? Favourites.fileUrl()
+      : Albums.fileUrlOf(album);
 
   /// Give the album called [album] a new name.
 
@@ -157,17 +284,45 @@ extension MediaBrowserAlbums on MediaBrowserState {
     );
     if (name == null || !context.mounted) return;
 
-    final renamed = await showWorking(
-      context,
-      'Renaming...',
-      () => albums.rename(album, name),
-    );
+    // The renamed album is a new file, with no access list of its own. So a
+    // shared album is unshared under its old name, which tells its
+    // recipients it has gone, and shared again with the same people under
+    // the new one. Its photos stay shared throughout.
+
+    final sharing = context.read<AlbumSharing>();
+    await sharing.load();
+    final recipients = sharing.recipientsOf(album);
+    if (!context.mounted) return;
+    if (recipients.isNotEmpty && !await _ensureSecurityKey(context)) return;
+    if (!context.mounted) return;
+
+    final failed = <String>[];
+    final renamed = await showWorking(context, 'Renaming...', () async {
+      if (recipients.isNotEmpty) {
+        failed.addAll(
+          await sharing.unshareAlbum(album, await Albums.fileUrlOf(album)),
+        );
+      }
+      final ok = await albums.rename(album, name);
+      if (recipients.isNotEmpty) {
+        final target = ok ? name : album;
+        failed.addAll(
+          await sharing.shareAlbumFile(
+            target,
+            await Albums.fileUrlOf(target),
+            recipients,
+          ),
+        );
+      }
+      return ok;
+    });
     if (!context.mounted) return;
     if (!renamed) {
       await _albumSaveFailed(context, albums.error);
       return;
     }
     if (_selectedAlbum == album) updateState(() => _selectedAlbum = name);
+    if (failed.isNotEmpty) await _sharingFailed(context, failed);
   }
 
   /// Delete the album called [album], after checking that is really wanted.
@@ -183,11 +338,19 @@ extension MediaBrowserAlbums on MediaBrowserState {
     if (!confirmed || !context.mounted) return;
 
     final albums = context.read<Albums>();
-    final deleted = await showWorking(
-      context,
-      'Deleting...',
-      () => albums.delete(album),
-    );
+    final sharing = context.read<AlbumSharing>();
+    final failed = <String>[];
+    final deleted = await showWorking(context, 'Deleting...', () async {
+      // Unshared first, while the file is still there to say so to its
+      // recipients.
+
+      if (sharing.isShared(album)) {
+        failed.addAll(
+          await sharing.unshareAlbum(album, await Albums.fileUrlOf(album)),
+        );
+      }
+      return albums.delete(album);
+    });
     if (!context.mounted) return;
     if (!deleted) {
       await _albumSaveFailed(context, albums.error);
@@ -199,7 +362,19 @@ extension MediaBrowserAlbums on MediaBrowserState {
         _selectedAlbum = null;
       });
     }
+    if (failed.isNotEmpty) await _sharingFailed(context, failed);
+
+    // The photos that were shared only through this album are unshared now.
+
+    if (context.mounted) await _syncSharing(context);
   }
+
+  Future<void> _sharingFailed(BuildContext context, List<String> failed) =>
+      showErrorDialog(
+        context,
+        'Sharing could not be fully updated',
+        failed.join('\n\n'),
+      );
 
   Future<void> _albumSaveFailed(BuildContext context, String? error) =>
       showErrorDialog(

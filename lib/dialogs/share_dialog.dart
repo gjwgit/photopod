@@ -1,4 +1,4 @@
-/// Grant other WebIDs access to photos and videos.
+/// Grant other WebIDs access to photos, videos and albums.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -60,6 +60,72 @@ Future<void> showShareDialog(
     return;
   }
 
+  final webId = await _ownerWebId(context);
+  if (webId == null || !context.mounted) return;
+
+  final isFile = folders == 0;
+  final noun = isFile ? 'file' : 'folder';
+
+  await showDialog<void>(
+    context: context,
+    builder: (context) => _ShareDialog(
+      title: items.length == 1
+          ? 'Share $noun "${items.first.name}"'
+          : 'Share ${items.length} ${noun}s',
+      ownerWebId: webId,
+      isFile: isFile,
+      resourceUrls: [for (final item in items) item.url],
+      displayName: items.length == 1 ? items.first.name : null,
+    ),
+  );
+}
+
+/// Share the album called [albumName], holding [itemCount] photos and
+/// videos, with other Solid users.
+///
+/// What the dialogue shares is the album file at [albumFileUrl], so the album
+/// file's access list is the one record of who the album is shared with.
+/// Once the dialogue closes the caller brings the photos and videos in the
+/// album into line with it — see `AlbumSharing` — which is also what keeps
+/// anything added to the album later shared, and what takes a photo back
+/// from a recipient only when no other shared album still holds it.
+
+Future<void> showAlbumShareDialog(
+  BuildContext context, {
+  required String albumName,
+  required String albumFileUrl,
+  required int itemCount,
+}) async {
+  final webId = await _ownerWebId(context);
+  if (webId == null || !context.mounted) return;
+
+  final what = itemCount == 1
+      ? 'the one photo or video in it'
+      : 'all $itemCount photos and videos in it';
+
+  await showDialog<void>(
+    context: context,
+    builder: (context) => _ShareDialog(
+      title: 'Share album "$albumName"',
+      ownerWebId: webId,
+      isFile: true,
+      resourceUrls: [albumFileUrl],
+      displayName: 'the album "$albumName"',
+      titles: {albumFileUrl: 'Album: $albumName'},
+      note:
+          'Sharing "$albumName" also shares ${itemCount == 0 ? 'every photo '
+                    'and video you put into it' : what}, including anything '
+          'added later. Removing someone here takes the photos away from '
+          'them too, except those still in another album shared with them '
+          'or shared with them directly.',
+    ),
+  );
+}
+
+/// The logged-in user's WebID, or null, after telling the user why, when
+/// there is none to share as.
+
+Future<String?> _ownerWebId(BuildContext context) async {
   final String? webId;
   try {
     webId = await getWebId();
@@ -71,47 +137,51 @@ Future<void> showShareDialog(
         'Your WebID could not be read from the Pod.\n\n$e',
       );
     }
-    return;
+    return null;
   }
 
-  if (webId == null) {
-    if (context.mounted) {
-      await showErrorDialog(
-        context,
-        'Cannot share',
-        'You need to be logged in to your Pod before sharing.',
-      );
-    }
-    return;
+  if (webId == null && context.mounted) {
+    await showErrorDialog(
+      context,
+      'Cannot share',
+      'You need to be logged in to your Pod before sharing.',
+    );
   }
-
-  if (!context.mounted) return;
-
-  await showDialog<void>(
-    context: context,
-    builder: (context) =>
-        _ShareDialog(items: items, ownerWebId: webId!, isFile: folders == 0),
-  );
+  return webId;
 }
 
 class _ShareDialog extends StatelessWidget {
   const _ShareDialog({
-    required this.items,
+    required this.title,
     required this.ownerWebId,
     required this.isFile,
+    required this.resourceUrls,
+    this.displayName,
+    this.titles,
+    this.note,
   });
 
-  final List<MediaItem> items;
+  final String title;
   final String ownerWebId;
   final bool isFile;
+  final List<String> resourceUrls;
+
+  /// The name the recipient's notification uses for what was shared.
+
+  final String? displayName;
+
+  /// Friendly names for [resourceUrls], shown in place of the bare URLs.
+
+  final Map<String, String>? titles;
+
+  /// A line of explanation shown above the permission view.
+
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
     final size = MediaQuery.of(context).size;
-    final noun = isFile ? 'file' : 'folder';
-    final title = items.length == 1
-        ? 'Share $noun "${items.first.name}"'
-        : 'Share ${items.length} ${noun}s';
+    final theme = Theme.of(context);
 
     return Dialog(
       insetPadding: const EdgeInsets.all(24),
@@ -128,10 +198,7 @@ class _ShareDialog extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      title,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
+                    child: Text(title, style: theme.textTheme.titleMedium),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
@@ -142,15 +209,32 @@ class _ShareDialog extends StatelessWidget {
               ),
             ),
             const Divider(height: 1),
+            if (note != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 18,
+                      color: theme.colorScheme.primary,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(note!, style: theme.textTheme.bodySmall),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: GrantPermissionUi(
                 showAppBar: false,
                 isFile: isFile,
                 ownerWebId: ownerWebId,
-                resourceNames: [for (final item in items) item.url],
-                resourceDisplayName: items.length == 1
-                    ? items.first.name
-                    : null,
+                resourceNames: resourceUrls,
+                resourceDisplayName: displayName,
+                titleData: titles,
                 inviteConfig: inviteOthersConfig,
               ),
             ),

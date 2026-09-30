@@ -286,21 +286,19 @@ class _MapViewState extends State<MapView> {
       );
     }
 
-    if (_places.isEmpty && !_scanning && !index.isLoading) {
-      return _buildMessage(
-        context,
-        icon: Icons.location_off_outlined,
-        title: 'Nothing to map yet',
-        message: index.photos.isEmpty
-            ? 'Add photos to your album and any that were taken with '
-                  'location services switched on will appear here.'
-            : 'None of the photos currently in your album carry GPS coordinates. A '
-                  'camera only writes them when location services are '
-                  'switched on, and some applications (WhatsApp and Signal, for example) '
-                  'strip them out when a '
-                  'photo is exported or shared.',
-      );
-    }
+    // The map is always shown, even with nothing on it, so that the section
+    // looks like what it is. Why it is empty is said in a notice over the
+    // map rather than in place of it.
+
+    final empty = _places.isEmpty && !_scanning && !index.isLoading;
+    final emptyMessage = index.photos.isEmpty
+        ? 'Nothing to map yet. Add photos to your album and any that were '
+              'taken with location services switched on will appear here.'
+        : 'None of the photos currently in your album carry GPS '
+              'coordinates. A camera only writes them when location services '
+              'are switched on, and some applications (WhatsApp and Signal, '
+              'for example) strip them out when a photo is exported or '
+              'shared.';
 
     return Stack(
       children: [
@@ -338,14 +336,26 @@ class _MapViewState extends State<MapView> {
             ),
           ],
         ),
-        if (index.isTruncated)
-          const Positioned(
+        if (empty || index.isTruncated)
+          Positioned(
             left: 12,
             top: 12,
-            child: _Notice(
-              text:
-                  'Only the first $maxScannedFolders folders were read, so '
-                  'some places may be missing.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (empty)
+                  _Notice(
+                    icon: Icons.location_off_outlined,
+                    text: emptyMessage,
+                  ),
+                if (empty && index.isTruncated) const Gap(8),
+                if (index.isTruncated)
+                  const _Notice(
+                    text:
+                        'Only the first $maxScannedFolders folders were read, '
+                        'so some places may be missing.',
+                  ),
+              ],
             ),
           ),
       ],
@@ -548,26 +558,36 @@ class _PlaceDialog extends StatelessWidget {
 }
 
 class _Notice extends StatelessWidget {
-  const _Notice({required this.text});
+  const _Notice({required this.text, this.icon});
 
   final String text;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final style = Theme.of(
+      context,
+    ).textTheme.bodySmall?.copyWith(color: scheme.onSecondaryContainer);
 
     return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 280),
+      constraints: const BoxConstraints(maxWidth: 320),
       child: Material(
         color: scheme.secondaryContainer,
         borderRadius: BorderRadius.circular(8),
+        elevation: 1,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Text(
-            text,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSecondaryContainer),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (icon != null) ...[
+                Icon(icon, size: 16, color: scheme.onSecondaryContainer),
+                const Gap(8),
+              ],
+              Flexible(child: Text(text, style: style)),
+            ],
           ),
         ),
       ),

@@ -114,7 +114,16 @@ extension MediaBrowserActions on MediaBrowserState {
     if (items.isEmpty) return;
 
     final favourites = context.read<Favourites>();
-    if (await favourites.toggleAll(items) || !context.mounted) return;
+    final saved = await favourites.toggleAll(items);
+    if (!context.mounted) return;
+
+    // Favourites can be shared like any other album, in which case the
+    // photos given or losing a heart are shared or unshared to match.
+
+    if (saved) {
+      await _syncSharing(context);
+      return;
+    }
 
     await showErrorDialog(
       context,
@@ -291,6 +300,11 @@ extension MediaBrowserActions on MediaBrowserState {
     ];
     await favourites.forget(gone);
     await albums.forget(gone);
+
+    // Deleting a file already took away everyone's access to it, so album
+    // sharing only has to stop remembering it.
+
+    if (context.mounted) await context.read<AlbumSharing>().forget(gone);
     index.invalidate();
     await reload();
 

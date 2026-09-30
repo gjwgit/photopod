@@ -28,11 +28,18 @@ import 'package:flutter/material.dart';
 import 'package:markdown_tooltip/markdown_tooltip.dart';
 
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/widgets/media_grid.dart';
 
 /// One album as the list shows it.
 
 class AlbumEntry {
+  /// What identifies the album in the list: its name for the user's own
+  /// albums, and the URL of the album file for one shared with the user,
+  /// which may well have the same name as one of the user's.
+
+  final String id;
+
   /// The album's name, which is also the name of its file.
 
   final String name;
@@ -45,11 +52,28 @@ class AlbumEntry {
 
   final bool isSystem;
 
+  /// The WebID of the person who shared the album with the user, or null for
+  /// one of the user's own albums.
+
+  final String? sharedBy;
+
+  /// Whether the user has shared this album of their own with anyone.
+
+  final bool isSharedOut;
+
   const AlbumEntry({
+    String? id,
     required this.name,
     required this.items,
     this.isSystem = false,
-  });
+    this.sharedBy,
+    this.isSharedOut = false,
+  }) : id = id ?? name;
+
+  /// Whether someone else shared this album with the user, which makes it
+  /// theirs to rename, delete or share, not the user's.
+
+  bool get isFromOthers => sharedBy != null;
 }
 
 /// Every album as a collapsible row, with Favourites first.
@@ -69,6 +93,7 @@ class AlbumList extends StatelessWidget {
     required this.onTap,
     required this.onActivate,
     required this.onToggleFavourite,
+    required this.onShare,
     required this.onRename,
     required this.onDelete,
   });
@@ -81,7 +106,8 @@ class AlbumList extends StatelessWidget {
 
   final double tileExtent;
 
-  /// Whether [item], seen in the album called [album], is selected.
+  /// Whether [item], seen in the album whose [AlbumEntry.id] is [album], is
+  /// selected.
 
   final bool Function(String album, MediaItem item) isSelected;
 
@@ -89,7 +115,8 @@ class AlbumList extends StatelessWidget {
 
   final bool Function(MediaItem item) isFavourite;
 
-  /// Called on a single tap on [item] in the album called [album].
+  /// Called on a single tap on [item] in the album whose [AlbumEntry.id] is
+  /// [album].
 
   final void Function(String album, MediaItem item) onTap;
 
@@ -100,6 +127,11 @@ class AlbumList extends StatelessWidget {
   /// Called when the heart on a tile is tapped.
 
   final void Function(MediaItem item) onToggleFavourite;
+
+  /// Called by the share button in an album's title bar, with the album's
+  /// name. Only the user's own albums have one.
+
+  final void Function(String album) onShare;
 
   /// Called by the edit button in an album's title bar.
 
@@ -117,7 +149,7 @@ class AlbumList extends StatelessWidget {
         _AlbumTile(
           // Keyed by name so that an album stays open, or closed, when one
           // above it is added, renamed or removed.
-          key: ValueKey(album.name),
+          key: ValueKey(album.id),
           album: album,
           list: this,
         ),
@@ -149,20 +181,39 @@ class _AlbumTile extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           Flexible(child: Text(album.name, overflow: TextOverflow.ellipsis)),
+          if (album.isFromOthers || album.isSharedOut) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: album.isFromOthers
+                  ? 'Shared with you by ${webIdLabel(album.sharedBy!)}\n'
+                        '${album.sharedBy}'
+                  : 'You have shared this album',
+              child: Semantics(
+                label: album.isFromOthers
+                    ? 'Shared with you by ${webIdLabel(album.sharedBy!)}'
+                    : 'Shared album',
+                child: Icon(Icons.people, size: 18, color: scheme.primary),
+              ),
+            ),
+          ],
         ],
       ),
       subtitle: Text(
         '$n item${n == 1 ? '' : 's'}'
-        '${album.isSystem ? ' · system album' : ''}',
+        '${album.isSystem && !album.isFromOthers ? ' · system album' : ''}'
+        '${album.isFromOthers ? ' · shared by ${webIdLabel(album.sharedBy!)}' : ''}'
+        '${album.isSharedOut ? ' · shared' : ''}',
       ),
-      trailing: album.isSystem ? null : _buildActions(),
+      trailing: album.isFromOthers ? null : _buildActions(),
       childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       children: [
         if (album.items.isEmpty)
           ListTile(
             dense: true,
             title: Text(
-              album.isSystem
+              album.isFromOthers
+                  ? 'Nothing in this album has been shared with you yet.'
+                  : album.isSystem
                   ? 'Nothing carries a heart yet. Tap the heart on any photo '
                         'or video to bring it here.'
                   : 'This album is empty. Select photos or videos anywhere '
@@ -182,9 +233,9 @@ class _AlbumTile extends StatelessWidget {
                   width: list.tileExtent,
                   child: MediaTile(
                     item: item,
-                    selected: list.isSelected(album.name, item),
+                    selected: list.isSelected(album.id, item),
                     favourite: list.isFavourite(item),
-                    onTap: () => list.onTap(album.name, item),
+                    onTap: () => list.onTap(album.id, item),
                     onActivate: () => list.onActivate(item),
                     onToggleFavourite: () => list.onToggleFavourite(item),
                   ),
@@ -196,6 +247,9 @@ class _AlbumTile extends StatelessWidget {
     );
   }
 
+  // Favourites can be shared like any other album, but it is a system album,
+  // so it has no rename or delete buttons.
+
   Widget _buildActions() => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
@@ -203,23 +257,43 @@ class _AlbumTile extends StatelessWidget {
         message:
             '''
 
+        **Share album**
+
+        Let other Solid users, or a group of them, see "${album.name}" and
+        the photos and videos in it.
+
+        ''',
+        child: Semantics(
+          label: 'Share album',
+          button: true,
+          child: IconButton(
+            icon: const Icon(Icons.share_outlined),
+            onPressed: () => list.onShare(album.name),
+          ),
+        ),
+      ),
+      if (!album.isSystem) ...[
+        MarkdownTooltip(
+          message:
+              '''
+
         **Rename album**
 
         Give "${album.name}" a new name. What is in it stays the same.
 
         ''',
-        child: Semantics(
-          label: 'Rename album',
-          button: true,
-          child: IconButton(
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => list.onRename(album.name),
+          child: Semantics(
+            label: 'Rename album',
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => list.onRename(album.name),
+            ),
           ),
         ),
-      ),
-      MarkdownTooltip(
-        message:
-            '''
+        MarkdownTooltip(
+          message:
+              '''
 
         **Delete album**
 
@@ -227,15 +301,16 @@ class _AlbumTile extends StatelessWidget {
         Pod; only the album goes.
 
         ''',
-        child: Semantics(
-          label: 'Delete album',
-          button: true,
-          child: IconButton(
-            icon: const Icon(Icons.delete_outline),
-            onPressed: () => list.onDelete(album.name),
+          child: Semantics(
+            label: 'Delete album',
+            button: true,
+            child: IconButton(
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => list.onDelete(album.name),
+            ),
           ),
         ),
-      ),
+      ],
     ],
   );
 }

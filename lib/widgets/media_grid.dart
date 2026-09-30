@@ -26,6 +26,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/widgets/media_thumbnail.dart';
 
 /// Lay [items] out as square tiles, photos and videos mixed together.
@@ -105,7 +106,8 @@ class MediaGrid extends StatelessWidget {
 /// every photo application does, so the grid reads as a grid rather than as a
 /// row of differently shaped pictures. Selection is shown by an outline and a
 /// tick, and the heart appears on hover, when the item is already a
-/// favourite, or when the tile is selected.
+/// favourite, or when the tile is selected. Anything shared with the user
+/// carries a two-people mark beside the heart.
 
 class MediaTile extends StatefulWidget {
   const MediaTile({
@@ -201,14 +203,27 @@ class _MediaTileState extends State<MediaTile> {
                   ),
                 ),
 
+              // Something shared with the user always says so, beside the
+              // heart, so that it is never mistaken for one of the user's own
+              // photos.
               if (!item.isFolder &&
-                  (widget.favourite || _hovering || widget.selected))
+                  (item.isShared ||
+                      widget.favourite ||
+                      _hovering ||
+                      widget.selected))
                 Positioned(
                   right: 0,
                   bottom: 0,
-                  child: _HeartButton(
-                    favourite: widget.favourite,
-                    onPressed: widget.onToggleFavourite,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (item.isShared) SharedBadge(owner: item.sharedBy!),
+                      if (widget.favourite || _hovering || widget.selected)
+                        _HeartButton(
+                          favourite: widget.favourite,
+                          onPressed: widget.onToggleFavourite,
+                        ),
+                    ],
                   ),
                 ),
             ],
@@ -275,6 +290,38 @@ class _HeartButton extends StatelessWidget {
         shadows: const [Shadow(blurRadius: 4, color: Colors.black54)],
       ),
       onPressed: onPressed,
+    ),
+  );
+}
+
+/// The mark on anything someone else has shared with the user: two people,
+/// with the owner's name a hover away.
+
+class SharedBadge extends StatelessWidget {
+  const SharedBadge({super.key, required this.owner, this.size = 18});
+
+  /// The WebID of the person who shared it.
+
+  final String owner;
+
+  /// How big the icon is drawn.
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Shared with you by ${webIdLabel(owner)}',
+    child: Tooltip(
+      message: 'Shared with you by ${webIdLabel(owner)}\n$owner',
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          Icons.people,
+          size: size,
+          color: Colors.white,
+          shadows: const [Shadow(blurRadius: 4, color: Colors.black54)],
+        ),
+      ),
     ),
   );
 }

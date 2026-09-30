@@ -83,6 +83,7 @@ extension MediaBrowserTransfers on MediaBrowserState {
     final favourites = context.read<Favourites>();
     final albums = context.read<Albums>();
     final index = context.read<MediaIndex>();
+    final sharing = context.read<AlbumSharing>();
     String? renamed;
 
     await _guard(
@@ -99,8 +100,14 @@ extension MediaBrowserTransfers on MediaBrowserState {
     if (renamed != null) {
       await favourites.retarget({item.path: renamed!});
       await albums.retarget({item.path: renamed!});
+
+      // The renamed item is a new file, which has to be shared again with
+      // everyone its albums are shared with.
+
+      await sharing.forget([item.path]);
     }
     index.invalidate();
     await reload();
+    if (renamed != null && context.mounted) await _syncSharing(context);
   }
 }

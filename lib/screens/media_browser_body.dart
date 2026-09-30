@@ -40,6 +40,8 @@ extension MediaBrowserBody on MediaBrowserState {
     context.watch<Favourites>();
     context.watch<Albums>();
     context.watch<MediaIndex>();
+    context.watch<SharedWithMe>();
+    context.watch<AlbumSharing>();
 
     final sorted = _sorted;
     final pageCount = _pageCount(sorted.length, prefs.itemsPerPage);
@@ -94,7 +96,8 @@ extension MediaBrowserBody on MediaBrowserState {
       sortOption: context.read<ViewPrefs>().sortOption,
       actions: _actions(context),
       albumNames: context.read<Albums>().names,
-      canRemoveFromAlbum: _selectedAlbum != null && files.isNotEmpty,
+      canRemoveFromAlbum: _inOwnAlbum && files.isNotEmpty,
+      hasShared: _selectedItems.any((item) => item.isShared),
     );
 
     return LayoutBuilder(
@@ -133,6 +136,20 @@ extension MediaBrowserBody on MediaBrowserState {
             widget.section.label,
             style: Theme.of(context).textTheme.titleSmall,
           ),
+          if (context.read<SharedWithMe>().error != null) ...[
+            const Gap(8),
+            Tooltip(
+              message:
+                  'What other people have shared with you could not be '
+                  'read, so it may be missing.\n\n'
+                  '${context.read<SharedWithMe>().error}',
+              child: Icon(
+                Icons.warning_amber_outlined,
+                size: 16,
+                color: Theme.of(context).colorScheme.error,
+              ),
+            ),
+          ],
           if (index.isTruncated) ...[
             const Gap(8),
             Tooltip(
@@ -254,10 +271,15 @@ extension MediaBrowserBody on MediaBrowserState {
       onTap: (album, item) => _handleAlbumTap(
         album,
         item,
-        entries.firstWhere((entry) => entry.name == album).items,
+        entries.firstWhere((entry) => entry.id == album).items,
       ),
       onActivate: _handleActivate,
       onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+      onShare: (album) => _shareAlbum(
+        context,
+        album,
+        entries.firstWhere((entry) => entry.id == album).items,
+      ),
       onRename: (album) => _renameAlbum(context, album),
       onDelete: (album) => _deleteAlbum(context, album),
     );

@@ -116,7 +116,8 @@ class MediaActions {
 /// possible. It wraps onto a second line on a narrow window rather than
 /// overflowing. Which buttons appear at all depends on the section: only the
 /// Library browses folders, so only the Library offers to add files to one,
-/// and only the Albums section offers to take files out of an album.
+/// and only the Albums section offers to make a new album on its own or to
+/// take files out of one.
 
 class MediaToolbar extends StatelessWidget {
   const MediaToolbar({
@@ -129,6 +130,7 @@ class MediaToolbar extends StatelessWidget {
     required this.actions,
     this.albumNames = const [],
     this.canRemoveFromAlbum = false,
+    this.hasShared = false,
   });
 
   /// Which section of the app this toolbar sits in.
@@ -167,9 +169,20 @@ class MediaToolbar extends StatelessWidget {
 
   final bool canRemoveFromAlbum;
 
+  /// Whether the selection holds anything someone else shared with the user.
+  /// Those files belong to their owner, so they cannot be renamed, deleted,
+  /// duplicated or shared on from here.
+
+  final bool hasShared;
+
   @override
   Widget build(BuildContext context) {
     final hasSelection = selectionCount > 0;
+    final ownsAll = !hasShared;
+    final notOwned = hasShared
+        ? 'Not available while the selection includes something shared '
+              'with you, which only its owner can change.'
+        : '';
     final hasFiles = fileCount > 0;
     final many = selectionCount > 1;
     final manyFiles = fileCount > 1;
@@ -194,6 +207,25 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
+        // The Albums section has no folder to add files to, so the place the
+        // Library gives to adding photos goes to making a new album instead.
+
+        if (section == LibrarySection.albums)
+          _button(
+            icon: Icons.create_new_folder_outlined,
+            label: 'Create new album',
+            enabled: true,
+            onPressed: actions.onCreateAlbum,
+            tooltip: '''
+
+          **Create new album**
+
+          Make a new album and give it a name. Any photos and videos selected
+          at the time go straight into it; otherwise it starts empty, ready
+          for **Add to album**.
+
+          ''',
+          ),
         _FavouriteButton(
           enabled: hasFiles,
           favourite: allFavourite,
@@ -210,15 +242,17 @@ class MediaToolbar extends StatelessWidget {
         _button(
           icon: Icons.content_copy,
           label: 'Duplicate',
-          enabled: hasFiles,
+          enabled: hasFiles && ownsAll,
           onPressed: actions.onDuplicate,
-          tooltip: '''
+          tooltip:
+              '''
 
           **Duplicate**
 
           Make a copy of each selected photo and video beside the original,
           called `name_copy`, or `name_copy_1`, `name_copy_2` and so on when
           that is taken. A copy starts with no heart and in no album.
+          $notOwned
 
           ''',
         ),
@@ -241,7 +275,7 @@ class MediaToolbar extends StatelessWidget {
         _button(
           icon: Icons.drive_file_rename_outline,
           label: 'Rename',
-          enabled: hasSelection,
+          enabled: hasSelection && ownsAll,
           onPressed: actions.onRename,
           tooltip:
               '''
@@ -251,21 +285,24 @@ class MediaToolbar extends StatelessWidget {
           Give the selected item a new name. It keeps its heart and its place
           in every album.
           ${many ? 'With several selected, the first one is renamed.' : ''}
+          $notOwned
 
           ''',
         ),
         _button(
           icon: Icons.delete_outline,
           label: 'Delete',
-          enabled: hasSelection,
+          enabled: hasSelection && ownsAll,
           onPressed: actions.onDelete,
-          tooltip: '''
+          tooltip:
+              '''
 
           **Delete**
 
           Remove the selected items from your Pod, and from every album they
           are in. Folders are removed with everything inside them, and nothing
           can be undone.
+          $notOwned
 
           ''',
         ),
@@ -288,14 +325,17 @@ class MediaToolbar extends StatelessWidget {
         _button(
           icon: Icons.share_outlined,
           label: 'Share',
-          enabled: hasSelection,
+          enabled: hasSelection && ownsAll,
           onPressed: actions.onShare,
-          tooltip: '''
+          tooltip:
+              '''
 
           **Share**
 
           Give other Solid users access to the selected items, by WebID and
-          with the permissions you choose.
+          with the permissions you choose. To share a whole album, use the
+          share button on the album itself.
+          $notOwned
 
           ''',
         ),

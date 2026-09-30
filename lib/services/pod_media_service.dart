@@ -138,12 +138,15 @@ class PodMediaService {
   /// An encrypted resource is read and decrypted through solidpod, which
   /// needs the security key to be available first, and its content is base64
   /// so that binary survives the Turtle envelope. A plain resource is fetched
-  /// directly.
+  /// directly. A file shared from someone else's Pod is read by its URL, and
+  /// solidpod decrypts it with the key its owner shared along with it.
 
   static Future<Uint8List> readBytes(MediaItem item) async {
     if (!item.isEncrypted) return _readRaw(item.url);
 
-    final content = await readPod(item.path, pathType: PathType.relativeToPod);
+    final content = item.isShared
+        ? await readPod(item.url, pathType: PathType.absoluteUrl)
+        : await readPod(item.path, pathType: PathType.relativeToPod);
 
     try {
       return base64Decode(content.trim());
