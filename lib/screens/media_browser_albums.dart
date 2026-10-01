@@ -55,6 +55,8 @@ extension MediaBrowserAlbums on MediaBrowserState {
       return items;
     }
 
+    final titles = sharedAlbumTitles(shared.albums, albums.names);
+
     return [
       for (final name in albums.names)
         AlbumEntry(
@@ -66,6 +68,7 @@ extension MediaBrowserAlbums on MediaBrowserState {
         AlbumEntry(
           id: album.url,
           name: album.name,
+          title: titles[album.url],
           items: resolve(album.itemUrls),
           sharedBy: album.ownerWebId,
         ),

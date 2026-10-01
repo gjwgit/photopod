@@ -38,6 +38,7 @@ import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
+import 'package:photopod/widgets/media_grid.dart' show mediaTooltipText;
 import 'package:photopod/widgets/media_thumbnail.dart';
 
 part 'map_view_widgets.dart';

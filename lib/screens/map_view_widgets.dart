@@ -120,7 +120,7 @@ class _PlaceDialog extends StatelessWidget {
           children: [
             for (final item in place.items)
               Tooltip(
-                message: item.name,
+                message: mediaTooltipText(item),
                 child: InkWell(
                   onTap: () async {
                     Navigator.of(context).pop();

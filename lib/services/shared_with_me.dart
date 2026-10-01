@@ -71,6 +71,18 @@ class SharedAlbum {
   });
 }
 
+/// The order shared albums are listed in: by name, ignoring case, and then,
+/// for albums of the same name from different people, by who shared them and
+/// where the album lives, so that the order never changes from one reading
+/// of the log to the next.
+
+int compareSharedAlbums(SharedAlbum a, SharedAlbum b) {
+  final byName = a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  if (byName != 0) return byName;
+  final byOwner = sameWebId(a.ownerWebId).compareTo(sameWebId(b.ownerWebId));
+  return byOwner != 0 ? byOwner : a.url.compareTo(b.url);
+}
+
 /// A short, readable name for [webId], for labels such as "Shared by alice".
 ///
 /// A Solid WebID usually names its owner in the first segment of its path, as
@@ -85,6 +97,66 @@ String webIdLabel(String webId) {
     return segments.first;
   }
   return uri.host.isEmpty ? webId : uri.host.split('.').first;
+}
+
+/// A fuller name for [webId] than [webIdLabel] gives, for telling apart two
+/// people whose short names are the same: the WebID without its scheme or
+/// fragment, as in `pods.example.org/alice/profile/card`.
+
+String webIdLongLabel(String webId) =>
+    sameWebId(webId).replaceFirst(RegExp(r'^[a-z][a-z0-9+.-]*://'), '');
+
+/// The title each album in [shared] is shown under, by its URL.
+///
+/// An album keeps its own name when no other album, shared or among the
+/// user's own [ownNames], is called the same, ignoring case. Otherwise the
+/// name of the person who shared it is added, as in "Holiday (alice)", and
+/// where two such people have the same short name their fuller WebIDs are
+/// used instead. Anything still alike after that is numbered, so that no two
+/// albums are ever listed under the same title.
+
+Map<String, String> sharedAlbumTitles(
+  List<SharedAlbum> shared,
+  Iterable<String> ownNames,
+) {
+  final counts = <String, int>{};
+  for (final name in [...ownNames, ...shared.map((album) => album.name)]) {
+    final key = name.toLowerCase();
+    counts[key] = (counts[key] ?? 0) + 1;
+  }
+
+  // The short names in use among the sharers of each clashing album name.
+
+  final owners = <String, Map<String, Set<String>>>{};
+  for (final album in shared) {
+    final key = album.name.toLowerCase();
+    if (counts[key]! < 2) continue;
+    owners
+        .putIfAbsent(key, () => {})
+        .putIfAbsent(webIdLabel(album.ownerWebId), () => {})
+        .add(sameWebId(album.ownerWebId));
+  }
+
+  final titles = <String, String>{};
+  final taken = <String>{for (final name in ownNames) name.toLowerCase()};
+  for (final album in shared) {
+    final key = album.name.toLowerCase();
+    var title = album.name;
+    if (counts[key]! > 1) {
+      final short = webIdLabel(album.ownerWebId);
+      final who = owners[key]![short]!.length > 1
+          ? webIdLongLabel(album.ownerWebId)
+          : short;
+      title = '${album.name} ($who)';
+    }
+    var unique = title;
+    for (var n = 2; taken.contains(unique.toLowerCase()); n++) {
+      unique = '$title $n';
+    }
+    taken.add(unique.toLowerCase());
+    titles[album.url] = unique;
+  }
+  return titles;
 }
 
 /// Whether [url] is a PhotoPod album file inside the PhotoPod data folder
@@ -332,9 +404,7 @@ class SharedWithMe extends ChangeNotifier {
           items.putIfAbsent(url, () => _itemFor(url, grant.owner));
         }
       }
-      albums.sort(
-        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
-      );
+      albums.sort(compareSharedAlbums);
 
       debugPrint(
         'PhotoPod: ${lines.length} resources in the permission log; '

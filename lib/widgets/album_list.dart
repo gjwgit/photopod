@@ -44,6 +44,12 @@ class AlbumEntry {
 
   final String name;
 
+  /// What the album is listed as, when that differs from [name]: an album
+  /// shared with the user that has the same name as another is told apart by
+  /// who shared it.
+
+  final String? title;
+
   /// What the album holds that is still in the Pod, in display order.
 
   final List<MediaItem> items;
@@ -64,6 +70,7 @@ class AlbumEntry {
   const AlbumEntry({
     String? id,
     required this.name,
+    this.title,
     required this.items,
     this.isSystem = false,
     this.sharedBy,
@@ -74,6 +81,10 @@ class AlbumEntry {
   /// theirs to rename, delete or share, not the user's.
 
   bool get isFromOthers => sharedBy != null;
+
+  /// What the album is listed as.
+
+  String get displayName => title ?? name;
 }
 
 /// Every album as a collapsible row.
@@ -188,7 +199,9 @@ class _AlbumTile extends StatelessWidget {
             color: album.isSystem ? const Color(0xFFE53935) : scheme.primary,
           ),
           const SizedBox(width: 8),
-          Flexible(child: Text(album.name, overflow: TextOverflow.ellipsis)),
+          Flexible(
+            child: Text(album.displayName, overflow: TextOverflow.ellipsis),
+          ),
           if (album.isFromOthers || album.isSharedOut) ...[
             const SizedBox(width: 8),
             Tooltip(

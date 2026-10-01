@@ -167,11 +167,10 @@ class _MediaTileState extends State<MediaTile> {
     final item = widget.item;
 
     // The file name is not written on the tile, so it is shown on hover
-    // instead, escaped so that a name such as `my_photo_1.jpg` is not taken
-    // for Markdown.
+    // instead, along with who shared it for anything that is not the user's.
 
     return MarkdownTooltip(
-      message: '**${escapeMarkdown(item.name)}**',
+      message: mediaTooltipMarkdown(item),
       wait: const Duration(milliseconds: 700),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovering = true),
@@ -381,6 +380,28 @@ class _RemoveButton extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// What hovering over [item] shows, as Markdown: its name, and who shared it
+/// for anything shared with the user. Both are escaped so that a name such as
+/// `my_photo_1.jpg` is not taken for Markdown.
+
+String mediaTooltipMarkdown(MediaItem item) {
+  final name = '**${escapeMarkdown(item.name)}**';
+  final owner = item.sharedBy;
+  if (owner == null) return name;
+  return '$name\n\n'
+      'Shared by ${escapeMarkdown(webIdLabel(owner))}\n\n'
+      '${escapeMarkdown(owner)}';
+}
+
+/// What hovering over [item] shows, as plain text, for places that use an
+/// ordinary tooltip.
+
+String mediaTooltipText(MediaItem item) {
+  final owner = item.sharedBy;
+  if (owner == null) return item.name;
+  return '${item.name}\nShared by ${webIdLabel(owner)}\n$owner';
 }
 
 /// Escape the characters Markdown gives a meaning to, so that [text] is shown
