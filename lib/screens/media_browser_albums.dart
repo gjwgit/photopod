@@ -26,8 +26,9 @@ part of 'media_browser.dart';
 /// Everything to do with albums: putting the selection into one, making,
 /// renaming and deleting them, and laying them out in the Albums section.
 ///
-/// Favourites is treated throughout as one more album, the only one that
-/// cannot be renamed or deleted.
+/// Favourites is treated as one more album when adding to or removing from an
+/// album, the only one that cannot be renamed or deleted. It is not listed in
+/// the Albums section, though, as it has a section of its own.
 ///
 /// Sharing an album shares the photos and videos in it, and every change to
 /// what a shared album holds, or to who it is shared with, goes through
@@ -36,13 +37,13 @@ part of 'media_browser.dart';
 /// not the user's.
 
 extension MediaBrowserAlbums on MediaBrowserState {
-  /// Every album as the Albums section lists it: Favourites first, then the
-  /// user's own albums in alphabetical order. Each holds only what is still in
-  /// the Pod, sorted as the user has chosen.
+  /// Every album as the Albums section lists it: the user's own albums in
+  /// alphabetical order, then those shared with the user. Favourites is left
+  /// out as it has its own section. Each holds only what is still in the Pod,
+  /// sorted as the user has chosen.
 
   List<AlbumEntry> _albumEntries(BuildContext context) {
     final option = context.read<ViewPrefs>().sortOption;
-    final favourites = context.read<Favourites>();
     final albums = context.read<Albums>();
     final sharing = context.read<AlbumSharing>();
     final shared = context.read<SharedWithMe>();
@@ -55,12 +56,6 @@ extension MediaBrowserAlbums on MediaBrowserState {
     }
 
     return [
-      AlbumEntry(
-        name: favouritesAlbumName,
-        items: resolve(favourites.paths),
-        isSystem: true,
-        isSharedOut: sharing.isShared(favouritesAlbumName),
-      ),
       for (final name in albums.names)
         AlbumEntry(
           name: name,
@@ -153,8 +148,21 @@ extension MediaBrowserAlbums on MediaBrowserState {
 
   Future<void> _removeFromAlbum(BuildContext context) async {
     final album = _selectedAlbum;
-    final items = _selectedFiles;
-    if (album == null || !_inOwnAlbum || items.isEmpty) return;
+    if (album == null || !_inOwnAlbum) return;
+    await _removeItemsFromAlbum(context, album, _selectedFiles);
+  }
+
+  /// Take [items] out of the album called [album], which may be Favourites.
+  ///
+  /// Whatever is taken out is also dropped from the selection, so the toolbar
+  /// never offers to act on an item that is no longer in view.
+
+  Future<void> _removeItemsFromAlbum(
+    BuildContext context,
+    String album,
+    List<MediaItem> items,
+  ) async {
+    if (items.isEmpty) return;
 
     final bool saved;
     final String? error;
@@ -170,7 +178,13 @@ extension MediaBrowserAlbums on MediaBrowserState {
 
     if (!context.mounted) return;
     if (saved) {
-      updateState(_selected.clear);
+      if (_selectedAlbum == album) {
+        updateState(() {
+          for (final item in items) {
+            _selected.remove(item.id);
+          }
+        });
+      }
       await _syncSharing(context);
       return;
     }

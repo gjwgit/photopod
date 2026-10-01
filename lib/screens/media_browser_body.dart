@@ -205,9 +205,20 @@ extension MediaBrowserBody on MediaBrowserState {
 
     final favourites = context.read<Favourites>();
 
-    // Favourites is always listed, so the Albums section is never empty.
+    // Favourites has its own section and is not listed among the albums, so
+    // the Albums section is empty until the user makes an album or someone
+    // shares one.
 
     if (widget.section == LibrarySection.albums) {
+      if (context.read<Albums>().names.isEmpty &&
+          context.read<SharedWithMe>().albums.isEmpty) {
+        return _buildMessage(
+          context,
+          icon: widget.section.icon,
+          title: 'No albums yet',
+          message: _emptyMessage(),
+        );
+      }
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {
@@ -280,6 +291,8 @@ extension MediaBrowserBody on MediaBrowserState {
         album,
         entries.firstWhere((entry) => entry.id == album).items,
       ),
+      onRemoveFromAlbum: (album, item) =>
+          _removeItemsFromAlbum(context, album, [item]),
       onRename: (album) => _renameAlbum(context, album),
       onDelete: (album) => _deleteAlbum(context, album),
     );
@@ -289,7 +302,9 @@ extension MediaBrowserBody on MediaBrowserState {
     LibrarySection.library =>
       'This folder holds no photos, no videos and no subfolders. Use Add to '
           'put some in.',
-    LibrarySection.albums => 'There are no albums yet.',
+    LibrarySection.albums =>
+      'There are no albums yet. Select some photos or videos and use Add to '
+          'album to make one.',
     LibrarySection.favourites =>
       'Nothing carries a heart yet. Select a photo or a video anywhere in '
           'your album and tap the heart to bring it here.',

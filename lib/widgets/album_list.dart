@@ -76,12 +76,14 @@ class AlbumEntry {
   bool get isFromOthers => sharedBy != null;
 }
 
-/// Every album as a collapsible row, with Favourites first.
+/// Every album as a collapsible row.
 ///
 /// An opened album shows its photos and videos as one row of tiles that
 /// scrolls sideways, so that a long album never pushes the next album off the
 /// bottom of the window. The tiles behave exactly as they do in the Library:
 /// a tap selects, a double tap previews, and the heart is there on hover.
+/// Each tile in one of the user's own albums also has a button to take it out
+/// of its album.
 
 class AlbumList extends StatelessWidget {
   const AlbumList({
@@ -94,6 +96,7 @@ class AlbumList extends StatelessWidget {
     required this.onActivate,
     required this.onToggleFavourite,
     required this.onShare,
+    required this.onRemoveFromAlbum,
     required this.onRename,
     required this.onDelete,
   });
@@ -132,6 +135,11 @@ class AlbumList extends StatelessWidget {
   /// name. Only the user's own albums have one.
 
   final void Function(String album) onShare;
+
+  /// Called by the remove button on [item] in the album called [album]. Only
+  /// the user's own albums have one.
+
+  final void Function(String album, MediaItem item) onRemoveFromAlbum;
 
   /// Called by the edit button in an album's title bar.
 
@@ -238,6 +246,9 @@ class _AlbumTile extends StatelessWidget {
                     onTap: () => list.onTap(album.id, item),
                     onActivate: () => list.onActivate(item),
                     onToggleFavourite: () => list.onToggleFavourite(item),
+                    onRemoveFromAlbum: album.isFromOthers
+                        ? null
+                        : () => list.onRemoveFromAlbum(album.name, item),
                   ),
                 );
               },

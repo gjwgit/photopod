@@ -622,6 +622,7 @@ void main() {
         onActivate: (_) {},
         onToggleFavourite: (_) {},
         onShare: onShare ?? (_) {},
+        onRemoveFromAlbum: (_, _) {},
         onRename: onRename ?? (_) {},
         onDelete: onDelete ?? (_) {},
       ),
