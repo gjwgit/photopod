@@ -31,6 +31,7 @@ import 'package:solidui/solidui.dart';
 
 import 'package:photopod/app_scaffold.dart';
 import 'package:photopod/constants/app.dart';
+import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/media_index.dart';
@@ -57,6 +58,7 @@ class App extends StatelessWidget {
           create: (context) => ViewPrefs()..load(),
         ),
         ChangeNotifierProvider<Favourites>(create: (context) => Favourites()),
+        ChangeNotifierProvider<Albums>(create: (context) => Albums()),
         ChangeNotifierProvider<MediaIndex>(create: (context) => MediaIndex()),
       ],
       child: SolidThemeApp(

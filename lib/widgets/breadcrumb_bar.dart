@@ -28,7 +28,7 @@ import 'package:flutter/material.dart';
 /// The trail of folders from the album root down to where the user is now.
 ///
 /// Each step is a button, so getting back up two levels is one tap rather
-/// than two. The root is shown as a home icon because its real name,
+/// than two. The root is shown as "Library" because its real name,
 /// `photopod/data`, is an implementation detail the user did not choose.
 
 class BreadcrumbBar extends StatelessWidget {
@@ -36,7 +36,6 @@ class BreadcrumbBar extends StatelessWidget {
     super.key,
     required this.segments,
     required this.onNavigate,
-    required this.onUp,
   });
 
   /// The folder names between the root and the current folder, outermost
@@ -48,59 +47,65 @@ class BreadcrumbBar extends StatelessWidget {
 
   final ValueChanged<int> onNavigate;
 
-  /// Called to go up one level, or null at the root.
-
-  final VoidCallback? onUp;
-
   @override
   Widget build(BuildContext context) {
-    final style = Theme.of(context).textTheme.bodyMedium;
+    final theme = Theme.of(context);
+    final style = theme.textTheme.bodyMedium;
 
-    return Row(
-      children: [
-        IconButton(
-          icon: const Icon(Icons.arrow_upward),
-          tooltip: 'Up one folder',
-          onPressed: onUp,
-        ),
-        Expanded(
-          child: SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            reverse: true,
-            child: Row(
-              children: [
-                _crumb(
-                  context,
-                  child: const Icon(Icons.home_outlined, size: 20),
-                  onTap: segments.isEmpty ? null : () => onNavigate(0),
-                ),
-                for (var i = 0; i < segments.length; i++) ...[
-                  Text(' / ', style: style),
+    // Laid out exactly as the other sections' titles are — the same padding,
+    // icon and type — so that the name sits in the same place on every page.
+    // A long path scrolls sideways rather than pushing the name off the left.
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(
+        children: [
+          Icon(
+            Icons.photo_library_outlined,
+            size: 20,
+            color: theme.colorScheme.primary,
+          ),
+          const SizedBox(width: 8),
+          Flexible(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
                   _crumb(
-                    context,
-                    child: Text(segments[i], style: style),
-                    onTap: i == segments.length - 1
-                        ? null
-                        : () => onNavigate(i + 1),
+                    child: Text('Library', style: theme.textTheme.titleSmall),
+                    onTap: segments.isEmpty ? null : () => onNavigate(0),
+                    first: true,
                   ),
+                  for (var i = 0; i < segments.length; i++) ...[
+                    Text(' / ', style: style),
+                    _crumb(
+                      child: Text(segments[i], style: style),
+                      onTap: i == segments.length - 1
+                          ? null
+                          : () => onNavigate(i + 1),
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _crumb(
-    BuildContext context, {
+  // The first step carries no padding of its own on the left, so "Library"
+  // lines up with the names on the other pages.
+
+  Widget _crumb({
     required Widget child,
     required VoidCallback? onTap,
+    bool first = false,
   }) => InkWell(
     borderRadius: BorderRadius.circular(6),
     onTap: onTap,
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      padding: EdgeInsets.fromLTRB(first ? 0 : 4, 8, 4, 8),
       child: child,
     ),
   );

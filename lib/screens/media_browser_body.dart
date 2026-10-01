@@ -32,11 +32,13 @@ extension MediaBrowserBody on MediaBrowserState {
 
   Widget _buildBrowser(BuildContext context) {
     // Watched here, at the top of the build, so that everything below can
-    // simply read them: the album index feeds the two flat sections, and the
-    // hearts decide both what Favourites holds and which tiles show one.
+    // simply read them: the album index feeds the sections that look across
+    // the whole album, the hearts decide both what Favourites holds and which
+    // tiles show one, and the albums decide what the Albums section lists.
 
     final prefs = context.watch<ViewPrefs>();
     context.watch<Favourites>();
+    context.watch<Albums>();
     context.watch<MediaIndex>();
 
     final sorted = _sorted;
@@ -52,15 +54,19 @@ extension MediaBrowserBody on MediaBrowserState {
         ),
         const Divider(height: 1),
         Expanded(child: _buildContent(context, prefs, visible, sorted)),
-        const Divider(height: 1),
-        PaginationBar(
-          page: page,
-          pageCount: pageCount,
-          total: sorted.length,
-          shown: visible.length,
-          selected: _selected.length,
-          onPage: (next) => updateState(() => _page = next),
-        ),
+
+        // Each album scrolls on its own, so the Albums section has no pages.
+        if (widget.section != LibrarySection.albums) ...[
+          const Divider(height: 1),
+          PaginationBar(
+            page: page,
+            pageCount: pageCount,
+            total: sorted.length,
+            shown: visible.length,
+            selected: _selected.length,
+            onPage: (next) => updateState(() => _page = next),
+          ),
+        ],
       ],
     );
   }
@@ -77,14 +83,6 @@ extension MediaBrowserBody on MediaBrowserState {
             onNavigate: (keep) => _goTo(
               keep == 0 ? _root : '$_root/${_segments.take(keep).join('/')}',
             ),
-            onUp: _segments.isEmpty
-                ? null
-                : () => _goTo(
-                    _segments.length == 1
-                        ? _root
-                        : '$_root/'
-                              '${_segments.take(_segments.length - 1).join('/')}',
-                  ),
           )
         : _buildSectionTitle(context);
 
@@ -95,6 +93,8 @@ extension MediaBrowserBody on MediaBrowserState {
       allFavourite: context.read<Favourites>().containsAll(files),
       sortOption: context.read<ViewPrefs>().sortOption,
       actions: _actions(context),
+      albumNames: context.read<Albums>().names,
+      canRemoveFromAlbum: _selectedAlbum != null && files.isNotEmpty,
     );
 
     return LayoutBuilder(
@@ -186,6 +186,29 @@ extension MediaBrowserBody on MediaBrowserState {
       );
     }
 
+    final favourites = context.read<Favourites>();
+
+    // Favourites has its own section and is not listed among the albums, so
+    // the Albums section is empty until the user makes an album.
+
+    if (widget.section == LibrarySection.albums) {
+      if (context.read<Albums>().names.isEmpty) {
+        return _buildMessage(
+          context,
+          icon: widget.section.icon,
+          title: 'No albums yet',
+          message: _emptyMessage(),
+        );
+      }
+      return GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          if (_selected.isNotEmpty) updateState(_selected.clear);
+        },
+        child: _buildAlbums(context, prefs, favourites),
+      );
+    }
+
     if (all.isEmpty) {
       return _buildMessage(
         context,
@@ -194,8 +217,6 @@ extension MediaBrowserBody on MediaBrowserState {
         message: _emptyMessage(),
       );
     }
-
-    final favourites = context.read<Favourites>();
 
     // Tapping the background is how the selection is cleared, which matters
     // because a tap on an item toggles rather than replaces the selection.
@@ -226,10 +247,40 @@ extension MediaBrowserBody on MediaBrowserState {
     );
   }
 
+  Widget _buildAlbums(
+    BuildContext context,
+    ViewPrefs prefs,
+    Favourites favourites,
+  ) {
+    final entries = _albumEntries(context);
+
+    return AlbumList(
+      albums: entries,
+      tileExtent: prefs.tileSize.extent,
+      isSelected: (album, item) =>
+          album == _selectedAlbum && _selected.contains(item.id),
+      isFavourite: favourites.contains,
+      onTap: (album, item) => _handleAlbumTap(
+        album,
+        item,
+        entries.firstWhere((entry) => entry.name == album).items,
+      ),
+      onActivate: _handleActivate,
+      onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+      onRemoveFromAlbum: (album, item) =>
+          _removeItemsFromAlbum(context, album, [item]),
+      onRename: (album) => _renameAlbum(context, album),
+      onDelete: (album) => _deleteAlbum(context, album),
+    );
+  }
+
   String _emptyMessage() => switch (widget.section) {
     LibrarySection.library =>
       'This folder holds no photos, no videos and no subfolders. Use Add to '
           'put some in.',
+    LibrarySection.albums =>
+      'There are no albums yet. Select some photos or videos and use Add to '
+          'album to make one.',
     LibrarySection.favourites =>
       'Nothing carries a heart yet. Select a photo or a video anywhere in '
           'your album and tap the heart to bring it here.',

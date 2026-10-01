@@ -98,4 +98,43 @@ void main() {
       expect(names.folders, isEmpty);
     });
   });
+
+  group('PodMediaOps.duplicateName', () {
+    test('adds _copy before the extension', () {
+      expect(
+        PodMediaOps.duplicateName('beach.jpg', {'beach.jpg'}),
+        'beach_copy.jpg',
+      );
+    });
+
+    test('numbers the copy when _copy is taken', () {
+      expect(
+        PodMediaOps.duplicateName('beach.jpg', {'beach.jpg', 'beach_copy.jpg'}),
+        'beach_copy_1.jpg',
+      );
+      expect(
+        PodMediaOps.duplicateName('beach.jpg', {
+          'beach.jpg',
+          'beach_copy.jpg',
+          'beach_copy_1.jpg',
+          'beach_copy_2.jpg',
+        }),
+        'beach_copy_3.jpg',
+      );
+    });
+
+    test('takes the first free number, not the next after the highest', () {
+      expect(
+        PodMediaOps.duplicateName('beach.jpg', {
+          'beach_copy.jpg',
+          'beach_copy_2.jpg',
+        }),
+        'beach_copy_1.jpg',
+      );
+    });
+
+    test('keeps only the last extension', () {
+      expect(PodMediaOps.duplicateName('my.trip.png', {}), 'my.trip_copy.png');
+    });
+  });
 }

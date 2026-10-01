@@ -35,10 +35,15 @@ the same album.
 - A detailed list is still a tap away in **View**, for when the name,
   the size and the date matter more than the picture. **View** also sets
   how big the tiles are and how many items appear on a page.
-- Add, delete, copy, move and rename files and folders. A copy or move
-  destination ending in a file name renames the file on the way, and a
-  folder that is not there yet can be created from the same dialogue.
-  A heart follows its photo through a move or a rename.
+- Add, delete, duplicate and rename photos and videos. A duplicate sits
+  beside its original as `beach_copy.jpg`, then `beach_copy_1.jpg` and
+  so on. A heart, and a place in an album, follow a photo through a
+  rename.
+- Gather photos and videos into albums with **Add to album**, whose
+  menu ends in **Create new album...**. The **Albums** section lists every album,
+  Favourites first, as a row you open to scroll sideways through its
+  photos; each album can be renamed or deleted from its title bar.
+  Favourites is a system album and can be neither.
 - Share any file or folder with other WebIDs using Solid's own access
   control, including the permissions each recipient is granted.
 - Files are encrypted at rest with your Solid security key.
@@ -58,6 +63,12 @@ which list only `.ttl` resources, and gives each file the access control
 list that sharing works through. The cost is that a thumbnail cannot be
 read without decrypting the photo first, so thumbnails are cached in
 memory and fetched only for the page on screen.
+
+Favourites and albums are small unencrypted JSON files of Pod-relative
+paths. Favourites lives in `photopod/data/favourites.json`; each album is
+a file of its own in `photopod/data/albums/`, named after the album, so
+there are exactly as many albums as files there. The Library hides the
+`albums` folder.
 
 Reading still copes with a plain, unencrypted resource, so anything
 already in the album, or put there by another tool, stays visible.
