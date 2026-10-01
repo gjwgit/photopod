@@ -58,6 +58,7 @@ class AlbumEntry {
 /// scrolls sideways, so that a long album never pushes the next album off the
 /// bottom of the window. The tiles behave exactly as they do in the Library:
 /// a tap selects, a double tap previews, and the heart is there on hover.
+/// Each tile also has a button to take it out of its album.
 
 class AlbumList extends StatelessWidget {
   const AlbumList({
@@ -69,6 +70,7 @@ class AlbumList extends StatelessWidget {
     required this.onTap,
     required this.onActivate,
     required this.onToggleFavourite,
+    required this.onRemoveFromAlbum,
     required this.onRename,
     required this.onDelete,
   });
@@ -100,6 +102,10 @@ class AlbumList extends StatelessWidget {
   /// Called when the heart on a tile is tapped.
 
   final void Function(MediaItem item) onToggleFavourite;
+
+  /// Called by the remove button on [item] in the album called [album].
+
+  final void Function(String album, MediaItem item) onRemoveFromAlbum;
 
   /// Called by the edit button in an album's title bar.
 
@@ -187,6 +193,8 @@ class _AlbumTile extends StatelessWidget {
                     onTap: () => list.onTap(album.name, item),
                     onActivate: () => list.onActivate(item),
                     onToggleFavourite: () => list.onToggleFavourite(item),
+                    onRemoveFromAlbum: () =>
+                        list.onRemoveFromAlbum(album.name, item),
                   ),
                 );
               },
