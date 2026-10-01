@@ -31,6 +31,8 @@ import 'package:photopod/models/albums.dart' show favouritesAlbumName;
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/view_prefs.dart';
 
+part 'media_toolbar_buttons.dart';
+
 /// What the toolbar can do, gathered in one place so the browser passes a
 /// single object rather than a dozen callbacks.
 
@@ -116,7 +118,8 @@ class MediaActions {
 /// possible. It wraps onto a second line on a narrow window rather than
 /// overflowing. Which buttons appear at all depends on the section: only the
 /// Library browses folders, so only the Library offers to add files to one,
-/// and only the Albums section offers to take files out of an album.
+/// and only the Albums section offers to make a new album on its own or to
+/// take files out of one.
 
 class MediaToolbar extends StatelessWidget {
   const MediaToolbar({
@@ -129,6 +132,7 @@ class MediaToolbar extends StatelessWidget {
     required this.actions,
     this.albumNames = const [],
     this.canRemoveFromAlbum = false,
+    this.hasShared = false,
   });
 
   /// Which section of the app this toolbar sits in.
@@ -167,9 +171,20 @@ class MediaToolbar extends StatelessWidget {
 
   final bool canRemoveFromAlbum;
 
+  /// Whether the selection holds anything someone else shared with the user.
+  /// Those files belong to their owner, so they cannot be renamed, deleted,
+  /// duplicated or shared on from here.
+
+  final bool hasShared;
+
   @override
   Widget build(BuildContext context) {
     final hasSelection = selectionCount > 0;
+    final ownsAll = !hasShared;
+    final notOwned = hasShared
+        ? 'Not available while the selection includes something shared '
+              'with you, which only its owner can change.'
+        : '';
     final hasFiles = fileCount > 0;
     final many = selectionCount > 1;
     final manyFiles = fileCount > 1;
@@ -194,6 +209,25 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
+        // The Albums section has no folder to add files to, so the place the
+        // Library gives to adding photos goes to making a new album instead.
+
+        if (section == LibrarySection.albums)
+          _button(
+            icon: Icons.create_new_folder_outlined,
+            label: 'Create new album',
+            enabled: true,
+            onPressed: actions.onCreateAlbum,
+            tooltip: '''
+
+          **Create new album**
+
+          Make a new album and give it a name. Any photos and videos selected
+          at the time go straight into it; otherwise it starts empty, ready
+          for **Add to album**.
+
+          ''',
+          ),
         _FavouriteButton(
           enabled: hasFiles,
           favourite: allFavourite,
@@ -210,15 +244,17 @@ class MediaToolbar extends StatelessWidget {
         _button(
           icon: Icons.content_copy,
           label: 'Duplicate',
-          enabled: hasFiles,
+          enabled: hasFiles && ownsAll,
           onPressed: actions.onDuplicate,
-          tooltip: '''
+          tooltip:
+              '''
 
           **Duplicate**
 
           Make a copy of each selected photo and video beside the original,
           called `name_copy`, or `name_copy_1`, `name_copy_2` and so on when
           that is taken. A copy starts with no heart and in no album.
+          $notOwned
 
           ''',
         ),
@@ -241,7 +277,7 @@ class MediaToolbar extends StatelessWidget {
         _button(
           icon: Icons.drive_file_rename_outline,
           label: 'Rename',
-          enabled: hasSelection,
+          enabled: hasSelection && ownsAll,
           onPressed: actions.onRename,
           tooltip:
               '''
@@ -251,21 +287,24 @@ class MediaToolbar extends StatelessWidget {
           Give the selected item a new name. It keeps its heart and its place
           in every album.
           ${many ? 'With several selected, the first one is renamed.' : ''}
+          $notOwned
 
           ''',
         ),
         _button(
           icon: Icons.delete_outline,
           label: 'Delete',
-          enabled: hasSelection,
+          enabled: hasSelection && ownsAll,
           onPressed: actions.onDelete,
-          tooltip: '''
+          tooltip:
+              '''
 
           **Delete**
 
           Remove the selected items from your Pod, and from every album they
           are in. Folders are removed with everything inside them, and nothing
           can be undone.
+          $notOwned
 
           ''',
         ),
@@ -288,14 +327,17 @@ class MediaToolbar extends StatelessWidget {
         _button(
           icon: Icons.share_outlined,
           label: 'Share',
-          enabled: hasSelection,
+          enabled: hasSelection && ownsAll,
           onPressed: actions.onShare,
-          tooltip: '''
+          tooltip:
+              '''
 
           **Share**
 
           Give other Solid users access to the selected items, by WebID and
-          with the permissions you choose.
+          with the permissions you choose. To share a whole album, use the
+          share button on the album itself.
+          $notOwned
 
           ''',
         ),
@@ -362,209 +404,5 @@ class MediaToolbar extends StatelessWidget {
       onPressed: enabled ? onPressed : null,
       colour: colour,
     ),
-  );
-}
-
-/// The size every icon in the toolbar is drawn at.
-
-const double toolbarIconSize = 24;
-
-/// One icon in the toolbar.
-///
-/// Every button, the two menus included, is drawn by this one widget, so they
-/// are all exactly the same size. The plain [IconButton.tooltip] is left
-/// unset so that it does not compete with the Markdown tooltip, and the name
-/// is carried to screen readers by [Semantics] instead.
-
-class _ToolbarIcon extends StatelessWidget {
-  const _ToolbarIcon({
-    required this.icon,
-    required this.label,
-    required this.onPressed,
-    this.colour,
-  });
-
-  final IconData icon;
-  final String label;
-  final VoidCallback? onPressed;
-  final Color? colour;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    label: label,
-    button: true,
-    child: IconButton(
-      iconSize: toolbarIconSize,
-      icon: Icon(icon, color: colour),
-      onPressed: onPressed,
-    ),
-  );
-}
-
-/// A toolbar icon that opens a menu.
-///
-/// Built on [MenuAnchor] rather than [PopupMenuButton], which brings its own
-/// "Show menu" tooltip to compete with the Markdown one and draws its icon
-/// with padding of its own.
-
-class _ToolbarMenu extends StatelessWidget {
-  const _ToolbarMenu({
-    required this.icon,
-    required this.label,
-    required this.enabled,
-    required this.tooltip,
-    required this.children,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool enabled;
-  final String tooltip;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => MenuAnchor(
-    menuChildren: children,
-    builder: (context, controller, child) => MarkdownTooltip(
-      message: tooltip,
-      child: _ToolbarIcon(
-        icon: icon,
-        label: label,
-        onPressed: enabled
-            ? () => controller.isOpen ? controller.close() : controller.open()
-            : null,
-      ),
-    ),
-  );
-}
-
-class _FavouriteButton extends StatelessWidget {
-  const _FavouriteButton({
-    required this.enabled,
-    required this.favourite,
-    required this.many,
-    required this.onPressed,
-  });
-
-  final bool enabled;
-  final bool favourite;
-  final bool many;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = favourite ? 'Remove from Favourites' : 'Add to Favourites';
-
-    return MediaToolbar._button(
-      icon: favourite ? Icons.favorite : Icons.favorite_border,
-      label: label,
-      enabled: enabled,
-      onPressed: onPressed,
-      colour: enabled && favourite ? const Color(0xFFE53935) : null,
-      tooltip:
-          '''
-
-      **$label**
-
-      ${favourite ? 'Take the heart away from' : 'Put a heart on'} the
-      selected ${many ? 'items' : 'item'}, so ${many ? 'they' : 'it'}
-      ${favourite ? 'no longer appears' : 'appears'} in Favourites. Hearts
-      are kept in your Pod, so they follow you from one device to the next.
-
-      ''',
-    );
-  }
-}
-
-/// Put the selected files into an album: Favourites, any of the user's own
-/// albums, or a new one made on the spot.
-
-class _AddToAlbumButton extends StatelessWidget {
-  const _AddToAlbumButton({
-    required this.enabled,
-    required this.many,
-    required this.albumNames,
-    required this.onAdd,
-    required this.onCreate,
-  });
-
-  final bool enabled;
-  final bool many;
-  final List<String> albumNames;
-  final ValueChanged<String> onAdd;
-  final VoidCallback onCreate;
-
-  @override
-  Widget build(BuildContext context) => _ToolbarMenu(
-    icon: Icons.drive_file_move_outline,
-    label: 'Add to album',
-    enabled: enabled,
-    tooltip:
-        '''
-
-        **Add to album**
-
-        Put the selected ${many ? 'items' : 'item'} into Favourites or into
-        one of your albums. **Create new album...** at the bottom of the menu
-        makes a new album, names it, and puts the selection straight into
-        it. The photos and videos stay where they are in your Pod; an album
-        only gathers them together.
-
-        ''',
-    children: [
-      MenuItemButton(
-        leadingIcon: const Icon(Icons.favorite_outline),
-        onPressed: () => onAdd(favouritesAlbumName),
-        child: const Text(favouritesAlbumName),
-      ),
-      for (final name in albumNames)
-        MenuItemButton(
-          leadingIcon: const Icon(Icons.photo_album_outlined),
-          onPressed: () => onAdd(name),
-          child: Text(name),
-        ),
-      const Divider(height: 1),
-      MenuItemButton(
-        leadingIcon: const Icon(Icons.create_new_folder_outlined),
-        onPressed: onCreate,
-        child: const Text('Create new album...'),
-      ),
-    ],
-  );
-}
-
-class _SortButton extends StatelessWidget {
-  const _SortButton({required this.sortOption, required this.onSort});
-
-  final MediaSortOption sortOption;
-  final ValueChanged<MediaSortOption> onSort;
-
-  @override
-  Widget build(BuildContext context) => _ToolbarMenu(
-    icon: Icons.sort,
-    label: 'Sort',
-    enabled: true,
-    tooltip:
-        '''
-
-        **Sort**
-
-        Order folders and files by name or by the time they were last
-        recorded as changing on the Pod. Folders always come first. Now:
-        ${sortOption.displayLabel}.
-
-        ''',
-    children: [
-      for (final option in MediaSortOption.values)
-        MenuItemButton(
-          // A tick marks the order in force; the others keep the same indent.
-          leadingIcon: Icon(
-            Icons.check,
-            color: option == sortOption ? null : Colors.transparent,
-          ),
-          onPressed: () => onSort(option),
-          child: Text(option.displayLabel),
-        ),
-    ],
   );
 }

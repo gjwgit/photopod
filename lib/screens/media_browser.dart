@@ -45,10 +45,12 @@ import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
+import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/services/shared_with_me.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/utils/resource_name.dart';
@@ -202,6 +204,14 @@ class MediaBrowserState extends State<MediaBrowser> {
       if (!mounted) return;
       await _ensureKeyForEncrypted(index.items);
       if (!mounted) return;
+
+      // Refreshing the albums is also when any sharing that fell behind —
+      // say, a heart given from the preview — is caught up.
+
+      if (force && widget.section == LibrarySection.albums) {
+        await _syncSharing(context);
+        if (!mounted) return;
+      }
       setState(
         () => _selected.removeWhere(
           (id) => !index.items.any((item) => item.id == id),
@@ -215,10 +225,22 @@ class MediaBrowserState extends State<MediaBrowser> {
       _error = null;
     });
     try {
-      final items = await PodMediaService.listFolder(
+      final shared = context.read<SharedWithMe>();
+      final own = await PodMediaService.listFolder(
         _path,
         kinds: widget.section.kinds,
       );
+
+      // What other people have shared with the user sits at the top of the
+      // Library, beside the user's own photos, marked as shared.
+
+      final kinds = widget.section.kinds;
+      final atRoot = _path == _root;
+      if (atRoot) await shared.load(force: force);
+      final items = [
+        ...own,
+        if (atRoot) ...shared.items.where((item) => kinds.contains(item.kind)),
+      ];
       if (!mounted) return;
 
       // The keys are settled before the tiles appear, not after. A tile asks
@@ -305,6 +327,8 @@ class MediaBrowserState extends State<MediaBrowser> {
         final paths = {
           ...favourites.paths,
           for (final name in albums.names) ...albums.pathsOf(name),
+          for (final album in context.read<SharedWithMe>().albums)
+            ...album.itemUrls,
         };
         return context
             .read<MediaIndex>()
@@ -382,6 +406,13 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   List<MediaItem> get _selectedFiles =>
       _selectedItems.where((item) => !item.isFolder).toList();
+
+  /// Whether the selection was made in one of the user's own albums, which
+  /// is the only kind anything can be taken out of. A shared album is
+  /// identified by the URL of its file, a name of the user's never is.
+
+  bool get _inOwnAlbum =>
+      _selectedAlbum != null && !_selectedAlbum!.contains('://');
 
   @override
   Widget build(BuildContext context) => _buildBrowser(context);

@@ -30,6 +30,7 @@ import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/services/shared_with_me.dart';
 
 /// How many containers one scan will ask the server for.
 ///
@@ -51,8 +52,21 @@ const int maxScanDepth = 12;
 /// listing. They share this index instead, which is scanned once and then
 /// reused, and which the Library section invalidates whenever it changes
 /// something on the Pod.
+///
+/// What other people have shared with the user is part of the album too, so
+/// the index folds in [SharedWithMe] after its own walk: a shared photo shows
+/// up among the Videos, on the Map and in Favourites just as the user's own
+/// do.
 
 class MediaIndex extends ChangeNotifier {
+  MediaIndex([SharedWithMe? shared]) : _shared = shared ?? SharedWithMe() {
+    // Whatever changes what is shared with the user changes the album too.
+
+    _shared.addListener(notifyListeners);
+  }
+
+  final SharedWithMe _shared;
+
   List<MediaItem> _items = const [];
   bool _loading = false;
   bool _stale = true;
@@ -60,9 +74,10 @@ class MediaIndex extends ChangeNotifier {
   String? _error;
   DateTime? _scannedAt;
 
-  /// Every photo and video found, in the order the folders were walked.
+  /// Every photo and video found, in the order the folders were walked,
+  /// followed by everything shared with the user.
 
-  List<MediaItem> get items => _items;
+  List<MediaItem> get items => [..._items, ..._shared.items];
 
   /// Whether a scan is running now.
 
@@ -87,12 +102,12 @@ class MediaIndex extends ChangeNotifier {
   /// Every video in the album.
 
   List<MediaItem> get videos =>
-      _items.where((item) => item.isVideo).toList(growable: false);
+      items.where((item) => item.isVideo).toList(growable: false);
 
   /// Every photo in the album.
 
   List<MediaItem> get photos =>
-      _items.where((item) => item.isPhoto).toList(growable: false);
+      items.where((item) => item.isPhoto).toList(growable: false);
 
   /// Note that the album on the Pod has changed, so that the next section to
   /// ask for it walks the folders again.
@@ -106,7 +121,15 @@ class MediaIndex extends ChangeNotifier {
 
   Future<void> refresh({bool force = false}) async {
     if (_loading) return;
-    if (!force && !_stale && _error == null) return;
+
+    // The user's own album is walked again only when it has changed, but
+    // someone may have shared something since the last visit, so that is
+    // looked at every time. It is one read unless it has changed.
+
+    if (!force && !_stale && _error == null) {
+      await _shared.load();
+      return;
+    }
 
     _loading = true;
     _error = null;
@@ -154,6 +177,12 @@ class MediaIndex extends ChangeNotifier {
         }
       }
 
+      // What is shared with the user is read after the user's own album, and
+      // a failure there is kept apart from a failure of the album itself:
+      // SharedWithMe records it, and the user's own photos still show.
+
+      await _shared.load(force: force);
+
       _items = List.unmodifiable(found);
       _truncated = truncated;
       _stale = false;
@@ -166,5 +195,11 @@ class MediaIndex extends ChangeNotifier {
       _loading = false;
       notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    _shared.removeListener(notifyListeners);
+    super.dispose();
   }
 }

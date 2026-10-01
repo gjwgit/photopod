@@ -101,6 +101,25 @@ void main() {
       expect(find.byType(MediaTile), findsNWidgets(2));
     });
 
+    testWidgets('marks what is shared with the user beside the heart', (
+      tester,
+    ) async {
+      const shared = MediaItem(
+        name: 'beach.jpg',
+        rawName: 'beach.jpg.enc.ttl',
+        path: 'https://pod.example/alice/photopod/data/beach.jpg.enc.ttl',
+        url: 'https://pod.example/alice/photopod/data/beach.jpg.enc.ttl',
+        isFolder: false,
+        isEncrypted: true,
+        sharedBy: 'https://pod.example/alice/profile/card#me',
+      );
+
+      await tester.pumpWidget(_wrap(_grid([_item('own.jpg'), shared])));
+
+      expect(find.byIcon(Icons.people), findsOneWidget);
+      expect(find.bySemanticsLabel('Shared with you by alice'), findsOneWidget);
+    });
+
     testWidgets('names folders but not photos', (tester) async {
       await tester.pumpWidget(
         _wrap(_grid([_item('holiday', isFolder: true), _item('beach.jpg')])),
@@ -241,6 +260,7 @@ void main() {
       bool allFavourite = false,
       List<String> albumNames = const [],
       MediaActions? actions,
+      bool hasShared = false,
     }) => _wrap(
       MediaToolbar(
         section: section,
@@ -250,8 +270,40 @@ void main() {
         sortOption: MediaSortOption.nameAscending,
         actions: actions ?? _actions(),
         albumNames: albumNames,
+        hasShared: hasShared,
       ),
     );
+
+    testWidgets('will not change what someone else shared', (tester) async {
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.library,
+          selectionCount: 1,
+          fileCount: 1,
+          hasShared: true,
+        ),
+      );
+
+      IconButton button(IconData icon) => tester.widget<IconButton>(
+        find.ancestor(of: find.byIcon(icon), matching: find.byType(IconButton)),
+      );
+
+      for (final icon in [
+        Icons.content_copy,
+        Icons.drive_file_rename_outline,
+        Icons.delete_outline,
+        Icons.share_outlined,
+      ]) {
+        expect(button(icon).onPressed, isNull, reason: '$icon');
+      }
+
+      // Looking at it, giving it a heart and putting it in an album are all
+      // still the user's to do.
+
+      expect(button(Icons.visibility_outlined).onPressed, isNotNull);
+      expect(button(Icons.favorite_border).onPressed, isNotNull);
+      expect(button(Icons.drive_file_move_outline).onPressed, isNotNull);
+    });
 
     testWidgets('disables the selection actions when nothing is selected', (
       tester,
@@ -473,7 +525,7 @@ void main() {
       expect(button.onPressed, isNull);
     });
 
-    testWidgets('keeps to the agreed order, with no Create new album', (
+    testWidgets('keeps to the agreed order, Create new album first', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -483,8 +535,6 @@ void main() {
           fileCount: 1,
         ),
       );
-
-      expect(find.byIcon(Icons.create_new_folder_outlined), findsNothing);
 
       final labels = tester
           .widgetList<Semantics>(
@@ -499,6 +549,7 @@ void main() {
           .toList();
 
       expect(labels, [
+        'Create new album',
         'Add to Favourites',
         'Add to album',
         'Duplicate',
@@ -534,6 +585,16 @@ void main() {
       }
     });
 
+    testWidgets('offers Create new album in the Albums section only', (
+      tester,
+    ) async {
+      await tester.pumpWidget(toolbar(section: LibrarySection.library));
+      expect(find.bySemanticsLabel('Create new album'), findsNothing);
+
+      await tester.pumpWidget(toolbar(section: LibrarySection.albums));
+      expect(find.bySemanticsLabel('Create new album'), findsOneWidget);
+    });
+
     testWidgets('offers Remove from album in the Albums section only', (
       tester,
     ) async {
@@ -548,6 +609,7 @@ void main() {
   group('AlbumList', () {
     Widget albumList({
       required List<AlbumEntry> albums,
+      void Function(String)? onShare,
       void Function(String)? onRename,
       void Function(String)? onDelete,
     }) => _wrap(
@@ -559,10 +621,49 @@ void main() {
         onTap: (_, _) {},
         onActivate: (_) {},
         onToggleFavourite: (_) {},
+        onShare: onShare ?? (_) {},
+        onRemoveFromAlbum: (_, _) {},
         onRename: onRename ?? (_) {},
         onDelete: onDelete ?? (_) {},
       ),
     );
+
+    testWidgets('marks an album shared with the user, with no buttons', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        albumList(
+          albums: const [
+            AlbumEntry(
+              id: 'https://pod.example/alice/photopod/data/albums/Holiday.json',
+              name: 'Holiday',
+              items: [],
+              sharedBy: 'https://pod.example/alice/profile/card#me',
+            ),
+          ],
+        ),
+      );
+
+      expect(find.byIcon(Icons.people), findsOneWidget);
+      expect(find.text('0 items · shared by alice'), findsOneWidget);
+      expect(find.byIcon(Icons.share_outlined), findsNothing);
+      expect(find.byIcon(Icons.edit_outlined), findsNothing);
+      expect(find.byIcon(Icons.delete_outline), findsNothing);
+    });
+
+    testWidgets('marks an album the user has shared', (tester) async {
+      await tester.pumpWidget(
+        albumList(
+          albums: const [
+            AlbumEntry(name: 'Holiday', items: [], isSharedOut: true),
+          ],
+        ),
+      );
+
+      expect(find.byIcon(Icons.people), findsOneWidget);
+      expect(find.text('0 items · shared'), findsOneWidget);
+      expect(find.byIcon(Icons.share_outlined), findsOneWidget);
+    });
 
     testWidgets('gives Favourites no edit or delete button', (tester) async {
       await tester.pumpWidget(
@@ -579,6 +680,29 @@ void main() {
       expect(find.text('1 item'), findsOneWidget);
       expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
       expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+    });
+
+    testWidgets('offers every album, Favourites included, a share button', (
+      tester,
+    ) async {
+      final shared = <String>[];
+
+      await tester.pumpWidget(
+        albumList(
+          albums: const [
+            AlbumEntry(name: 'Favourites', items: [], isSystem: true),
+            AlbumEntry(name: 'Holiday', items: []),
+          ],
+          onShare: shared.add,
+        ),
+      );
+
+      final buttons = find.byIcon(Icons.share_outlined);
+      expect(buttons, findsNWidgets(2));
+      await tester.tap(buttons.first);
+      await tester.tap(buttons.last);
+      await tester.pump();
+      expect(shared, ['Favourites', 'Holiday']);
     });
 
     testWidgets('reports rename and delete for the right album', (
