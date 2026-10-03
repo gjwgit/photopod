@@ -30,10 +30,10 @@ import 'package:flutter/material.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
-/// The image shown for [item]: the photo itself, a placeholder for a video,
-/// or a folder icon.
+/// The image shown for [item]: the photo itself, the opening frame of a
+/// video, or a folder icon.
 ///
-/// Photo thumbnails arrive from the Pod a few requests at a time, so the
+/// Thumbnails arrive from the Pod a few requests at a time, so the
 /// widget shows a quiet spinner in place of its own tile until the bytes are
 /// there, and a broken-image glyph if they never are.
 
@@ -64,7 +64,7 @@ class _MediaThumbnailState extends State<MediaThumbnail> {
   }
 
   void _request() {
-    _thumbnail = widget.item.isPhoto
+    _thumbnail = widget.item.isPhoto || widget.item.isVideo
         ? ThumbnailCache.instance.thumbnail(widget.item)
         : null;
   }
@@ -77,19 +77,20 @@ class _MediaThumbnailState extends State<MediaThumbnail> {
       return _Glyph(icon: Icons.folder, colour: scheme.primary);
     }
 
-    if (widget.item.isVideo) {
-      // There is no portable way to pull a frame out of a video without
-      // downloading and decoding the whole file, which would make opening a
-      // folder of videos very slow. A film glyph says what the item is
-      // without that cost, and the preview shows the video itself.
+    // A video's opening frame is captured when it is added to the Pod. One
+    // added before that, or whose frame could not be read, keeps the film
+    // glyph, which is also shown while the frame is on its way: pulling a
+    // frame out of the video itself would mean downloading the whole file.
 
-      return _Glyph(icon: Icons.movie, colour: scheme.secondary);
-    }
+    final glyph = widget.item.isVideo
+        ? _Glyph(icon: Icons.movie, colour: scheme.secondary)
+        : null;
 
     return FutureBuilder<Uint8List?>(
       future: _thumbnail,
       builder: (context, snapshot) {
         final bytes = snapshot.data;
+        if (bytes == null && glyph != null) return glyph;
         if (bytes == null) {
           return Center(
             child: snapshot.connectionState == ConnectionState.done
@@ -110,7 +111,7 @@ class _MediaThumbnailState extends State<MediaThumbnail> {
           fit: BoxFit.cover,
           gaplessPlayback: true,
           errorBuilder: (context, error, stack) =>
-              Icon(Icons.broken_image_outlined, color: scheme.outline),
+              glyph ?? Icon(Icons.broken_image_outlined, color: scheme.outline),
         );
       },
     );
