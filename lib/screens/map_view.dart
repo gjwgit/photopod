@@ -32,7 +32,9 @@ import 'package:provider/provider.dart';
 import 'package:solidpod/solidpod.dart' show KeyManager;
 import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 
+import 'package:photopod/dialogs/map_settings_dialog.dart';
 import 'package:photopod/dialogs/preview_dialog.dart';
+import 'package:photopod/models/map_source.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/media_index.dart';
@@ -54,10 +56,6 @@ const int maxMappedPhotos = 600;
 
 const int _clusterPrecision = 4;
 
-/// The tiles the map is drawn from.
-
-const String _tileUrl = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
-
 /// The Maps section: every geotagged photo in the album on one map.
 ///
 /// The album index says which photos there are; their coordinates come from
@@ -73,6 +71,10 @@ class MapView extends StatefulWidget {
 
 class _MapViewState extends State<MapView> {
   final MapController _map = MapController();
+
+  /// The provider the tiles are drawn from, as chosen in Map Settings.
+
+  MapSource _source = MapSource.openStreetMap;
 
   /// The photos that turned out to carry coordinates, grouped by place.
 
@@ -96,6 +98,9 @@ class _MapViewState extends State<MapView> {
   @override
   void initState() {
     super.initState();
+    MapSource.load().then((source) {
+      if (mounted) setState(() => _source = source);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _start());
   }
 
@@ -261,6 +266,15 @@ class _MapViewState extends State<MapView> {
                   },
           ),
           IconButton(
+            icon: const Icon(Icons.layers_outlined),
+            tooltip: 'Map Settings',
+            onPressed: () => showMapSettingsDialog(
+              context,
+              current: _source,
+              onChanged: _setSource,
+            ),
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Read the album again',
             onPressed: busy
@@ -273,6 +287,11 @@ class _MapViewState extends State<MapView> {
         ],
       ),
     );
+  }
+
+  void _setSource(MapSource source) {
+    setState(() => _source = source);
+    source.save();
   }
 
   Widget _buildMap(BuildContext context, MediaIndex index) {
@@ -313,10 +332,15 @@ class _MapViewState extends State<MapView> {
             maxZoom: 18,
           ),
           children: [
+            // Keyed on the provider so that tiles already drawn from the
+            // previous one are dropped rather than left under the new ones.
+
             TileLayer(
-              urlTemplate: _tileUrl,
+              key: ValueKey(_source),
+              urlTemplate: _source.urlTemplate,
+              subdomains: _source.subdomains,
               userAgentPackageName: 'au.solidcommunity.photopod',
-              maxNativeZoom: 19,
+              maxNativeZoom: _source.maxNativeZoom,
             ),
             MarkerLayer(
               markers: [
@@ -333,9 +357,7 @@ class _MapViewState extends State<MapView> {
                   ),
               ],
             ),
-            const SimpleAttributionWidget(
-              source: Text('OpenStreetMap contributors'),
-            ),
+            SimpleAttributionWidget(source: Text(_source.attribution)),
           ],
         ),
         if (index.isTruncated)
