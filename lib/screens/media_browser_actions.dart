@@ -25,6 +25,11 @@ part of 'media_browser.dart';
 
 /// Selecting items, and everything the toolbar does to them.
 
+/// A file on its way into the Pod: the name it arrived with, and how to read
+/// its bytes, which is all the picker and a desktop drop have in common.
+
+typedef _Upload = ({String name, Future<Uint8List> Function() read});
+
 extension MediaBrowserActions on MediaBrowserState {
   /// The callbacks handed to the toolbar.
 
@@ -160,6 +165,73 @@ extension MediaBrowserActions on MediaBrowserState {
 
     if (picked.isEmpty || !context.mounted) return;
 
+    await _upload(context, [
+      for (final file in picked) (name: file.name, read: file.readAsBytes),
+    ]);
+  }
+
+  /// Add the files dragged from the desktop and dropped onto the Library.
+  ///
+  /// A dropped folder is not unpacked: its photos would all land flat in the
+  /// folder being shown, which is rarely what dragging a folder means. It is
+  /// reported instead, along with anything else that could not be added.
+
+  Future<void> _dropFiles(BuildContext context, List<DropItem> dropped) async {
+    if (dropped.isEmpty) return;
+    if (!await _folderIsWritable(context)) return;
+    if (!context.mounted) return;
+
+    final folders = dropped.whereType<DropItemDirectory>().toList();
+    final files = dropped.where((item) => item is! DropItemDirectory).toList();
+
+    if (files.isNotEmpty) {
+      await _upload(context, [
+        for (final file in files)
+          (name: file.name, read: () => _readDropped(file)),
+      ]);
+    }
+
+    if (folders.isNotEmpty && context.mounted) {
+      await showErrorDialog(
+        context,
+        folders.length == 1
+            ? 'A folder was not added'
+            : 'Some folders were not added',
+        'Only photos and videos can be dropped here. Open the folder and '
+        'drag the files inside it instead, or make a folder here with '
+        'New folder first.\n\n'
+        '${folders.map((folder) => folder.name).join('\n')}',
+      );
+    }
+  }
+
+  // A sandboxed macOS build may only read a dropped file inside the security
+  // scope the drop handed over with it. Elsewhere there is no bookmark, and
+  // the file is simply read.
+
+  static Future<Uint8List> _readDropped(DropItem file) async {
+    final bookmark = file.extraAppleBookmark;
+    if (bookmark == null || bookmark.isEmpty) return file.readAsBytes();
+
+    await DesktopDrop.instance.startAccessingSecurityScopedResource(
+      bookmark: bookmark,
+    );
+    try {
+      return await file.readAsBytes();
+    } finally {
+      await DesktopDrop.instance.stopAccessingSecurityScopedResource(
+        bookmark: bookmark,
+      );
+    }
+  }
+
+  /// Write [files] into the folder being shown, then report anything that was
+  /// refused or renamed on the way.
+  ///
+  /// Shared by the Add button and by dropping files onto the Library, so that
+  /// both treat names, unsupported files and failures in the same way.
+
+  Future<void> _upload(BuildContext context, List<_Upload> files) async {
     // Everything is written encrypted, so the security key has to be in hand
     // before the first file goes up rather than part way through the batch.
 
@@ -171,7 +243,7 @@ extension MediaBrowserActions on MediaBrowserState {
     var added = 0;
 
     await showWorking(context, 'Adding to your Pod...', () async {
-      for (final file in picked) {
+      for (final file in files) {
         try {
           if (kindOf(file.name) == null) {
             failed[file.name] = 'not a photo or video PhotoPod supports';
@@ -182,7 +254,7 @@ extension MediaBrowserActions on MediaBrowserState {
             safeResourceName(file.name),
             false,
           );
-          final bytes = await file.readAsBytes();
+          final bytes = await file.read();
           await PodMediaService.writeMedia(
             podPath: _path,
             displayName: name,
