@@ -25,6 +25,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:markdown_tooltip/markdown_tooltip.dart';
+
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 
@@ -105,7 +107,8 @@ class MediaGrid extends StatelessWidget {
 /// every photo application does, so the grid reads as a grid rather than as a
 /// row of differently shaped pictures. Selection is shown by an outline and a
 /// tick, and the heart appears on hover, when the item is already a
-/// favourite, or when the tile is selected.
+/// favourite, or when the tile is selected. A tile shown inside an album also
+/// offers, on hover or when selected, to take the item out of that album.
 
 class MediaTile extends StatefulWidget {
   const MediaTile({
@@ -116,6 +119,7 @@ class MediaTile extends StatefulWidget {
     required this.onTap,
     required this.onActivate,
     required this.onToggleFavourite,
+    this.onRemoveFromAlbum,
   });
 
   /// The folder or file this tile stands for.
@@ -142,6 +146,11 @@ class MediaTile extends StatefulWidget {
 
   final VoidCallback onToggleFavourite;
 
+  /// Called when the remove button is tapped. Only a tile shown inside an
+  /// album has one, so the button appears only when this is set.
+
+  final VoidCallback? onRemoveFromAlbum;
+
   @override
   State<MediaTile> createState() => _MediaTileState();
 }
@@ -154,9 +163,13 @@ class _MediaTileState extends State<MediaTile> {
     final scheme = Theme.of(context).colorScheme;
     final item = widget.item;
 
-    return Tooltip(
-      message: item.name,
-      waitDuration: const Duration(milliseconds: 700),
+    // The file name is not written on the tile, so it is shown on hover
+    // instead, escaped so that a name such as `my_photo_1.jpg` is not taken
+    // for Markdown.
+
+    return MarkdownTooltip(
+      message: '**${escapeMarkdown(item.name)}**',
+      wait: const Duration(milliseconds: 700),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovering = true),
         onExit: (_) => setState(() => _hovering = false),
@@ -210,6 +223,15 @@ class _MediaTileState extends State<MediaTile> {
                     favourite: widget.favourite,
                     onPressed: widget.onToggleFavourite,
                   ),
+                ),
+
+              if (!item.isFolder &&
+                  widget.onRemoveFromAlbum != null &&
+                  (_hovering || widget.selected))
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: _RemoveButton(onPressed: widget.onRemoveFromAlbum!),
                 ),
             ],
           ),
@@ -278,6 +300,48 @@ class _HeartButton extends StatelessWidget {
     ),
   );
 }
+
+class _RemoveButton extends StatelessWidget {
+  const _RemoveButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => MarkdownTooltip(
+    message: '''
+
+    **Remove from album**
+
+    Take this item out of the album. The photo or video itself stays in your
+    Pod, and in any other album it belongs to.
+
+    ''',
+    child: Semantics(
+      label: 'Remove from album',
+      button: true,
+      child: IconButton(
+        iconSize: 18,
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.all(4),
+        constraints: const BoxConstraints(),
+        icon: const Icon(
+          Icons.remove_circle,
+          color: Colors.white,
+          shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+        ),
+        onPressed: onPressed,
+      ),
+    ),
+  );
+}
+
+/// Escape the characters Markdown gives a meaning to, so that [text] is shown
+/// exactly as it is written.
+
+String escapeMarkdown(String text) => text.replaceAllMapped(
+  RegExp(r'[\\`*_{}\[\]()#+\-.!|<>~]'),
+  (m) => '\\${m[0]}',
+);
 
 class _VideoBadge extends StatelessWidget {
   const _VideoBadge();

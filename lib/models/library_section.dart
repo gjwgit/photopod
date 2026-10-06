@@ -27,13 +27,13 @@ import 'package:flutter/material.dart';
 
 import 'package:photopod/constants/media.dart';
 
-/// The four ways PhotoPod offers to look at an album, one per entry in the
+/// The five ways PhotoPod offers to look at an album, one per entry in the
 /// navigation rail down the left hand side.
 ///
 /// Only [library] browses the folders the media actually sits in. The other
-/// three are views over the whole album at once: two filters and a map. They
-/// therefore read from the album index rather than from a single container
-/// listing, and none of them shows a folder.
+/// four are views over the whole album at once: two filters, the albums and a
+/// map. They therefore read from the album index rather than from a single
+/// container listing, and none of them shows a folder.
 
 enum LibrarySection {
   /// Every photo and video in the folder being looked at, mixed together as
@@ -45,6 +45,11 @@ enum LibrarySection {
   /// filed under.
 
   favourites('Favourites', Icons.favorite_outline),
+
+  /// Every album the user has made, with Favourites first, each one opening
+  /// out into a row of its photos and videos.
+
+  albums('Albums', Icons.photo_album_outlined),
 
   /// Every video in the album, whichever folder it is filed under.
 
@@ -85,6 +90,7 @@ enum LibrarySection {
   String get noun => switch (this) {
     LibrarySection.library => 'photos and videos',
     LibrarySection.favourites => 'favourites',
+    LibrarySection.albums => 'albums',
     LibrarySection.videos => 'videos',
     LibrarySection.maps => 'places',
   };

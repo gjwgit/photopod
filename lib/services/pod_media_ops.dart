@@ -1,4 +1,4 @@
-/// Copy, move, rename and delete media in the Pod.
+/// Duplicate, rename and delete media in the Pod.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -31,127 +31,57 @@ import 'package:photopod/utils/resource_name.dart';
 
 /// The operations the toolbar performs on whole items rather than on bytes.
 ///
-/// Solid has no server-side copy or move, so both are built from a read, a
-/// write and — for a move — a delete. Folders are handled by walking their
-/// contents, which is why a folder copy can take a little while.
+/// Solid has no server-side copy or rename, so both are built from a read, a
+/// write and — for a rename — a delete. Folders are handled by walking their
+/// contents, which is why renaming a folder can take a little while.
 
 class PodMediaOps {
   const PodMediaOps._();
 
-  /// Create a folder called [name] inside [parentPodPath].
-
-  static Future<void> createFolder(String parentPodPath, String name) async {
-    final parentUrl = await PodMediaService.folderUrl(parentPodPath);
-    final url = '$parentUrl${safeResourceName(name)}/';
-    if (await PodMediaService.folderExists(url)) {
-      throw PodMediaException('A folder called "$name" already exists here.');
-    }
-    await PodMediaService.ensureFolder(url);
-  }
-
-  /// Create [podPath] and every folder along the way that is missing.
+  /// Make a copy of each of [items] beside the original, returning the
+  /// Pod-relative path of every copy keyed by the path it was copied from.
   ///
-  /// [rootPath] is taken as already there and is never created; only the
-  /// segments below it are. Servers differ on whether a write creates the
-  /// containers above it, so each one is asked for explicitly.
+  /// The copy is named after the original with `_copy` before the extension,
+  /// or `_copy_1`, `_copy_2` and so on when that is taken, so that nothing is
+  /// ever overwritten. Folders are left out: a duplicate is a photo or a
+  /// video. Each folder is listed once, however many of its files are being
+  /// duplicated, and the names handed out along the way are remembered so two
+  /// copies made together cannot collide.
 
-  static Future<void> createFolderPath(String rootPath, String podPath) async {
-    if (!podPath.startsWith(rootPath)) {
-      throw PodMediaException(
-        'The destination "$podPath" is outside "$rootPath".',
-      );
-    }
+  static Future<Map<String, String>> duplicateAll(List<MediaItem> items) async {
+    final copies = <String, String>{};
+    final taken = <String, Set<String>>{};
 
-    var built = rootPath;
-    final tail = podPath
-        .substring(rootPath.length)
-        .split('/')
-        .where((segment) => segment.isNotEmpty);
-
-    for (final segment in tail) {
-      built = '$built/$segment';
-      await PodMediaService.ensureFolder(
-        await PodMediaService.folderUrl(built),
-      );
-    }
-  }
-
-  /// Copy [items] into the folder at [destPodPath].
-  ///
-  /// A name already in use at the destination is given a numeric suffix
-  /// rather than being overwritten, so copying into the folder an item came
-  /// from produces `beach (2).jpg` and nothing is ever lost.
-  ///
-  /// Returns where each item ended up, keyed by the Pod-relative path it
-  /// started from. A move needs that map to carry the hearts across with the
-  /// files, since the destination name is not known until the clash has been
-  /// resolved.
-
-  static Future<Map<String, String>> copyItems(
-    List<MediaItem> items,
-    String destPodPath,
-  ) async {
-    final moved = <String, String>{};
     for (final item in items) {
-      moved[item.path] = await _copyInto(item, destPodPath);
+      if (item.isFolder) continue;
+      final parent = item.parentPath;
+      final names = taken[parent] ??= {
+        for (final each in await PodMediaService.listFolder(parent)) each.name,
+      };
+      final name = duplicateName(safeResourceName(item.name), names);
+      await _copyAs(item, parent, name);
+      names.add(name);
+      copies[item.path] = newPathOf(item, parent, name);
     }
-    return moved;
+    return copies;
   }
 
-  /// Copy [item] into [destPodPath] under exactly [newName].
-  ///
-  /// Unlike [copyItems], a name the user has typed is never quietly given a
-  /// numeric suffix: being handed `sunset.jpg` and silently producing
-  /// `sunset (2).jpg` would be worse than saying the name is taken.
+  /// The name a duplicate of [name] takes, given the names already [taken] in
+  /// its folder: `beach_copy.jpg`, then `beach_copy_1.jpg`, `beach_copy_2.jpg`
+  /// and so on, the first that is free.
 
-  static Future<String> copyAs(
-    MediaItem item,
-    String destPodPath,
-    String newName,
-  ) async {
-    if (await PodMediaService.mediaExists(destPodPath, newName)) {
-      throw PodMediaException(
-        'Something called "$newName" is already in "$destPodPath".',
-      );
+  static String duplicateName(String name, Set<String> taken) {
+    final dot = name.lastIndexOf('.');
+    final stem = dot <= 0 ? name : name.substring(0, dot);
+    final extension = dot <= 0 ? '' : name.substring(dot);
+
+    final first = '${stem}_copy$extension';
+    if (!taken.contains(first)) return first;
+
+    for (var n = 1; ; n++) {
+      final candidate = '${stem}_copy_$n$extension';
+      if (!taken.contains(candidate)) return candidate;
     }
-    await _copyAs(item, destPodPath, newName);
-    return newPathOf(item, destPodPath, newName);
-  }
-
-  /// Move [item] into [destPodPath] under exactly [newName].
-  ///
-  /// Moving into the folder the item is already in is how a rename is
-  /// expressed through the destination field, and works the same way: the
-  /// item is written under its new name and the original removed.
-
-  static Future<Map<String, String>> moveAs(
-    MediaItem item,
-    String destPodPath,
-    String newName,
-  ) async {
-    final moved = await copyAs(item, destPodPath, newName);
-    await _delete(item);
-    return {item.path: moved};
-  }
-
-  /// Move [items] into the folder at [destPodPath], by copying and then
-  /// removing the originals. Anything that fails to copy is left in place.
-
-  static Future<Map<String, String>> moveItems(
-    List<MediaItem> items,
-    String destPodPath,
-  ) async {
-    final moved = <String, String>{};
-    for (final item in items) {
-      if (item.isFolder && _isInside(destPodPath, item.path)) {
-        throw PodMediaException(
-          'A folder cannot be moved into itself: "${item.name}".',
-        );
-      }
-      moved[item.path] = await _copyInto(item, destPodPath);
-      await _delete(item);
-    }
-    return moved;
   }
 
   /// Rename [item] to [newName] within its own folder, returning the
@@ -223,15 +153,6 @@ class PodMediaOps {
     ],
   );
 
-  // Copy [item] into [destPodPath], choosing a name that is free there, and
-  // report the Pod-relative path the copy was written to.
-
-  static Future<String> _copyInto(MediaItem item, String destPodPath) async {
-    final name = await freeName(destPodPath, item.name, item.isFolder);
-    await _copyAs(item, destPodPath, name);
-    return newPathOf(item, destPodPath, name);
-  }
-
   // Copy [item] into [destPodPath] under exactly [name].
 
   static Future<void> _copyAs(
@@ -278,8 +199,8 @@ class PodMediaOps {
   /// A name inside [destPodPath] that nothing is using yet.
   ///
   /// Derived from [wanted] by inserting " (2)", " (3)" and so on before the
-  /// extension, so that neither a copy nor a newly added file can ever
-  /// silently overwrite something already in the folder.
+  /// extension, so that a newly added file can never silently overwrite
+  /// something already in the folder.
 
   static Future<String> freeName(
     String destPodPath,
@@ -310,14 +231,5 @@ class PodMediaOps {
     throw PodMediaException(
       'Too many files called "$wanted" already exist at the destination.',
     );
-  }
-
-  // Whether [inner] sits at or below [outer], used to refuse a move that
-  // would place a folder inside itself.
-
-  static bool _isInside(String inner, String outer) {
-    final base = outer.endsWith('/') ? outer : '$outer/';
-    final target = inner.endsWith('/') ? inner : '$inner/';
-    return target == base || target.startsWith(base);
   }
 }

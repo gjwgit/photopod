@@ -29,6 +29,7 @@ import 'package:provider/provider.dart';
 import 'package:solidui/solidui.dart';
 
 import 'package:photopod/constants/app.dart';
+import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/screens/map_view.dart';
@@ -63,11 +64,14 @@ class _AppScaffoldState extends State<AppScaffold> {
   void initState() {
     super.initState();
 
-    // The hearts live in the Pod, so they can only be read once the login
-    // flow has finished — which is exactly when this scaffold first appears.
+    // The hearts and the albums live in the Pod, so they can only be read
+    // once the login flow has finished — which is exactly when this scaffold
+    // first appears.
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) context.read<Favourites>().load();
+      if (!mounted) return;
+      context.read<Favourites>().load();
+      context.read<Albums>().load();
     });
   }
 
@@ -116,6 +120,23 @@ class _AppScaffoldState extends State<AppScaffold> {
           child: MediaBrowser(
             key: ValueKey(LibrarySection.favourites),
             section: LibrarySection.favourites,
+          ),
+        ),
+        SolidMenuItem(
+          icon: Icons.photo_album_outlined,
+          title: 'Albums',
+          tooltip: '''
+
+            **Albums**
+
+            Tap here for your albums, Favourites first. Open an album to
+            scroll through its photos and videos, and rename or delete it from
+            its title bar.
+
+            ''',
+          child: MediaBrowser(
+            key: ValueKey(LibrarySection.albums),
+            section: LibrarySection.albums,
           ),
         ),
         SolidMenuItem(
@@ -185,15 +206,15 @@ class _AppScaffoldState extends State<AppScaffold> {
 
         ❤️ Put a heart on anything and find it again under Favourites;
 
+        📚 Gather photos and videos into albums of your own;
+
         🗺️ See where your photos were taken, on a map;
 
         ℹ️ Get Info for the size, the camera, the settings and the place;
 
         🎬 Play videos without leaving the app;
 
-        📁 Organise everything into folders;
-
-        ➕ Add, delete, copy, move and rename files and folders;
+        ➕ Add, delete, duplicate and rename photos and videos;
 
         🔐 Share photos and videos with other Solid users by WebID;
 

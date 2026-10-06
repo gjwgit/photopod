@@ -1,4 +1,4 @@
-/// Copy, move and rename from the toolbar.
+/// Duplicate and rename from the toolbar.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -23,113 +23,40 @@
 
 part of 'media_browser.dart';
 
-/// The toolbar actions that put items somewhere else or give them a new name.
+/// The toolbar actions that make a copy of an item or give it a new name.
 
 extension MediaBrowserTransfers on MediaBrowserState {
-  /// Copy or move the selected items to a folder the user chooses.
+  /// Make a copy of each selected photo and video beside the original.
   ///
-  /// The destination dialogue will not close on a path that is not there, so
-  /// by the time this runs the folder has been confirmed to exist. Anything
-  /// the Pod then refuses is reported and nothing is left half done: a move
-  /// only deletes an item once its copy has been written.
+  /// The copy is called `beach_copy.jpg`, or `beach_copy_1.jpg` and so on
+  /// when that is taken. It is a new photo, so it starts with no heart and in
+  /// no album. Any selected folder is left alone.
 
-  Future<void> _transfer(BuildContext context, {required bool move}) async {
-    final items = _selectedItems;
-    if (items.isEmpty) return;
+  Future<void> _duplicate(BuildContext context) async {
+    final files = _selectedFiles;
+    if (files.isEmpty) return;
 
-    final verb = move ? 'Move' : 'Copy';
-    final subject = items.length == 1
-        ? '"${items.first.name}"'
-        : '${items.length} items';
-
-    // A single selected file can be given a new name by ending the
-    // destination with one, so tell the dialogue which file that would be.
-
-    final renameable = items.length == 1 && !items.first.isFolder
-        ? items.first.name
-        : null;
-
-    final destination = await showDestinationDialog(
-      context,
-      rootPath: _root,
-      startPath: _path,
-      title: '$verb $subject',
-      actionLabel: verb,
-      renameableFile: renameable,
-    );
-
-    if (destination == null || !context.mounted) return;
-
-    // Both halves of a copy touch encrypted resources: the source has to be
-    // decrypted and the new copy encrypted again.
+    // The original has to be decrypted and the copy encrypted again.
 
     if (!await _ensureSecurityKey(context)) return;
     if (!context.mounted) return;
 
-    // Moving into the folder the items already sit in does nothing, unless a
-    // new name came with it, which makes the move a rename.
-
-    if (move && destination.folderPath == _path && !destination.renames) {
-      await showErrorDialog(
-        context,
-        'Nothing to move',
-        'The items are already in "${destination.folderPath}".',
-      );
-      return;
-    }
-
-    final favourites = context.read<Favourites>();
     final index = context.read<MediaIndex>();
-    var moved = const <String, String>{};
 
     await _guard(
       context,
-      'Could not ${verb.toLowerCase()} the items',
+      files.length == 1
+          ? 'Could not duplicate "${files.first.name}"'
+          : 'Could not duplicate the items',
       () => showWorking(
         context,
-        '${move ? 'Moving' : 'Copying'}...',
-        () async => moved = await _apply(items, destination, move: move),
+        'Duplicating...',
+        () => PodMediaOps.duplicateAll(files),
       ),
     );
 
-    if (move) {
-      for (final item in items) {
-        ThumbnailCache.instance.evict(item.url);
-      }
-
-      // A heart belongs to the photo, not to the folder it happens to sit in,
-      // so a move carries it along to wherever the file has landed. A copy
-      // does not: the new copy is a new photo and starts without one.
-
-      await favourites.retarget(moved);
-    }
-
     index.invalidate();
     await reload();
-  }
-
-  /// Carry out the copy or the move that [destination] describes, reporting
-  /// where each item ended up.
-
-  Future<Map<String, String>> _apply(
-    List<MediaItem> items,
-    Destination destination, {
-    required bool move,
-  }) async {
-    final newName = destination.newName;
-    if (newName != null) {
-      // The dialogue only accepts a name when exactly one file is selected.
-
-      if (move) {
-        return PodMediaOps.moveAs(items.first, destination.folderPath, newName);
-      }
-      await PodMediaOps.copyAs(items.first, destination.folderPath, newName);
-      return const {};
-    }
-
-    return move
-        ? PodMediaOps.moveItems(items, destination.folderPath)
-        : PodMediaOps.copyItems(items, destination.folderPath);
   }
 
   /// Rename the first selected item.
@@ -154,6 +81,7 @@ extension MediaBrowserTransfers on MediaBrowserState {
     if (!context.mounted) return;
 
     final favourites = context.read<Favourites>();
+    final albums = context.read<Albums>();
     final index = context.read<MediaIndex>();
     String? renamed;
 
@@ -170,6 +98,7 @@ extension MediaBrowserTransfers on MediaBrowserState {
     ThumbnailCache.instance.evict(item.url);
     if (renamed != null) {
       await favourites.retarget({item.path: renamed!});
+      await albums.retarget({item.path: renamed!});
     }
     index.invalidate();
     await reload();
