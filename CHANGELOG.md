@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 0.1 Initial App
 
++ Albums: create albums and add photos to them [0.1.10 20261007 tonypioneer]
 + Choose a map provider for the Maps section [0.1.9 20261007 tonypioneer]
 + Fix the GNU/Linux installer builds, which failed to package [0.1.8 20260925 gjw]
 + Initial photo and video album app [0.1.7 20260922 tonypioneer]

@@ -559,6 +559,7 @@ void main() {
         onTap: (_, _) {},
         onActivate: (_) {},
         onToggleFavourite: (_) {},
+        onRemoveFromAlbum: (_, _) {},
         onRename: onRename ?? (_) {},
         onDelete: onDelete ?? (_) {},
       ),
