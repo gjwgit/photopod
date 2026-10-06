@@ -34,6 +34,7 @@ import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/screens/map_view.dart';
 import 'package:photopod/screens/media_browser.dart';
+import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
@@ -72,6 +73,7 @@ class _AppScaffoldState extends State<AppScaffold> {
       if (!mounted) return;
       context.read<Favourites>().load();
       context.read<Albums>().load();
+      context.read<AlbumSharing>().load();
     });
   }
 

@@ -79,6 +79,16 @@ class MediaItem {
 
   final int? size;
 
+  /// The WebID of the person who shared this file with the user, or null for
+  /// the user's own files.
+  ///
+  /// A shared file lives in someone else's Pod, so both its [path] and its
+  /// [url] are the full resource URL: a Pod-relative path would mean nothing
+  /// against the user's own Pod, and the URL keeps it distinct from any file
+  /// of the user's that happens to share its name.
+
+  final String? sharedBy;
+
   const MediaItem({
     required this.name,
     required this.rawName,
@@ -88,7 +98,13 @@ class MediaItem {
     this.isEncrypted = false,
     this.modified,
     this.size,
+    this.sharedBy,
   });
+
+  /// Whether someone else shared this file with the user, rather than it
+  /// being one of the user's own.
+
+  bool get isShared => sharedBy != null;
 
   /// The kind of media this file holds, or null for folders and for formats
   /// PhotoPod does not display.

@@ -33,6 +33,7 @@ import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
+import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
@@ -127,7 +128,11 @@ class _InfoDialogState extends State<_InfoDialog> {
                 ),
               ),
               const Gap(20),
-              ..._buildSection(context, 'On your Pod', _podRows()),
+              ..._buildSection(
+                context,
+                item.isShared ? 'Shared with you' : 'On your Pod',
+                _podRows(),
+              ),
               ..._buildPhotoSection(context),
             ],
           ),
@@ -157,6 +162,20 @@ class _InfoDialogState extends State<_InfoDialog> {
     final folder = root == null || !parent.startsWith(root)
         ? parent
         : parent.substring(root.length).replaceFirst('/', '');
+
+    if (item.isShared) {
+      return [
+        ('Kind', _kindLabel(item)),
+        ('Shared by', '${webIdLabel(item.sharedBy!)} (${item.sharedBy})'),
+        (
+          'Storage',
+          item.isEncrypted
+              ? 'Encrypted, with the key shared with you'
+              : 'Plain, unencrypted resource',
+        ),
+        ('Address', item.url),
+      ];
+    }
 
     return [
       ('Kind', _kindLabel(item)),

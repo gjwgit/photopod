@@ -28,7 +28,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 
 import 'package:solidpod/solidpod.dart'
-    show PathType, getDataDirPath, isUserLoggedIn, readPod, writePod;
+    show
+        PathType,
+        getDataDirPath,
+        getFileUrl,
+        isUserLoggedIn,
+        readPod,
+        writePod;
 
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_media_service.dart';
@@ -256,6 +262,11 @@ class Favourites extends ChangeNotifier {
     _writes = write.then((_) {});
     return write;
   }
+
+  /// The URL of the file that holds the favourites, which is what is shared
+  /// when Favourites is shared as an album.
+
+  static Future<String> fileUrl() async => getFileUrl(await _podPath());
 
   static Future<String> _podPath() async =>
       '${await getDataDirPath()}/$favouritesFileName';

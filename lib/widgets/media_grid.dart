@@ -28,6 +28,7 @@ import 'package:flutter/material.dart';
 import 'package:markdown_tooltip/markdown_tooltip.dart';
 
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/widgets/media_thumbnail.dart';
 
 /// Lay [items] out as square tiles, photos and videos mixed together.
@@ -107,8 +108,10 @@ class MediaGrid extends StatelessWidget {
 /// every photo application does, so the grid reads as a grid rather than as a
 /// row of differently shaped pictures. Selection is shown by an outline and a
 /// tick, and the heart appears on hover, when the item is already a
-/// favourite, or when the tile is selected. A tile shown inside an album also
-/// offers, on hover or when selected, to take the item out of that album.
+/// favourite, or when the tile is selected. Anything shared with the user
+/// carries a two-people mark beside the heart. A tile shown inside one of the
+/// user's own albums also offers, on hover or when selected, to take the item
+/// out of that album.
 
 class MediaTile extends StatefulWidget {
   const MediaTile({
@@ -164,11 +167,10 @@ class _MediaTileState extends State<MediaTile> {
     final item = widget.item;
 
     // The file name is not written on the tile, so it is shown on hover
-    // instead, escaped so that a name such as `my_photo_1.jpg` is not taken
-    // for Markdown.
+    // instead, along with who shared it for anything that is not the user's.
 
     return MarkdownTooltip(
-      message: '**${escapeMarkdown(item.name)}**',
+      message: mediaTooltipMarkdown(item),
       wait: const Duration(milliseconds: 700),
       child: MouseRegion(
         onEnter: (_) => setState(() => _hovering = true),
@@ -214,14 +216,27 @@ class _MediaTileState extends State<MediaTile> {
                   ),
                 ),
 
+              // Something shared with the user always says so, beside the
+              // heart, so that it is never mistaken for one of the user's own
+              // photos.
               if (!item.isFolder &&
-                  (widget.favourite || _hovering || widget.selected))
+                  (item.isShared ||
+                      widget.favourite ||
+                      _hovering ||
+                      widget.selected))
                 Positioned(
                   right: 0,
                   bottom: 0,
-                  child: _HeartButton(
-                    favourite: widget.favourite,
-                    onPressed: widget.onToggleFavourite,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (item.isShared) SharedBadge(owner: item.sharedBy!),
+                      if (widget.favourite || _hovering || widget.selected)
+                        _HeartButton(
+                          favourite: widget.favourite,
+                          onPressed: widget.onToggleFavourite,
+                        ),
+                    ],
                   ),
                 ),
 
@@ -301,6 +316,38 @@ class _HeartButton extends StatelessWidget {
   );
 }
 
+/// The mark on anything someone else has shared with the user: two people,
+/// with the owner's name a hover away.
+
+class SharedBadge extends StatelessWidget {
+  const SharedBadge({super.key, required this.owner, this.size = 18});
+
+  /// The WebID of the person who shared it.
+
+  final String owner;
+
+  /// How big the icon is drawn.
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    label: 'Shared with you by ${webIdLabel(owner)}',
+    child: Tooltip(
+      message: 'Shared with you by ${webIdLabel(owner)}\n$owner',
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Icon(
+          Icons.people,
+          size: size,
+          color: Colors.white,
+          shadows: const [Shadow(blurRadius: 4, color: Colors.black54)],
+        ),
+      ),
+    ),
+  );
+}
+
 class _RemoveButton extends StatelessWidget {
   const _RemoveButton({required this.onPressed});
 
@@ -333,6 +380,28 @@ class _RemoveButton extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// What hovering over [item] shows, as Markdown: its name, and who shared it
+/// for anything shared with the user. Both are escaped so that a name such as
+/// `my_photo_1.jpg` is not taken for Markdown.
+
+String mediaTooltipMarkdown(MediaItem item) {
+  final name = '**${escapeMarkdown(item.name)}**';
+  final owner = item.sharedBy;
+  if (owner == null) return name;
+  return '$name\n\n'
+      'Shared by ${escapeMarkdown(webIdLabel(owner))}\n\n'
+      '${escapeMarkdown(owner)}';
+}
+
+/// What hovering over [item] shows, as plain text, for places that use an
+/// ordinary tooltip.
+
+String mediaTooltipText(MediaItem item) {
+  final owner = item.sharedBy;
+  if (owner == null) return item.name;
+  return '${item.name}\nShared by ${webIdLabel(owner)}\n$owner';
 }
 
 /// Escape the characters Markdown gives a meaning to, so that [text] is shown

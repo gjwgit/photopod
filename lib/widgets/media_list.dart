@@ -29,6 +29,7 @@ import 'package:gap/gap.dart';
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 
@@ -141,6 +142,20 @@ class MediaList extends StatelessWidget {
                     ),
                   ),
                 ],
+                if (item.isShared)
+                  Tooltip(
+                    message:
+                        'Shared with you by ${webIdLabel(item.sharedBy!)}\n'
+                        '${item.sharedBy}',
+                    child: Semantics(
+                      label: 'Shared with you by ${webIdLabel(item.sharedBy!)}',
+                      child: Icon(
+                        Icons.people,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ),
+                  ),
                 if (!item.isFolder)
                   IconButton(
                     iconSize: 18,

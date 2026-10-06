@@ -33,6 +33,7 @@ import 'package:solidpod/solidpod.dart'
         ResourceContentType,
         deleteResource,
         getDataDirPath,
+        getFileUrl,
         isUserLoggedIn,
         readPod,
         writePod;
@@ -428,6 +429,12 @@ class Albums extends ChangeNotifier {
       rethrow;
     }
   }
+
+  /// The URL of the file that holds the album called [name], which is what
+  /// is shared when the album is.
+
+  static Future<String> fileUrlOf(String name) async =>
+      getFileUrl('${await _folderPath()}/$name$albumFileExtension');
 
   static Future<String> _folderPath() async =>
       '${await getDataDirPath()}/$albumsFolderName';

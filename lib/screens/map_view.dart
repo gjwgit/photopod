@@ -40,7 +40,10 @@ import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
+import 'package:photopod/widgets/media_grid.dart' show mediaTooltipText;
 import 'package:photopod/widgets/media_thumbnail.dart';
+
+part 'map_view_widgets.dart';
 
 /// How many photos the map will read before it stops looking.
 ///
@@ -305,21 +308,19 @@ class _MapViewState extends State<MapView> {
       );
     }
 
-    if (_places.isEmpty && !_scanning && !index.isLoading) {
-      return _buildMessage(
-        context,
-        icon: Icons.location_off_outlined,
-        title: 'Nothing to map yet',
-        message: index.photos.isEmpty
-            ? 'Add photos to your album and any that were taken with '
-                  'location services switched on will appear here.'
-            : 'None of the photos currently in your album carry GPS coordinates. A '
-                  'camera only writes them when location services are '
-                  'switched on, and some applications (WhatsApp and Signal, for example) '
-                  'strip them out when a '
-                  'photo is exported or shared.',
-      );
-    }
+    // The map is always shown, even with nothing on it, so that the section
+    // looks like what it is. Why it is empty is said in a notice over the
+    // map rather than in place of it.
+
+    final empty = _places.isEmpty && !_scanning && !index.isLoading;
+    final emptyMessage = index.photos.isEmpty
+        ? 'Nothing to map yet. Add photos to your album and any that were '
+              'taken with location services switched on will appear here.'
+        : 'None of the photos currently in your album carry GPS '
+              'coordinates. A camera only writes them when location services '
+              'are switched on, and some applications (WhatsApp and Signal, '
+              'for example) strip them out when a photo is exported or '
+              'shared.';
 
     return Stack(
       children: [
@@ -360,14 +361,26 @@ class _MapViewState extends State<MapView> {
             SimpleAttributionWidget(source: Text(_source.attribution)),
           ],
         ),
-        if (index.isTruncated)
-          const Positioned(
+        if (empty || index.isTruncated)
+          Positioned(
             left: 12,
             top: 12,
-            child: _Notice(
-              text:
-                  'Only the first $maxScannedFolders folders were read, so '
-                  'some places may be missing.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (empty)
+                  _Notice(
+                    icon: Icons.location_off_outlined,
+                    text: emptyMessage,
+                  ),
+                if (empty && index.isTruncated) const Gap(8),
+                if (index.isTruncated)
+                  const _Notice(
+                    text:
+                        'Only the first $maxScannedFolders folders were read, '
+                        'so some places may be missing.',
+                  ),
+              ],
             ),
           ),
       ],
@@ -435,164 +448,5 @@ class _MapViewState extends State<MapView> {
       for (final key in groups.keys)
         _Place(point: points[key]!, items: groups[key]!),
     ];
-  }
-}
-
-/// One spot on the map and the photos taken there.
-
-class _Place {
-  const _Place({required this.point, required this.items});
-
-  final LatLng point;
-  final List<MediaItem> items;
-}
-
-class _PlaceMarker extends StatelessWidget {
-  const _PlaceMarker({required this.place, required this.onTap});
-
-  final _Place place;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Tooltip(
-        message: place.items.length == 1
-            ? place.items.first.name
-            : '${place.items.length} photos',
-        child: Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: const [
-                  BoxShadow(blurRadius: 4, color: Colors.black38),
-                ],
-              ),
-              child: ClipOval(
-                child: SizedBox(
-                  width: 46,
-                  height: 46,
-                  child: ColoredBox(
-                    color: scheme.surfaceContainerHighest,
-                    child: MediaThumbnail(item: place.items.first),
-                  ),
-                ),
-              ),
-            ),
-            if (place.items.length > 1)
-              Positioned(
-                right: -2,
-                top: -2,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 5,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: scheme.primary,
-                    borderRadius: BorderRadius.circular(9),
-                    border: Border.all(color: Colors.white, width: 1),
-                  ),
-                  child: Text(
-                    '${place.items.length}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w600,
-                      color: scheme.onPrimary,
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// The photos taken at one spot, offered as thumbnails to choose from.
-
-class _PlaceDialog extends StatelessWidget {
-  const _PlaceDialog({required this.place});
-
-  final _Place place;
-
-  @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text('${place.items.length} photos taken here'),
-    content: SizedBox(
-      width: 420,
-      child: SingleChildScrollView(
-        child: Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final item in place.items)
-              Tooltip(
-                message: item.name,
-                child: InkWell(
-                  onTap: () async {
-                    Navigator.of(context).pop();
-                    await showPreviewDialog(context, item);
-                  },
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: SizedBox(
-                      width: 92,
-                      height: 92,
-                      child: ColoredBox(
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.surfaceContainerHighest,
-                        child: MediaThumbnail(item: item),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.of(context).pop(),
-        child: const Text('Close'),
-      ),
-    ],
-  );
-}
-
-class _Notice extends StatelessWidget {
-  const _Notice({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 280),
-      child: Material(
-        color: scheme.secondaryContainer,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          child: Text(
-            text,
-            style: Theme.of(
-              context,
-            ).textTheme.bodySmall?.copyWith(color: scheme.onSecondaryContainer),
-          ),
-        ),
-      ),
-    );
   }
 }
