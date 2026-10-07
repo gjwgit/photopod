@@ -1,7 +1,7 @@
 name: photopod
 description: "Photo Pod - Photo Management with Secure and Private Storage"
 publish_to: 'none'
-version: 0.1.8+1
+version: 0.1.12+1
 
 environment:
   sdk: ^3.11.3
@@ -17,6 +17,10 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
+  # Accept photos and videos dragged from the desktop onto the Library, as
+  # an alternative to picking them with the Add button.
+  desktop_drop: ^0.8.4
 
   # Pick photos and videos to add to the Pod, and choose a local save
   # location when downloading a file back out of the Pod.
@@ -67,11 +71,10 @@ dependencies:
   solidpod: ^1.0.24
 
   # Solid app scaffold, login flow, sharing UI, and shared settings/about UI.
-  solidui: ^1.1.3
+  solidui: ^1.2.0
 
   # Restore the last window size/position on Linux/macOS/Windows desktop.
   window_manager: ^0.5.1
-
 dev_dependencies:
   flutter_test:
     sdk: flutter
