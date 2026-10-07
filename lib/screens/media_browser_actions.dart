@@ -267,6 +267,9 @@ extension MediaBrowserActions on MediaBrowserState {
             displayName: name,
             bytes: bytes,
           );
+          if (kindOf(name) == MediaKind.video) {
+            await _addVideoThumbnail(name, bytes);
+          }
           if (name != file.name) renamed[file.name] = name;
           added++;
         } on Object catch (e) {
@@ -303,6 +306,24 @@ extension MediaBrowserActions on MediaBrowserState {
         'underscore.\n\n'
         '${renamed.entries.map((e) => '${e.key}  →  ${e.value}').join('\n')}',
       );
+    }
+  }
+
+  // Capture the opening frame of the video just added as [name], while its
+  // [bytes] are still in hand, and store it as the video's thumbnail. The
+  // video is already safely on the Pod, so a frame that cannot be read or
+  // stored leaves it with the film glyph rather than counting as a failure.
+
+  Future<void> _addVideoThumbnail(String name, Uint8List bytes) async {
+    try {
+      final thumbnail = await firstFrameThumbnail(bytes, name);
+      if (thumbnail == null) return;
+      await VideoThumbnails.save(
+        PodMediaService.storedPath(_path, name),
+        thumbnail,
+      );
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not store a thumbnail for $name: $e');
     }
   }
 

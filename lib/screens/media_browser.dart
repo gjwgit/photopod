@@ -53,6 +53,8 @@ import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
+import 'package:photopod/services/video_frame.dart';
+import 'package:photopod/services/video_thumbnails.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/utils/resource_name.dart';
 import 'package:photopod/widgets/album_list.dart';

@@ -1,4 +1,5 @@
-/// Thumbnails and EXIF details for the photos in the album.
+/// Thumbnails for the photos and videos in the album, and EXIF details for
+/// the photos.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -32,6 +33,7 @@ import 'package:image/image.dart' as img;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/services/video_thumbnails.dart';
 
 /// The longest edge, in pixels, of a generated thumbnail. Large enough to
 /// stay sharp on a high density display at the grid's tile size, small
@@ -73,6 +75,9 @@ class PhotoAnalysis {
 
 /// Thumbnails and photo details, fetched from the Pod once and then kept.
 ///
+/// A video's thumbnail is the frame [VideoThumbnails] stored when the video
+/// was added, already small and already a JPEG, so it is shown as it comes.
+///
 /// Decoding happens on a background isolate through [compute], which matters
 /// because the `image` package is pure Dart and a full size photo would
 /// otherwise stall the frame. It also gives PhotoPod TIFF support, which
@@ -93,6 +98,9 @@ class ThumbnailCache {
   /// The thumbnail and details for the photo [item] holds, or null when the
   /// file could not be read or decoded. Repeated calls for the same photo
   /// share one fetch.
+  ///
+  /// For a video there are no details, and the thumbnail is null when none
+  /// was stored for it.
 
   Future<PhotoAnalysis?> analyse(MediaItem item) {
     final url = item.url;
@@ -107,8 +115,12 @@ class ThumbnailCache {
     return _inFlight.putIfAbsent(url, () async {
       await _acquire();
       try {
-        final bytes = await PodMediaService.readBytes(item);
-        final analysis = await compute(analysePhoto, bytes);
+        final analysis = item.isVideo
+            ? PhotoAnalysis(thumbnail: await VideoThumbnails.read(item))
+            : await compute(
+                analysePhoto,
+                await PodMediaService.readBytes(item),
+              );
         if (analysis != null) _store(url, analysis);
         return analysis;
       } on Object catch (e) {
