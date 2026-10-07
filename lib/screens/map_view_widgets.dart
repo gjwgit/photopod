@@ -124,7 +124,7 @@ class _PlaceDialog extends StatelessWidget {
                 child: InkWell(
                   onTap: () async {
                     Navigator.of(context).pop();
-                    await showPreviewDialog(context, item);
+                    await showPreviewDialog(context, item, items: place.items);
                   },
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(6),

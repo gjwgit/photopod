@@ -134,9 +134,11 @@ class AlbumList extends StatelessWidget {
 
   final void Function(String album, MediaItem item) onTap;
 
-  /// Called on a double tap, which previews the file.
+  /// Called on a double tap, which previews the file. [album] is the
+  /// [AlbumEntry.id] it was opened from, so the preview can step through
+  /// that album.
 
-  final void Function(MediaItem item) onActivate;
+  final void Function(String album, MediaItem item) onActivate;
 
   /// Called when the heart on a tile is tapped.
 
@@ -257,7 +259,7 @@ class _AlbumTile extends StatelessWidget {
                     selected: list.isSelected(album.id, item),
                     favourite: list.isFavourite(item),
                     onTap: () => list.onTap(album.id, item),
-                    onActivate: () => list.onActivate(item),
+                    onActivate: () => list.onActivate(album.id, item),
                     onToggleFavourite: () => list.onToggleFavourite(item),
                     onRemoveFromAlbum: album.isFromOthers
                         ? null

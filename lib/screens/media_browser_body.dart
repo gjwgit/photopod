@@ -348,7 +348,10 @@ extension MediaBrowserBody on MediaBrowserState {
         item,
         entries.firstWhere((entry) => entry.id == album).items,
       ),
-      onActivate: _handleActivate,
+      onActivate: (album, item) => _handleActivate(
+        item,
+        entries.firstWhere((entry) => entry.id == album).items,
+      ),
       onToggleFavourite: (item) => _toggleFavourite(context, [item]),
       onShare: (album) => _shareAlbum(
         context,
