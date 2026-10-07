@@ -619,7 +619,7 @@ void main() {
         isSelected: (_, _) => false,
         isFavourite: (_) => false,
         onTap: (_, _) {},
-        onActivate: (_) {},
+        onActivate: (_, _) {},
         onToggleFavourite: (_) {},
         onShare: onShare ?? (_) {},
         onRemoveFromAlbum: (_, _) {},
