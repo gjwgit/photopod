@@ -82,13 +82,20 @@ extension MediaBrowserActions on MediaBrowserState {
   }
 
   /// Handle a double tap: open a folder, or preview a file.
+  ///
+  /// The preview can step through [siblings], which defaults to every file
+  /// this section shows, across all pages, in the order they are displayed.
 
-  Future<void> _handleActivate(MediaItem item) async {
+  Future<void> _handleActivate(
+    MediaItem item, [
+    List<MediaItem>? siblings,
+  ]) async {
     if (item.isFolder) {
       await _goTo(item.path);
       return;
     }
-    if (mounted) await showPreviewDialog(context, item);
+    if (!mounted) return;
+    await showPreviewDialog(context, item, items: siblings ?? _sortedFiles);
   }
 
   /// Preview the first selected file, ignoring any selected folders.
@@ -96,7 +103,7 @@ extension MediaBrowserActions on MediaBrowserState {
   Future<void> _previewFirst(BuildContext context) async {
     final files = _selectedFiles;
     if (files.isEmpty) return;
-    await showPreviewDialog(context, files.first);
+    await showPreviewDialog(context, files.first, items: _sortedFiles);
   }
 
   /// Describe the first selected file.
