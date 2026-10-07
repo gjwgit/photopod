@@ -145,3 +145,8 @@ bool isTiff(String name) {
   final ext = extensionOf(name);
   return ext == 'tiff' || ext == 'tif';
 }
+
+/// A GIF may be animated, and so is always shown from the original: a still
+/// copy of it would stop moving.
+
+bool isGif(String name) => extensionOf(name) == 'gif';

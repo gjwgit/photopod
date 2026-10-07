@@ -69,6 +69,10 @@ class MediaActions {
 
   final VoidCallback onGetInfo;
 
+  /// Save the originals of the selected files onto this device.
+
+  final VoidCallback onDownload;
+
   /// Add a heart to the selected files, or take it away.
 
   final VoidCallback onToggleFavourite;
@@ -102,6 +106,7 @@ class MediaActions {
     required this.onView,
     required this.onPreview,
     required this.onGetInfo,
+    required this.onDownload,
     required this.onToggleFavourite,
     required this.onAddToAlbum,
     required this.onCreateAlbum,
@@ -271,6 +276,23 @@ class MediaToolbar extends StatelessWidget {
           Open the selected photo or video full size. Double tapping its tile
           does the same thing.
           ${many ? 'With several selected, the first one is shown.' : ''}
+
+          ''',
+        ),
+        _button(
+          icon: Icons.download_outlined,
+          label: 'Download',
+          enabled: hasFiles,
+          onPressed: actions.onDownload,
+          tooltip:
+              '''
+
+          **Download**
+
+          Save the original of each selected photo and video onto this
+          device, at full size. The tiles and the preview show smaller copies
+          kept beside it, which is what keeps browsing quick.
+          ${manyFiles ? 'You are asked where to save each one in turn.' : ''}
 
           ''',
         ),

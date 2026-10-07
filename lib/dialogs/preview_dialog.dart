@@ -23,13 +23,14 @@
 
 library;
 
-import 'package:flutter/foundation.dart';
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
-import 'package:photopod/constants/media.dart';
+import 'package:photopod/dialogs/download_media.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
@@ -41,8 +42,10 @@ import 'package:photopod/widgets/video_preview.dart';
 /// Preview [item] in a modal dialogue.
 ///
 /// Photos can be pinched or scrolled to zoom; videos get playback controls.
-/// The file is fetched at full size here rather than reusing the grid's
-/// thumbnail, so what the user sees is the photo as it is actually stored.
+/// A photo is shown from its large rendition, big enough to fill the screen
+/// and far quicker to fetch than the original, with the grid's thumbnail
+/// standing in until it arrives. The original is fetched only by Download.
+/// A video needs the whole file to play, so it is fetched in full.
 
 Future<void> showPreviewDialog(BuildContext context, MediaItem item) =>
     showDialog<void>(
@@ -71,19 +74,12 @@ class _PreviewDialogState extends State<_PreviewDialog> {
 
   Future<void> _load() async {
     try {
-      var bytes = await PodMediaService.readBytes(widget.item);
-
-      // TIFF has no Flutter codec, so those photos are re-encoded as PNG on a
-      // background isolate before they can be shown.
-
-      if (isTiff(widget.item.name)) {
-        final png = await compute(convertToPng, bytes);
-        if (png == null) {
-          throw const PodMediaException('This TIFF file could not be decoded.');
-        }
-        bytes = png;
+      final bytes = widget.item.isVideo
+          ? await PodMediaService.readBytes(widget.item)
+          : await ThumbnailCache.instance.preview(widget.item);
+      if (bytes == null) {
+        throw const PodMediaException('This photo could not be decoded.');
       }
-
       if (mounted) setState(() => _bytes = bytes);
     } on Object catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -154,6 +150,11 @@ class _PreviewDialogState extends State<_PreviewDialog> {
             onPressed: () => favourites.toggleAll([widget.item]),
           ),
           IconButton(
+            icon: const Icon(Icons.download_outlined),
+            tooltip: 'Download the original',
+            onPressed: () => downloadMedia(context, [widget.item]),
+          ),
+          IconButton(
             icon: const Icon(Icons.info_outline),
             tooltip: 'Get Info',
             onPressed: () => showInfoDialog(context, widget.item),
@@ -182,9 +183,25 @@ class _PreviewDialogState extends State<_PreviewDialog> {
 
     final bytes = _bytes;
     if (bytes == null) {
-      return const Padding(
-        padding: EdgeInsets.all(64),
-        child: Center(child: CircularProgressIndicator()),
+      // The grid has almost always fetched the thumbnail already, so it is
+      // shown, stretched and softened, while the large rendition comes.
+
+      final thumbnail = ThumbnailCache.instance.cached(widget.item)?.thumbnail;
+      const spinner = Center(child: CircularProgressIndicator());
+      if (thumbnail == null) {
+        return const Padding(padding: EdgeInsets.all(64), child: spinner);
+      }
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          Image.memory(
+            thumbnail,
+            fit: BoxFit.contain,
+            gaplessPlayback: true,
+            filterQuality: FilterQuality.medium,
+          ),
+          spinner,
+        ],
       );
     }
 

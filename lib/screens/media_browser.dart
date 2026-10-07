@@ -23,6 +23,7 @@
 
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -35,6 +36,7 @@ import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/album_name_dialog.dart';
+import 'package:photopod/dialogs/download_media.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/dialogs/preview_dialog.dart';
@@ -48,13 +50,13 @@ import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_index.dart';
+import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/services/video_frame.dart';
-import 'package:photopod/services/video_thumbnails.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/utils/resource_name.dart';
 import 'package:photopod/widgets/album_list.dart';

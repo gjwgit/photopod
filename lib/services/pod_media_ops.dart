@@ -26,8 +26,8 @@ library;
 import 'package:solidpod/solidpod.dart';
 
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/pod_media_service.dart';
-import 'package:photopod/services/video_thumbnails.dart';
 import 'package:photopod/utils/resource_name.dart';
 
 /// The operations the toolbar performs on whole items rather than on bytes.
@@ -119,7 +119,7 @@ class PodMediaOps {
       : PodMediaService.storedPath(destPodPath, name);
 
   /// Delete [items], which all sit in [parentPodPath]. Folders are removed
-  /// with everything inside them, and so are the thumbnails of the videos
+  /// with everything inside them, and so are the renditions of everything
   /// that went.
 
   static Future<BatchDeleteResult> deleteAll(
@@ -132,7 +132,7 @@ class PodMediaOps {
       fileNames: names.files,
       directoryNames: names.folders,
     );
-    await VideoThumbnails.forget(
+    await MediaRenditions.forget(
       items.where((item) => !result.failed.containsKey(item.rawName)),
     );
     return result;
@@ -177,12 +177,10 @@ class PodMediaOps {
         displayName: name,
         bytes: bytes,
       );
-      if (item.isVideo) {
-        await VideoThumbnails.copy(
-          item.path,
-          PodMediaService.storedPath(destPodPath, name),
-        );
-      }
+      await MediaRenditions.copy(
+        item.path,
+        PodMediaService.storedPath(destPodPath, name),
+      );
       return;
     }
 

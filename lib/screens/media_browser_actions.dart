@@ -42,6 +42,7 @@ extension MediaBrowserActions on MediaBrowserState {
     onView: () => showViewOptionsDialog(context),
     onPreview: () => _previewFirst(context),
     onGetInfo: () => _getInfo(context),
+    onDownload: () => downloadMedia(context, _selectedFiles),
     onToggleFavourite: () => _toggleFavourite(context, _selectedFiles),
     onAddToAlbum: (album) => _addToAlbum(context, album, _selectedFiles),
     onCreateAlbum: () => _createAlbum(context, _selectedFiles),
@@ -260,9 +261,7 @@ extension MediaBrowserActions on MediaBrowserState {
             displayName: name,
             bytes: bytes,
           );
-          if (kindOf(name) == MediaKind.video) {
-            await _addVideoThumbnail(name, bytes);
-          }
+          await _addRenditions(name, bytes);
           if (name != file.name) renamed[file.name] = name;
           added++;
         } on Object catch (e) {
@@ -302,21 +301,33 @@ extension MediaBrowserActions on MediaBrowserState {
     }
   }
 
-  // Capture the opening frame of the video just added as [name], while its
-  // [bytes] are still in hand, and store it as the video's thumbnail. The
-  // video is already safely on the Pod, so a frame that cannot be read or
-  // stored leaves it with the film glyph rather than counting as a failure.
+  // Make the renditions of the photo or video just added as [name], while
+  // its [bytes] are still in hand, and store them beside it: the grid and the
+  // preview then never need the original. For a video that is its opening
+  // frame. The file is already safely on the Pod, so renditions that cannot
+  // be made or stored are not counted as a failure; a photo has them made
+  // the first time it is looked at instead, and a video keeps the film glyph.
 
-  Future<void> _addVideoThumbnail(String name, Uint8List bytes) async {
+  Future<void> _addRenditions(String name, Uint8List bytes) async {
+    final path = PodMediaService.storedPath(_path, name);
     try {
-      final thumbnail = await firstFrameThumbnail(bytes, name);
-      if (thumbnail == null) return;
-      await VideoThumbnails.save(
-        PodMediaService.storedPath(_path, name),
-        thumbnail,
-      );
+      if (kindOf(name) == MediaKind.video) {
+        final thumbnail = await firstFrameThumbnail(bytes, name);
+        if (thumbnail != null) {
+          await MediaRenditions.saveVideo(path, thumbnail);
+        }
+        return;
+      }
+
+      final renditions = await compute(renderPhoto, (
+        bytes: bytes,
+        keepOriginal: isGif(name),
+      ));
+      if (renditions != null) {
+        await MediaRenditions.savePhoto(path, renditions);
+      }
     } on Object catch (e) {
-      debugPrint('PhotoPod: could not store a thumbnail for $name: $e');
+      debugPrint('PhotoPod: could not store renditions of $name: $e');
     }
   }
 
