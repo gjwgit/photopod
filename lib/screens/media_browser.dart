@@ -405,6 +405,12 @@ class MediaBrowserState extends State<MediaBrowser> {
     return result != 0 ? result : _byName(a, b);
   }
 
+  /// The photos and videos this section shows, in the order they are
+  /// displayed, which is what the preview's arrows step through.
+
+  List<MediaItem> get _sortedFiles =>
+      _sorted.where((item) => !item.isFolder).toList();
+
   /// The selected items, in the order they are displayed, so that "the first
   /// selected item" means what the user sees.
 

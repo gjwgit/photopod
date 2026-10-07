@@ -23,9 +23,8 @@
 
 library;
 
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
@@ -46,43 +45,96 @@ import 'package:photopod/widgets/video_preview.dart';
 /// and far quicker to fetch than the original, with the grid's thumbnail
 /// standing in until it arrives. The original is fetched only by Download.
 /// A video needs the whole file to play, so it is fetched in full.
+///
+/// When [items] is given, arrows either side of the preview (and the left and
+/// right arrow keys) step to the previous and next photo or video in it.
+/// Folders and files PhotoPod cannot show are skipped.
 
-Future<void> showPreviewDialog(BuildContext context, MediaItem item) =>
-    showDialog<void>(
-      context: context,
-      builder: (context) => _PreviewDialog(item: item),
-    );
+Future<void> showPreviewDialog(
+  BuildContext context,
+  MediaItem item, {
+  List<MediaItem>? items,
+}) {
+  final playable = (items ?? const <MediaItem>[])
+      .where((each) => each.kind != null)
+      .toList();
+  var index = playable.indexWhere((each) => each.id == item.id);
+  if (index < 0) {
+    playable
+      ..clear()
+      ..add(item);
+    index = 0;
+  }
+
+  return showDialog<void>(
+    context: context,
+    builder: (context) => _PreviewDialog(items: playable, initialIndex: index),
+  );
+}
 
 class _PreviewDialog extends StatefulWidget {
-  const _PreviewDialog({required this.item});
+  const _PreviewDialog({required this.items, required this.initialIndex});
 
-  final MediaItem item;
+  /// The files the arrows step through, in display order.
+
+  final List<MediaItem> items;
+
+  /// Where in [items] the preview starts.
+
+  final int initialIndex;
 
   @override
   State<_PreviewDialog> createState() => _PreviewDialogState();
 }
 
 class _PreviewDialogState extends State<_PreviewDialog> {
+  late int _index;
   Uint8List? _bytes;
   String? _error;
+
+  MediaItem get _item => widget.items[_index];
+
+  bool get _hasPrevious => _index > 0;
+
+  bool get _hasNext => _index < widget.items.length - 1;
 
   @override
   void initState() {
     super.initState();
+    _index = widget.initialIndex;
+    _load();
+  }
+
+  /// Move [step] places through the list and fetch the file found there.
+
+  void _go(int step) {
+    final next = _index + step;
+    if (next < 0 || next >= widget.items.length) return;
+    setState(() {
+      _index = next;
+      _bytes = null;
+      _error = null;
+    });
     _load();
   }
 
   Future<void> _load() async {
+    // A slow fetch can finish after the user has already stepped on, so its
+    // result is only used if the preview is still showing the same file.
+
+    final item = _item;
+    bool current() => mounted && identical(item, _item);
+
     try {
-      final bytes = widget.item.isVideo
-          ? await PodMediaService.readBytes(widget.item)
-          : await ThumbnailCache.instance.preview(widget.item);
+      final bytes = item.isVideo
+          ? await PodMediaService.readBytes(item)
+          : await ThumbnailCache.instance.preview(item);
       if (bytes == null) {
         throw const PodMediaException('This photo could not be decoded.');
       }
-      if (mounted) setState(() => _bytes = bytes);
+      if (current()) setState(() => _bytes = bytes);
     } on Object catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (current()) setState(() => _error = e.toString());
     }
   }
 
@@ -90,32 +142,88 @@ class _PreviewDialogState extends State<_PreviewDialog> {
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context).size;
 
-    return Dialog(
-      insetPadding: const EdgeInsets.all(24),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: media.width * 0.9,
-          maxHeight: media.height * 0.9,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _buildHeader(context),
-            const Divider(height: 1),
-            Flexible(child: _buildBody()),
-          ],
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _go(-1),
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () => _go(1),
+      },
+      child: Focus(
+        autofocus: true,
+        child: Dialog(
+          insetPadding: const EdgeInsets.all(24),
+
+          // solidui's dark theme caps every dialogue at 500 pixels wide while
+          // PhotoPod's light theme does not, so the preview would be wide in
+          // one and narrow in the other. It sizes itself from the screen
+          // below instead, in both.
+          constraints: const BoxConstraints(minWidth: 280),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: media.width * 0.9,
+              maxHeight: media.height * 0.9,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(context),
+                const Divider(height: 1),
+                Flexible(child: _buildNavigable(context)),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 
+  /// The preview with an arrow either side, when there is more than one file
+  /// to step through.
+  ///
+  /// The arrows sit in their own columns rather than over the picture, so
+  /// they never hide part of a photo or cover the video's controls.
+
+  Widget _buildNavigable(BuildContext context) {
+    if (widget.items.length < 2) return _buildBody();
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildArrow(
+          icon: Icons.chevron_left,
+          tooltip: 'Previous',
+          onPressed: _hasPrevious ? () => _go(-1) : null,
+        ),
+        Flexible(child: _buildBody()),
+        _buildArrow(
+          icon: Icons.chevron_right,
+          tooltip: 'Next',
+          onPressed: _hasNext ? () => _go(1) : null,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildArrow({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+  }) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4),
+    child: IconButton(
+      icon: Icon(icon, size: 36),
+      tooltip: tooltip,
+      onPressed: onPressed,
+    ),
+  );
+
   Widget _buildHeader(BuildContext context) {
     final favourites = context.watch<Favourites>();
-    final favourite = favourites.contains(widget.item);
+    final favourite = favourites.contains(_item);
 
     final details = [
-      if (widget.item.size != null) formatBytes(widget.item.size),
-      if (widget.item.modified != null) formatDateTime(widget.item.modified),
+      if (widget.items.length > 1) '${_index + 1} of ${widget.items.length}',
+      if (_item.size != null) formatBytes(_item.size),
+      if (_item.modified != null) formatDateTime(_item.modified),
     ].join('  ·  ');
 
     return Padding(
@@ -123,7 +231,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       child: Row(
         children: [
           Icon(
-            widget.item.isVideo ? Icons.movie : Icons.image,
+            _item.isVideo ? Icons.movie : Icons.image,
             color: Theme.of(context).colorScheme.primary,
           ),
           const Gap(12),
@@ -132,7 +240,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  widget.item.name,
+                  _item.name,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
@@ -147,17 +255,17 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               color: favourite ? const Color(0xFFE53935) : null,
             ),
             tooltip: favourite ? 'Remove from Favourites' : 'Add to Favourites',
-            onPressed: () => favourites.toggleAll([widget.item]),
+            onPressed: () => favourites.toggleAll([_item]),
           ),
           IconButton(
             icon: const Icon(Icons.download_outlined),
             tooltip: 'Download the original',
-            onPressed: () => downloadMedia(context, [widget.item]),
+            onPressed: () => downloadMedia(context, [_item]),
           ),
           IconButton(
             icon: const Icon(Icons.info_outline),
             tooltip: 'Get Info',
-            onPressed: () => showInfoDialog(context, widget.item),
+            onPressed: () => showInfoDialog(context, _item),
           ),
           IconButton(
             icon: const Icon(Icons.close),
@@ -174,7 +282,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       return Padding(
         padding: const EdgeInsets.all(32),
         child: Text(
-          'This ${widget.item.kind?.noun ?? 'file'} could not be opened.'
+          'This ${_item.kind?.noun ?? 'file'} could not be opened.'
           '\n\n$_error',
           textAlign: TextAlign.center,
         ),
@@ -186,7 +294,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       // The grid has almost always fetched the thumbnail already, so it is
       // shown, stretched and softened, while the large rendition comes.
 
-      final thumbnail = ThumbnailCache.instance.cached(widget.item)?.thumbnail;
+      final thumbnail = ThumbnailCache.instance.cached(_item)?.thumbnail;
       const spinner = Center(child: CircularProgressIndicator());
       if (thumbnail == null) {
         return const Padding(padding: EdgeInsets.all(64), child: spinner);
@@ -205,12 +313,16 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       );
     }
 
-    if (widget.item.isVideo) {
+    if (_item.isVideo) {
       // No aspect ratio is imposed here: the player sizes its own viewport
       // once the frame size is known, so a portrait clip is shown upright
       // rather than letterboxed into a widescreen box.
 
-      return VideoPreview(bytes: bytes, fileName: widget.item.name);
+      return VideoPreview(
+        key: ValueKey(_item.id),
+        bytes: bytes,
+        fileName: _item.name,
+      );
     }
 
     return InteractiveViewer(
