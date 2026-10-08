@@ -23,6 +23,7 @@
 
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -44,15 +45,21 @@ import 'package:solidpod/solidpod.dart'
         readPermission,
         readPod,
         revokePermission,
-        turtleToTripleMap,
-        writePod;
+        turtleToTripleMap;
+
+import 'package:photopod/services/encrypted_json_file.dart';
+import 'package:photopod/services/pod_keys.dart';
+import 'package:photopod/services/pod_media_service.dart';
 
 part 'album_sharing_plan.dart';
 
 /// The file, in the PhotoPod data folder, that records what album sharing
-/// has done. Like the album files it is JSON, and it is never shared.
+/// has done. It is JSON, stored encrypted as `album-shares.json.enc.ttl`, and
+/// it is never shared.
 
 const String albumSharesFileName = 'album-shares.json';
+
+const EncryptedJsonFile _ledger = EncryptedJsonFile(albumSharesFileName);
 
 /// Sharing albums, and keeping what is in them shared to match.
 ///
@@ -70,6 +77,12 @@ const String albumSharesFileName = 'album-shares.json';
 class AlbumSharing extends ChangeNotifier {
   final Map<String, Map<String, ShareRecipient>> _recipients = {};
   final Map<String, Map<String, AlbumGrant>> _grants = {};
+
+  // The URL of the file each shared album was last shared through. An album
+  // file that moves — as each did when the album files came to be stored
+  // encrypted — starts with no access list, and this is how that is noticed.
+
+  final Map<String, String> _files = {};
 
   Future<void>? _loading;
   bool _loaded = false;
@@ -94,19 +107,19 @@ class AlbumSharing extends ChangeNotifier {
   Future<void> _load() async {
     try {
       if (!await isUserLoggedIn()) return;
-      final String content;
-      try {
-        content = await readPod(
-          await _ledgerPath(),
-          pathType: PathType.relativeToPod,
-        );
-      } on Object {
-        // No album has been shared yet, so there is nothing to read.
+      // With no record, no album has been shared yet. The record is
+      // encrypted, and without the security key it stays unread: [load] is
+      // tried again by every caller, and once more as soon as the key is
+      // entered.
 
-        _loaded = true;
+      final String? content;
+      try {
+        content = await _ledger.read();
+      } on SecurityKeyNeeded {
+        unawaited(PodKeys.unlocked().then((_) => load()));
         return;
       }
-      _decode(content);
+      if (content != null) _decode(content);
       _loaded = true;
     } on Object catch (e) {
       debugPrint('PhotoPod: could not read the album sharing record: $e');
@@ -146,9 +159,11 @@ class AlbumSharing extends ChangeNotifier {
     }
 
     if (found.isEmpty) {
+      _files.remove(album);
       if (_recipients.remove(album) == null) return;
     } else {
       _recipients[album] = found;
+      _files[album] = url;
     }
     await _save();
     notifyListeners();
@@ -237,7 +252,10 @@ class AlbumSharing extends ChangeNotifier {
         failed.add('${_label(recipient)}: $e');
       }
     }
-    if (shared.isNotEmpty) _recipients[album] = shared;
+    if (shared.isNotEmpty) {
+      _recipients[album] = shared;
+      _files[album] = url;
+    }
     await _save();
     notifyListeners();
     return failed;
@@ -251,6 +269,7 @@ class AlbumSharing extends ChangeNotifier {
   Future<List<String>> unshareAlbum(String album, String url) async {
     await load();
     final recipients = _recipients.remove(album);
+    _files.remove(album);
     if (recipients == null || recipients.isEmpty) return const [];
     final me = await getWebId();
     if (me == null) return const ['You need to be logged in to share.'];
@@ -262,6 +281,60 @@ class AlbumSharing extends ChangeNotifier {
       } on Object catch (e) {
         failed.add('${_label(recipient)}: $e');
       }
+    }
+    await _save();
+    notifyListeners();
+    return failed;
+  }
+
+  /// The shared albums, of [urls] — each album's name mapped to the URL of
+  /// its file — whose file is not the one they were shared through.
+
+  Future<Map<String, String>> albumFilesToCarry(
+    Map<String, String> urls,
+  ) async {
+    await load();
+    return {
+      for (final entry in urls.entries)
+        if ((_recipients[entry.key]?.isNotEmpty ?? false) &&
+            _files[entry.key] != entry.value)
+          entry.key: entry.value,
+    };
+  }
+
+  /// Share the file of each album in [urls] with everyone the album is
+  /// shared with, for albums whose file has moved since they were shared,
+  /// returning what went wrong.
+  ///
+  /// Unlike [shareAlbumFile], a recipient who cannot be given access is kept
+  /// on the record, so the album's photos stay shared with them and the next
+  /// call tries again. A file not yet on the Pod — an album written by an
+  /// earlier build and not yet encrypted — is left until it is.
+
+  Future<List<String>> carryAlbumFiles(Map<String, String> urls) async {
+    final pending = await albumFilesToCarry(urls);
+    if (pending.isEmpty) return const [];
+    final me = await getWebId();
+    if (me == null) return const ['You need to be logged in to share.'];
+
+    final failed = <String>[];
+    for (final entry in pending.entries) {
+      final url = entry.value;
+      try {
+        if (!await PodMediaService.fileExists(url)) continue;
+      } on Object {
+        continue;
+      }
+      var carried = true;
+      for (final recipient in _recipients[entry.key]!.values) {
+        try {
+          await _grant(url, recipient.key, recipient.type, recipient.modes, me);
+        } on Object catch (e) {
+          carried = false;
+          failed.add('${entry.key}, ${_label(recipient)}: $e');
+        }
+      }
+      if (carried) _files[entry.key] = url;
     }
     await _save();
     notifyListeners();
@@ -425,6 +498,13 @@ class AlbumSharing extends ChangeNotifier {
       }
     }
 
+    final files = decoded['files'];
+    if (files is Map) {
+      for (final entry in files.entries) {
+        if (entry.value is String) _files['${entry.key}'] = entry.value;
+      }
+    }
+
     final grants = decoded['grants'];
     if (grants is Map) {
       for (final item in grants.entries) {
@@ -440,13 +520,14 @@ class AlbumSharing extends ChangeNotifier {
     }
   }
 
-  // The record is written only when it has changed, and never encrypted, for
-  // the same reason as the album files: reading it must not need the key.
+  // The record is written only when it has changed, and never before it has
+  // been read: writing over a record that could not be read would forget
+  // every grant in it.
 
   Future<void> _save() async {
+    if (!_loaded) return;
     try {
-      await writePod(
-        await _ledgerPath(),
+      await _ledger.write(
         const JsonEncoder.withIndent('  ').convert({
           'version': 1,
           'albums': {
@@ -456,6 +537,7 @@ class AlbumSharing extends ChangeNotifier {
                   recipient.key: recipient.toJson(),
               },
           },
+          'files': _files,
           'grants': {
             for (final item in _grants.entries)
               item.key: {
@@ -464,15 +546,9 @@ class AlbumSharing extends ChangeNotifier {
               },
           },
         }),
-        encrypted: false,
-        overwrite: true,
-        pathType: PathType.relativeToPod,
       );
     } on Object catch (e) {
       debugPrint('PhotoPod: could not save the album sharing record: $e');
     }
   }
-
-  static Future<String> _ledgerPath() async =>
-      '${await getDataDirPath()}/$albumSharesFileName';
 }

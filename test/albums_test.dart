@@ -89,4 +89,19 @@ void main() {
       expect(validateAlbumName('.hidden'), isNotNull);
     });
   });
+
+  group('albumNameOfFile', () {
+    test('reads the name of an encrypted album file', () {
+      expect(albumNameOfFile('Holiday.json.enc.ttl'), 'Holiday');
+    });
+
+    test('still reads an album an earlier build left as plain JSON', () {
+      expect(albumNameOfFile('Holiday.json'), 'Holiday');
+    });
+
+    test('passes over anything that is not an album file', () {
+      expect(albumNameOfFile('notes.txt'), isNull);
+      expect(albumNameOfFile('.json.enc.ttl'), isNull);
+    });
+  });
 }

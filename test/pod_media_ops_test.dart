@@ -137,4 +137,18 @@ void main() {
       expect(PodMediaOps.duplicateName('my.trip.png', {}), 'my.trip_copy.png');
     });
   });
+
+  group('PodMediaOps.freeName', () {
+    test('keeps a name nothing else has', () {
+      expect(PodMediaOps.freeName('海滩.jpg', {'beach.jpg'}), '海滩.jpg');
+    });
+
+    test('numbers a name that is taken, before the extension', () {
+      expect(PodMediaOps.freeName('海滩.jpg', {'海滩.jpg'}), '海滩 (2).jpg');
+      expect(
+        PodMediaOps.freeName('海滩.jpg', {'海滩.jpg', '海滩 (2).jpg'}),
+        '海滩 (3).jpg',
+      );
+    });
+  });
 }

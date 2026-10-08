@@ -23,31 +23,29 @@
 
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:solidpod/solidpod.dart'
-    show
-        PathType,
-        getDataDirPath,
-        getFileUrl,
-        isUserLoggedIn,
-        readPod,
-        writePod;
+import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 
 import 'package:photopod/models/media_item.dart';
-import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/services/encrypted_json_file.dart';
+import 'package:photopod/services/pod_keys.dart';
 
-/// The resource the list of favourites is kept in, inside the album folder.
-///
-/// The name deliberately does not end in `.ttl`: solidpod reads a Turtle
-/// resource by parsing it, and this file holds JSON. It is also the reason
-/// the file is written unencrypted — asking for the security key merely to
-/// find out which photos carry a heart would put a password prompt in front
-/// of an album that may hold nothing yet.
+/// The name of the list of favourites, inside the album folder. It is JSON,
+/// stored encrypted as `favourites.json.enc.ttl`; see [EncryptedJsonFile].
 
 const String favouritesFileName = 'favourites.json';
+
+/// The encrypted file the favourites are kept in. It has an access list of
+/// its own, since Favourites can be shared like any other album.
+
+const EncryptedJsonFile _file = EncryptedJsonFile(
+  favouritesFileName,
+  createAcl: true,
+);
 
 /// Render [paths] as the JSON the Pod holds.
 ///
@@ -97,6 +95,11 @@ class Favourites extends ChangeNotifier {
   bool _loaded = false;
   String? _error;
 
+  // Whether the list has actually been read from the Pod. Until it has, it
+  // is never written, or the hearts already there would be lost.
+
+  bool _fromPod = false;
+
   /// Writes are chained rather than issued in parallel, so that two quick
   /// taps on two hearts cannot race and leave the Pod holding the older of
   /// the two lists.
@@ -132,20 +135,20 @@ class Favourites extends ChangeNotifier {
 
   /// Read the list from the Pod, leaving the set empty when the user has
   /// never favourited anything.
+  ///
+  /// The list is encrypted. Without the security key it stays unread, and is
+  /// read as soon as the key is entered.
 
   Future<void> load() async {
     try {
       if (!await isUserLoggedIn()) return;
-      final path = await _podPath();
-      final url = await PodMediaService.folderUrl(await getDataDirPath());
-
-      if (await PodMediaService.fileExists('$url$favouritesFileName')) {
-        final content = await readPod(path, pathType: PathType.relativeToPod);
-        _paths
-          ..clear()
-          ..addAll(decodeFavourites(content));
-      }
+      final content = await _file.read();
+      _paths.clear();
+      if (content != null) _paths.addAll(decodeFavourites(content));
+      _fromPod = true;
       _error = null;
+    } on SecurityKeyNeeded {
+      unawaited(PodKeys.unlocked().then((_) => load()));
     } on Object catch (e) {
       _error = '$e';
       debugPrint('PhotoPod: could not read the favourites: $e');
@@ -153,6 +156,12 @@ class Favourites extends ChangeNotifier {
       _loaded = true;
       notifyListeners();
     }
+  }
+
+  // Read the list before changing it, if that has not yet been possible.
+
+  Future<void> _ensureRead() async {
+    if (!_fromPod) await load();
   }
 
   /// Add a heart to [items], or take it away from all of them.
@@ -166,6 +175,7 @@ class Favourites extends ChangeNotifier {
   Future<bool> toggleAll(Iterable<MediaItem> items) async {
     final files = items.where((item) => !item.isFolder).toList();
     if (files.isEmpty) return true;
+    await _ensureRead();
 
     final before = Set<String>.from(_paths);
     final adding = !containsAll(files);
@@ -186,6 +196,7 @@ class Favourites extends ChangeNotifier {
   /// same shape [MediaItem.path] uses.
 
   Future<bool> forget(Iterable<String> paths) async {
+    await _ensureRead();
     final before = Set<String>.from(_paths);
     for (final path in paths) {
       _paths.removeWhere((each) => each == path || each.startsWith('$path/'));
@@ -204,6 +215,7 @@ class Favourites extends ChangeNotifier {
 
   Future<bool> retarget(Map<String, String> moves) async {
     if (moves.isEmpty) return true;
+    await _ensureRead();
 
     final before = Set<String>.from(_paths);
     final updated = <String>{};
@@ -237,13 +249,8 @@ class Favourites extends ChangeNotifier {
   Future<bool> _save(Set<String> before) {
     final write = _writes.then((_) async {
       try {
-        await writePod(
-          await _podPath(),
-          encodeFavourites(_paths),
-          encrypted: false,
-          overwrite: true,
-          pathType: PathType.relativeToPod,
-        );
+        if (!_fromPod) throw SecurityKeyNeeded(favouritesFileName);
+        await _file.write(encodeFavourites(_paths));
         _error = null;
         return true;
       } on Object catch (e) {
@@ -266,8 +273,5 @@ class Favourites extends ChangeNotifier {
   /// The URL of the file that holds the favourites, which is what is shared
   /// when Favourites is shared as an album.
 
-  static Future<String> fileUrl() async => getFileUrl(await _podPath());
-
-  static Future<String> _podPath() async =>
-      '${await getDataDirPath()}/$favouritesFileName';
+  static Future<String> fileUrl() => _file.url();
 }

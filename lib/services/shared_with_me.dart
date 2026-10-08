@@ -168,23 +168,20 @@ bool isAlbumUrl(String url, String dataDir) {
   final at = url.indexOf(albums);
   if (at >= 0) {
     final rest = url.substring(at + albums.length);
-    return rest.isNotEmpty &&
-        !rest.contains('/') &&
-        rest.endsWith(albumFileExtension);
+    return !rest.contains('/') && albumNameOfFile(rest) != null;
   }
-  return url.endsWith('/$dataDir/$favouritesFileName');
+  return url.endsWith('/$dataDir/$favouritesFileName') ||
+      url.endsWith('/$dataDir/${storedNameOf(favouritesFileName)}');
 }
 
 /// The name of the album whose file is at [url].
 
 String albumNameOf(String url) {
-  final file = PodMediaService.decodeName(
-    url.substring(url.lastIndexOf('/') + 1),
-  );
-  if (file == favouritesFileName) return favouritesAlbumName;
-  return file.endsWith(albumFileExtension)
-      ? file.substring(0, file.length - albumFileExtension.length)
-      : file;
+  final raw = url.substring(url.lastIndexOf('/') + 1);
+  if (displayNameOf(PodMediaService.decodeName(raw)) == favouritesFileName) {
+    return favouritesAlbumName;
+  }
+  return albumNameOfFile(raw) ?? PodMediaService.decodeName(raw);
 }
 
 /// The URL of the root of the Pod that holds [url], found from where the

@@ -266,6 +266,17 @@ logId:broken data:log "<not a log line>".
     test('names shared albums and finds the Pod they live in', () {
       expect(albumNameOf('$root/albums/Holiday.json'), 'Holiday');
       expect(albumNameOf('$root/favourites.json'), 'Favourites');
+      expect(albumNameOf('$root/favourites.json.enc.ttl'), 'Favourites');
+      expect(albumNameOf('$root/albums/Holiday.json.enc.ttl'), 'Holiday');
+      expect(
+        isAlbumUrl('$root/albums/Holiday.json.enc.ttl', 'photopod/data'),
+        isTrue,
+      );
+      expect(isAlbumUrl('$root/albums/Holiday.txt', 'photopod/data'), isFalse);
+      expect(
+        isAlbumUrl('$root/favourites.json.enc.ttl', 'photopod/data'),
+        isTrue,
+      );
       expect(
         podRootOf('$root/albums/Holiday.json', 'photopod/data'),
         'https://pod.example/alice/',

@@ -62,8 +62,10 @@ extension MediaBrowserTransfers on MediaBrowserState {
   /// Rename the first selected item.
   ///
   /// With several items selected only the first is renamed, since a single
-  /// new name cannot sensibly be given to more than one thing. Solid has no
-  /// rename operation, so the item is rewritten under its new name and the
+  /// new name cannot sensibly be given to more than one thing. A file keeps
+  /// the random name it is stored under, so renaming it only changes the name
+  /// PhotoPod records for it. A folder's name is its name on the server, and
+  /// Solid has no rename, so a folder is rewritten under its new name and the
   /// old one removed.
 
   Future<void> _rename(BuildContext context) async {
@@ -74,8 +76,8 @@ extension MediaBrowserTransfers on MediaBrowserState {
     final name = await showRenameDialog(context, item);
     if (name == null || !context.mounted) return;
 
-    // Solid has no rename, so the item is rewritten under its new name, which
-    // means decrypting and re-encrypting it.
+    // The names are kept encrypted, and rewriting a folder means decrypting
+    // and re-encrypting everything in it, so either way the key is needed.
 
     if (!await _ensureSecurityKey(context)) return;
     if (!context.mounted) return;
@@ -96,18 +98,19 @@ extension MediaBrowserTransfers on MediaBrowserState {
       ),
     );
 
-    ThumbnailCache.instance.evict(item.url);
-    if (renamed != null) {
+    final moved = renamed != null && renamed != item.path;
+    if (moved) {
+      ThumbnailCache.instance.evict(item.url);
       await favourites.retarget({item.path: renamed!});
       await albums.retarget({item.path: renamed!});
 
-      // The renamed item is a new file, which has to be shared again with
-      // everyone its albums are shared with.
+      // The moved items are new files, which have to be shared again with
+      // everyone their albums are shared with.
 
       await sharing.forget([item.path]);
     }
     index.invalidate();
     await reload();
-    if (renamed != null && context.mounted) await _syncSharing(context);
+    if (moved && context.mounted) await _syncSharing(context);
   }
 }

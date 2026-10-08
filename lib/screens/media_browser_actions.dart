@@ -149,9 +149,8 @@ extension MediaBrowserActions on MediaBrowserState {
   /// Add files from this device to the folder being shown.
   ///
   /// The picker accepts photos and videos alike, since the Library shows both
-  /// together, and a name that would not survive being put in a URL is tidied
-  /// up rather than refused, so that a photo straight off a camera always
-  /// lands.
+  /// together. Each file keeps the name it had, in whatever script, and is
+  /// stored under a random name of its own.
 
   Future<void> _addFiles(BuildContext context) async {
     if (!await _folderIsWritable(context)) return;
@@ -251,24 +250,29 @@ extension MediaBrowserActions on MediaBrowserState {
     var added = 0;
 
     await showWorking(context, 'Adding to your Pod...', () async {
+      // Every file is stored under a random name, so the name it arrived with
+      // only has to differ from the others in the folder.
+
+      Set<String>? taken;
       for (final file in files) {
         try {
           if (kindOf(file.name) == null) {
             failed[file.name] = 'not a photo or video PhotoPod supports';
             continue;
           }
-          final name = await PodMediaOps.freeName(
-            _path,
-            safeResourceName(file.name),
-            false,
-          );
+          taken ??= await PodMediaOps.namesIn(_path);
+          final name = PodMediaOps.freeName(safeFileName(file.name), taken);
           final bytes = await file.read();
-          await PodMediaService.writeMedia(
-            podPath: _path,
-            displayName: name,
-            bytes: bytes,
-          );
-          await _addRenditions(name, bytes);
+          final path = await PodMediaService.newStoredPath(_path, name);
+
+          // The name goes first: one whose file never arrives is never
+          // matched, while a file without its name would show under the
+          // random one.
+
+          await MediaNames.set(path, name);
+          await PodMediaService.writeMedia(path: path, bytes: bytes);
+          taken.add(name);
+          await _addRenditions(path, name, bytes);
           if (name != file.name) renamed[file.name] = name;
           added++;
         } on Object catch (e) {
@@ -290,9 +294,9 @@ extension MediaBrowserActions on MediaBrowserState {
       return;
     }
 
-    // A name is quietly tidied rather than refused, so that a photo straight
-    // off a camera always lands. Saying so beats letting the user wonder why
-    // the name on the tile is not the one they picked.
+    // A name is quietly adjusted rather than refused, so that a photo always
+    // lands. Saying so beats letting the user wonder why the name on the tile
+    // is not the one they picked.
 
     if (renamed.isNotEmpty && context.mounted) {
       await showErrorDialog(
@@ -300,23 +304,22 @@ extension MediaBrowserActions on MediaBrowserState {
         renamed.length == 1
             ? 'One file was renamed'
             : 'Some files were renamed',
-        'A name on the Pod can hold only letters, digits and '
-        "- _ . ! ~ * ' ( ), so anything else was replaced with an "
-        'underscore.\n\n'
+        'A file of the same name was already in this folder, or the name '
+        'held a character no file name can (/ \\ : * ? " < > |).\n\n'
         '${renamed.entries.map((e) => '${e.key}  →  ${e.value}').join('\n')}',
       );
     }
   }
 
-  // Make the renditions of the photo or video just added as [name], while
-  // its [bytes] are still in hand, and store them beside it: the grid and the
-  // preview then never need the original. For a video that is its opening
-  // frame. The file is already safely on the Pod, so renditions that cannot
-  // be made or stored are not counted as a failure; a photo has them made
-  // the first time it is looked at instead, and a video keeps the film glyph.
+  // Make the renditions of the photo or video just added at [path] as [name],
+  // while its [bytes] are still in hand, and store them beside it: the grid
+  // and the preview then never need the original. For a video that is its
+  // opening frame. The file is already safely on the Pod, so renditions that
+  // cannot be made or stored are not counted as a failure; a photo has them
+  // made the first time it is looked at instead, and a video keeps the film
+  // glyph.
 
-  Future<void> _addRenditions(String name, Uint8List bytes) async {
-    final path = PodMediaService.storedPath(_path, name);
+  Future<void> _addRenditions(String path, String name, Uint8List bytes) async {
     try {
       if (kindOf(name) == MediaKind.video) {
         final thumbnail = await firstFrameThumbnail(bytes, name);
@@ -432,7 +435,7 @@ extension MediaBrowserActions on MediaBrowserState {
   // along with what the server said about each.
   //
   // The batch delete answers with the names it was handed, which are the
-  // names on the server — `beach.jpg.enc.ttl` rather than `beach.jpg` — so
+  // names on the server — `3f9c…e1.jpg.enc.ttl` rather than `beach.jpg` — so
   // the failures are matched back to the items they belong to before anything
   // is decided from them.
 

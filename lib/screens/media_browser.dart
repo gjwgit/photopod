@@ -50,6 +50,7 @@ import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_index.dart';
+import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
@@ -197,6 +198,19 @@ class MediaBrowserState extends State<MediaBrowser> {
   /// otherwise — which is what the Refresh button asks for.
 
   Future<void> reload({bool force = false}) async {
+    // Another device may have renamed something since the names were read.
+
+    if (force) MediaNames.invalidate();
+
+    // The names of the files are encrypted, so the key is asked for before
+    // the folder is listed rather than after, when the tiles would already
+    // be showing the names they are stored under.
+
+    if (await MediaNames.needsKey() && mounted) {
+      await _ensureSecurityKey(context);
+    }
+    if (!mounted) return;
+
     if (!widget.section.browsesFolders) {
       final index = context.read<MediaIndex>();
 

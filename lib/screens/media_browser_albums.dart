@@ -224,6 +224,12 @@ extension MediaBrowserAlbums on MediaBrowserState {
     if (!await _ensureSecurityKey(context)) return;
     if (!context.mounted) return;
 
+    // An album shared before its file moved is shared again through the new
+    // file first, so the dialogue shows who it is really shared with.
+
+    await context.read<AlbumSharing>().carryAlbumFiles({album: fileUrl});
+    if (!context.mounted) return;
+
     // Only the user's own photos can be shared on, so anything in the album
     // that was itself shared with the user is not counted.
 
@@ -253,16 +259,25 @@ extension MediaBrowserAlbums on MediaBrowserState {
     final albums = context.read<Albums>();
 
     final List<SharingChange> changes;
+    final Map<String, String> moved;
     try {
       changes = await sharing.plan({
         favouritesAlbumName: favourites.paths,
         for (final name in albums.names) name: albums.pathsOf(name),
       });
+
+      // A shared album whose file has moved has to be shared again through
+      // the new one, or its recipients lose sight of the album itself.
+
+      moved = await sharing.albumFilesToCarry({
+        for (final name in [favouritesAlbumName, ...albums.names])
+          name: await _albumFileUrl(name),
+      });
     } on Object catch (e) {
       debugPrint('PhotoPod: could not plan album sharing: $e');
       return;
     }
-    if (changes.isEmpty || !context.mounted) return;
+    if ((changes.isEmpty && moved.isEmpty) || !context.mounted) return;
 
     // Sharing an encrypted photo shares its key, so the key has to be in
     // hand first.
@@ -273,7 +288,10 @@ extension MediaBrowserAlbums on MediaBrowserState {
     final failed = await showWorking(
       context,
       'Updating sharing...',
-      () => sharing.apply(changes),
+      () async => [
+        ...await sharing.carryAlbumFiles(moved),
+        ...await sharing.apply(changes),
+      ],
     );
     if (failed.isEmpty || !context.mounted) return;
 

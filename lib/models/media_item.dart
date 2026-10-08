@@ -33,13 +33,18 @@ import 'package:photopod/constants/media.dart';
 /// deriving one from the other costs a round trip we can avoid.
 
 class MediaItem {
-  /// Display name, including the extension for files. Percent-escapes that
-  /// appear in the resource name are decoded here, so a file stored as
-  /// `my%20photo.jpg` reads as `my photo.jpg`.
+  /// Display name, including the extension for files.
+  ///
+  /// For a file this is the name the user gave it, in any script, which
+  /// `MediaNames` keeps apart from the random name it is stored under. A file
+  /// with no recorded name, such as one added before names were kept, shows
+  /// its stored name with the escapes decoded and the encryption suffix
+  /// removed, so `my%20photo.jpg.enc.ttl` reads as `my photo.jpg`.
 
   final String name;
 
-  /// The name exactly as the server spells it, still percent-encoded.
+  /// The name exactly as the server spells it, still percent-encoded: for a
+  /// file PhotoPod added, the random name it is stored under.
   ///
   /// Paths and URLs are always built from this rather than from [name],
   /// because solidpod's URL helpers join path segments verbatim: handing them
