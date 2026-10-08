@@ -30,7 +30,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// The map providers offered in Map Settings, the same set GeoPod offers.
 
 enum MapSource {
-  /// The standard OpenStreetMap street map, and the default.
+  /// The standard OpenStreetMap street map.
 
   openStreetMap(
     'OpenStreetMap',
@@ -101,7 +101,7 @@ enum MapSource {
     17,
   ),
 
-  /// Esri's topographic map.
+  /// Esri's topographic map, and the default.
 
   esriWorldTopo(
     'Esri Topographic',
@@ -178,14 +178,14 @@ enum MapSource {
 
   static const _key = 'photopod.mapSource';
 
-  /// The provider chosen on this device, or OpenStreetMap when none has been
-  /// chosen yet or the stored one is no longer offered.
+  /// The provider chosen on this device, or Esri Topographic when none has
+  /// been chosen yet or the stored one is no longer offered.
 
   static Future<MapSource> load() async {
     final name = (await SharedPreferences.getInstance()).getString(_key);
     return MapSource.values.firstWhere(
       (source) => source.name == name,
-      orElse: () => MapSource.openStreetMap,
+      orElse: () => MapSource.esriWorldTopo,
     );
   }
 

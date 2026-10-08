@@ -118,13 +118,17 @@ class MediaActions {
 
 /// The row of actions at the top right of the main content area.
 ///
-/// Everything that acts on a selection is greyed out until something is
-/// selected, so the toolbar itself shows what is and is not currently
-/// possible. It wraps onto a second line on a narrow window rather than
-/// overflowing. Which buttons appear at all depends on the section: only the
-/// Library browses folders, so only the Library offers to add files to one,
-/// and only the Albums section offers to make a new album on its own or to
-/// take files out of one.
+/// Only what can be done right now is shown: an action that needs a
+/// selection appears once something is selected, one that needs a file
+/// appears once a file is among the selection, and one that changes the item
+/// itself stays away while the selection includes something shared with the
+/// user, which only its owner can change. The everyday actions sit in the
+/// row; the occasional ones (Duplicate, Rename, Get Info and Refresh) wait in
+/// the **More** menu at the end, keeping the row short. It wraps onto a second
+/// line on a narrow window rather than overflowing. Which buttons appear at
+/// all also depends on the section: only the Library browses folders, so only
+/// the Library offers to add files to one, and only the Albums section offers
+/// to make a new album on its own or to take files out of one.
 
 class MediaToolbar extends StatelessWidget {
   const MediaToolbar({
@@ -185,11 +189,7 @@ class MediaToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasSelection = selectionCount > 0;
-    final ownsAll = !hasShared;
-    final notOwned = hasShared
-        ? 'Not available while the selection includes something shared '
-              'with you, which only its owner can change.'
-        : '';
+    final canChange = hasSelection && !hasShared;
     final hasFiles = fileCount > 0;
     final many = selectionCount > 1;
     final manyFiles = fileCount > 1;
@@ -202,7 +202,6 @@ class MediaToolbar extends StatelessWidget {
           _button(
             icon: Icons.add,
             label: 'Add photos and videos',
-            enabled: true,
             onPressed: actions.onAddFiles,
             tooltip: '''
 
@@ -221,7 +220,6 @@ class MediaToolbar extends StatelessWidget {
           _button(
             icon: Icons.create_new_folder_outlined,
             label: 'Create new album',
-            enabled: true,
             onPressed: actions.onCreateAlbum,
             tooltip: '''
 
@@ -233,43 +231,24 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
-        _FavouriteButton(
-          enabled: hasFiles,
-          favourite: allFavourite,
-          many: manyFiles,
-          onPressed: actions.onToggleFavourite,
-        ),
-        _AddToAlbumButton(
-          enabled: hasFiles,
-          many: manyFiles,
-          albumNames: albumNames,
-          onAdd: actions.onAddToAlbum,
-          onCreate: actions.onCreateAlbum,
-        ),
-        _button(
-          icon: Icons.content_copy,
-          label: 'Duplicate',
-          enabled: hasFiles && ownsAll,
-          onPressed: actions.onDuplicate,
-          tooltip:
-              '''
-
-          **Duplicate**
-
-          Make a copy of each selected photo and video beside the original,
-          called `name_copy`, or `name_copy_1`, `name_copy_2` and so on when
-          that is taken. A copy starts with no heart and in no album.
-          $notOwned
-
-          ''',
-        ),
-        _button(
-          icon: Icons.visibility_outlined,
-          label: 'Preview',
-          enabled: hasFiles,
-          onPressed: actions.onPreview,
-          tooltip:
-              '''
+        if (hasFiles) ...[
+          _FavouriteButton(
+            favourite: allFavourite,
+            many: manyFiles,
+            onPressed: actions.onToggleFavourite,
+          ),
+          _AddToAlbumButton(
+            many: manyFiles,
+            albumNames: albumNames,
+            onAdd: actions.onAddToAlbum,
+            onCreate: actions.onCreateAlbum,
+          ),
+          _button(
+            icon: Icons.visibility_outlined,
+            label: 'Preview',
+            onPressed: actions.onPreview,
+            tooltip:
+                '''
 
           **Preview**
 
@@ -278,14 +257,13 @@ class MediaToolbar extends StatelessWidget {
           ${many ? 'With several selected, the first one is shown.' : ''}
 
           ''',
-        ),
-        _button(
-          icon: Icons.download_outlined,
-          label: 'Download',
-          enabled: hasFiles,
-          onPressed: actions.onDownload,
-          tooltip:
-              '''
+          ),
+          _button(
+            icon: Icons.download_outlined,
+            label: 'Download',
+            onPressed: actions.onDownload,
+            tooltip:
+                '''
 
           **Download**
 
@@ -295,46 +273,42 @@ class MediaToolbar extends StatelessWidget {
           ${manyFiles ? 'You are asked where to save each one in turn.' : ''}
 
           ''',
-        ),
-        _button(
-          icon: Icons.drive_file_rename_outline,
-          label: 'Rename',
-          enabled: hasSelection && ownsAll,
-          onPressed: actions.onRename,
-          tooltip:
-              '''
+          ),
+        ],
+        if (canChange) ...[
+          _button(
+            icon: Icons.share_outlined,
+            label: 'Share',
+            onPressed: actions.onShare,
+            tooltip: '''
 
-          **Rename**
+          **Share**
 
-          Give the selected item a new name. It keeps its heart and its place
-          in every album.
-          ${many ? 'With several selected, the first one is renamed.' : ''}
-          $notOwned
+          Give other Solid users access to the selected items, by WebID and
+          with the permissions you choose. To share a whole album, use the
+          share button on the album itself.
 
           ''',
-        ),
-        _button(
-          icon: Icons.delete_outline,
-          label: 'Delete',
-          enabled: hasSelection && ownsAll,
-          onPressed: actions.onDelete,
-          tooltip:
-              '''
+          ),
+          _button(
+            icon: Icons.delete_outline,
+            label: 'Delete',
+            onPressed: actions.onDelete,
+            tooltip: '''
 
           **Delete**
 
           Remove the selected items from your Pod, and from every album they
           are in. Folders are removed with everything inside them, and nothing
           can be undone.
-          $notOwned
 
           ''',
-        ),
-        if (section == LibrarySection.albums)
+          ),
+        ],
+        if (section == LibrarySection.albums && canRemoveFromAlbum)
           _button(
             icon: Icons.remove_circle_outline,
             label: 'Remove from album',
-            enabled: canRemoveFromAlbum,
             onPressed: actions.onRemoveFromAlbum,
             tooltip: '''
 
@@ -346,44 +320,10 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
-        _button(
-          icon: Icons.share_outlined,
-          label: 'Share',
-          enabled: hasSelection && ownsAll,
-          onPressed: actions.onShare,
-          tooltip:
-              '''
-
-          **Share**
-
-          Give other Solid users access to the selected items, by WebID and
-          with the permissions you choose. To share a whole album, use the
-          share button on the album itself.
-          $notOwned
-
-          ''',
-        ),
-        _button(
-          icon: Icons.info_outline,
-          label: 'Get Info',
-          enabled: hasFiles,
-          onPressed: actions.onGetInfo,
-          tooltip:
-              '''
-
-          **Get Info**
-
-          Show everything known about the selected item: its size, when it was
-          added, how big the picture is, which camera took it and where.
-          ${many ? 'With several selected, the first one is described.' : ''}
-
-          ''',
-        ),
         _SortButton(sortOption: sortOption, onSort: actions.onSort),
         _button(
           icon: Icons.tune,
           label: 'View',
-          enabled: true,
           onPressed: actions.onView,
           tooltip: '''
 
@@ -394,27 +334,93 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
         ),
-        _button(
-          icon: Icons.refresh,
-          label: 'Refresh',
-          enabled: true,
-          onPressed: actions.onRefresh,
-          tooltip: '''
+        _MoreButton(
+          children: [
+            if (hasFiles && !hasShared)
+              _menuItem(
+                icon: Icons.content_copy,
+                label: 'Duplicate',
+                onPressed: actions.onDuplicate,
+                tooltip: '''
 
-          **Refresh**
+                **Duplicate**
 
-          Read the album, your hearts and your albums from your Pod again.
+                Make a copy of each selected photo and video beside the
+                original, called `name_copy`, or `name_copy_1`, `name_copy_2`
+                and so on when that is taken. A copy starts with no heart and
+                in no album.
 
-          ''',
+                ''',
+              ),
+            if (canChange)
+              _menuItem(
+                icon: Icons.drive_file_rename_outline,
+                label: 'Rename',
+                onPressed: actions.onRename,
+                tooltip:
+                    '''
+
+                **Rename**
+
+                Give the selected item a new name. It keeps its heart and its
+                place in every album.
+                ${many ? 'With several selected, the first one is renamed.' : ''}
+
+                ''',
+              ),
+            if (hasFiles)
+              _menuItem(
+                icon: Icons.info_outline,
+                label: 'Get Info',
+                onPressed: actions.onGetInfo,
+                tooltip:
+                    '''
+
+                **Get Info**
+
+                Show everything known about the selected item: its size, when
+                it was added, how big the picture is, which camera took it and
+                where.
+                ${many ? 'With several selected, the first one is described.' : ''}
+
+                ''',
+              ),
+            if (hasFiles || canChange) const Divider(height: 1),
+            _menuItem(
+              icon: Icons.refresh,
+              label: 'Refresh',
+              onPressed: actions.onRefresh,
+              tooltip: '''
+
+              **Refresh**
+
+              Read the album, your hearts and your albums from your Pod again.
+
+              ''',
+            ),
+          ],
         ),
       ],
     );
   }
 
+  static Widget _menuItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    required String tooltip,
+  }) => MarkdownTooltip(
+    message: tooltip,
+    child: MenuItemButton(
+      leadingIcon: Icon(icon),
+      onPressed: onPressed,
+      child: Text(label),
+    ),
+  );
+
   static Widget _button({
     required IconData icon,
     required String label,
-    required bool enabled,
     required VoidCallback onPressed,
     required String tooltip,
     Color? colour,
@@ -423,7 +429,7 @@ class MediaToolbar extends StatelessWidget {
     child: _ToolbarIcon(
       icon: icon,
       label: label,
-      onPressed: enabled ? onPressed : null,
+      onPressed: onPressed,
       colour: colour,
     ),
   );
