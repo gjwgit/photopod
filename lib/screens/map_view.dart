@@ -76,8 +76,13 @@ class _MapViewState extends State<MapView> {
   final MapController _map = MapController();
 
   /// The provider the tiles are drawn from, as chosen in Map Settings.
+  ///
+  /// 20261008 gjw Null until [MapSource.load] answers, and no tiles are drawn
+  /// until then. It used to start as OpenStreetMap, so the first frame built
+  /// an OSM tile layer, and requested its tiles, before the saved choice was
+  /// read from SharedPreferences — whatever provider had been chosen.
 
-  MapSource _source = MapSource.openStreetMap;
+  MapSource? _source;
 
   /// The photos that turned out to carry coordinates, grouped by place.
 
@@ -234,6 +239,7 @@ class _MapViewState extends State<MapView> {
   Widget _buildStatusBar(BuildContext context, MediaIndex index) {
     final photos = _places.fold(0, (sum, place) => sum + place.items.length);
     final busy = _scanning || index.isLoading;
+    final source = _source;
 
     final summary = busy
         ? 'Reading your photos...  $_read of $_toRead'
@@ -271,11 +277,13 @@ class _MapViewState extends State<MapView> {
           IconButton(
             icon: const Icon(Icons.layers_outlined),
             tooltip: 'Map Settings',
-            onPressed: () => showMapSettingsDialog(
-              context,
-              current: _source,
-              onChanged: _setSource,
-            ),
+            onPressed: source == null
+                ? null
+                : () => showMapSettingsDialog(
+                    context,
+                    current: source,
+                    onChanged: _setSource,
+                  ),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -312,6 +320,7 @@ class _MapViewState extends State<MapView> {
     // looks like what it is. Why it is empty is said in a notice over the
     // map rather than in place of it.
 
+    final source = _source;
     final empty = _places.isEmpty && !_scanning && !index.isLoading;
     final emptyMessage = index.photos.isEmpty
         ? 'Nothing to map yet. Add photos to your album and any that were '
@@ -336,13 +345,14 @@ class _MapViewState extends State<MapView> {
             // Keyed on the provider so that tiles already drawn from the
             // previous one are dropped rather than left under the new ones.
 
-            TileLayer(
-              key: ValueKey(_source),
-              urlTemplate: _source.urlTemplate,
-              subdomains: _source.subdomains,
-              userAgentPackageName: 'au.solidcommunity.photopod',
-              maxNativeZoom: _source.maxNativeZoom,
-            ),
+            if (source != null)
+              TileLayer(
+                key: ValueKey(source),
+                urlTemplate: source.urlTemplate,
+                subdomains: source.subdomains,
+                userAgentPackageName: 'au.solidcommunity.photopod',
+                maxNativeZoom: source.maxNativeZoom,
+              ),
             MarkerLayer(
               markers: [
                 for (final place in _places)
@@ -358,7 +368,8 @@ class _MapViewState extends State<MapView> {
                   ),
               ],
             ),
-            SimpleAttributionWidget(source: Text(_source.attribution)),
+            if (source != null)
+              SimpleAttributionWidget(source: Text(source.attribution)),
           ],
         ),
         if (empty || index.isTruncated)
