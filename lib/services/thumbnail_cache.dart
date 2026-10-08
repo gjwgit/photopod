@@ -30,21 +30,33 @@ import 'package:flutter/foundation.dart';
 
 import 'package:image/image.dart' as img;
 
+import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
+import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/pod_media_service.dart';
-import 'package:photopod/services/video_thumbnails.dart';
 
-/// The longest edge, in pixels, of a generated thumbnail. Large enough to
-/// stay sharp on a high density display at the grid's tile size, small
-/// enough that a few hundred of them cost little memory.
+/// The longest edge, in pixels, of the small rendition shown in the grid.
+/// Twice the largest tile the View dialogue offers, so that it stays sharp on
+/// a high density display at every tile size, and small enough that a few
+/// hundred of them cost little memory.
 
-const int thumbnailSize = 320;
+const int thumbnailSize = 400;
+
+/// The longest edge, in pixels, of the large rendition shown in the preview:
+/// enough to fill a desktop screen, a fraction of a camera original.
+
+const int previewSize = 2048;
 
 /// How many photos are held in memory at once. Beyond this the least
 /// recently used are dropped and rebuilt if the user scrolls back.
 
 const int thumbnailCacheLimit = 240;
+
+/// How many large renditions are held in memory, so that going back to a
+/// photo just previewed does not fetch it again.
+
+const int previewCacheLimit = 6;
 
 /// How many photos are fetched from the Pod at the same time. Each one is
 /// a separate round trip, and a Solid server answers a handful of concurrent
@@ -52,17 +64,10 @@ const int thumbnailCacheLimit = 240;
 
 const int thumbnailConcurrency = 4;
 
-/// Everything one pass over a photo's bytes yields.
-///
-/// The thumbnail and the EXIF block are produced together because both need
-/// the photo decoded, and the photo has to be fetched from the Pod and
-/// decrypted before it can be decoded at all. Reading the details for the Get
-/// Info panel or for the map therefore costs nothing once the grid has shown
-/// the photo, and showing the grid costs nothing once the map has been drawn.
+/// Everything the grid, the map and Get Info want to know about a photo.
 
 class PhotoAnalysis {
-  /// The downscaled JPEG shown in the grid, or null when the format could not
-  /// be decoded.
+  /// The small JPEG shown in the grid, or null when there is none.
 
   final Uint8List? thumbnail;
 
@@ -73,10 +78,16 @@ class PhotoAnalysis {
   const PhotoAnalysis({this.thumbnail, this.metadata});
 }
 
-/// Thumbnails and photo details, fetched from the Pod once and then kept.
+/// Thumbnails, previews and photo details, fetched from the Pod once and then
+/// kept.
 ///
-/// A video's thumbnail is the frame [VideoThumbnails] stored when the video
-/// was added, already small and already a JPEG, so it is shown as it comes.
+/// Each photo has a small and a large rendition stored beside the album by
+/// [MediaRenditions]. The grid, the map and Get Info read only the small one,
+/// which carries the photo's EXIF details too; the preview reads the large
+/// one. The original is fetched only when the user downloads it — or once,
+/// for a photo added before renditions were kept, or shared by someone else,
+/// in which case both renditions are made from it on the spot and, for the
+/// user's own photo, stored so that the next look is quick.
 ///
 /// Decoding happens on a background isolate through [compute], which matters
 /// because the `image` package is pure Dart and a full size photo would
@@ -91,7 +102,9 @@ class ThumbnailCache {
   static final ThumbnailCache instance = ThumbnailCache._();
 
   final Map<String, PhotoAnalysis> _analysed = {};
+  final Map<String, Uint8List> _previews = {};
   final Map<String, Future<PhotoAnalysis?>> _inFlight = {};
+  final Map<String, Future<Uint8List?>> _previewsInFlight = {};
   final List<Completer<void>> _waiting = [];
   int _active = 0;
 
@@ -104,24 +117,16 @@ class ThumbnailCache {
 
   Future<PhotoAnalysis?> analyse(MediaItem item) {
     final url = item.url;
-    final cached = _analysed.remove(url);
-    if (cached != null) {
-      // Reinsert so the most recently used entry sits at the end.
-
-      _analysed[url] = cached;
-      return Future.value(cached);
-    }
+    final cached = _touch(_analysed, url);
+    if (cached != null) return Future.value(cached);
 
     return _inFlight.putIfAbsent(url, () async {
       await _acquire();
       try {
-        final analysis = item.isVideo
-            ? PhotoAnalysis(thumbnail: await VideoThumbnails.read(item))
-            : await compute(
-                analysePhoto,
-                await PodMediaService.readBytes(item),
-              );
-        if (analysis != null) _store(url, analysis);
+        final analysis = await _analyse(item);
+        if (analysis != null) {
+          _store(_analysed, url, analysis, thumbnailCacheLimit);
+        }
         return analysis;
       } on Object catch (e) {
         debugPrint('PhotoPod: could not read $url: $e');
@@ -131,6 +136,18 @@ class ThumbnailCache {
         _inFlight.remove(url);
       }
     });
+  }
+
+  Future<PhotoAnalysis?> _analyse(MediaItem item) async {
+    final stored = await MediaRenditions.readSmall(item);
+    if (stored != null) {
+      return PhotoAnalysis(thumbnail: stored.image, metadata: stored.metadata);
+    }
+    if (item.isVideo) return const PhotoAnalysis();
+
+    final made = await _renderFromOriginal(item);
+    if (made == null) return null;
+    return PhotoAnalysis(thumbnail: made.small, metadata: made.metadata);
   }
 
   /// Just the thumbnail for [item].
@@ -143,6 +160,73 @@ class ThumbnailCache {
   Future<PhotoMetadata?> metadata(MediaItem item) async =>
       (await analyse(item))?.metadata;
 
+  /// The picture the preview shows for the photo [item]: its large
+  /// rendition, or the original when it has none that can be made — an
+  /// animated GIF, or a format that will not decode here. A TIFF original is
+  /// converted, since Flutter has no codec for it.
+
+  Future<Uint8List?> preview(MediaItem item) {
+    final url = item.url;
+    final cached = _touch(_previews, url);
+    if (cached != null) return Future.value(cached);
+
+    return _previewsInFlight.putIfAbsent(url, () async {
+      try {
+        final bytes = await _preview(item);
+        if (bytes != null) _store(_previews, url, bytes, previewCacheLimit);
+        return bytes;
+      } finally {
+        _previewsInFlight.remove(url);
+      }
+    });
+  }
+
+  Future<Uint8List?> _preview(MediaItem item) async {
+    if (!isGif(item.name)) {
+      final stored = await MediaRenditions.readLarge(item);
+      if (stored != null) return stored;
+
+      // The grid may be reading the original for this very photo right now,
+      // and would leave the large rendition here when it was done.
+
+      final pending = _inFlight[item.url];
+      if (pending != null) {
+        await pending;
+        final made = _previews[item.url];
+        if (made != null) return made;
+      }
+
+      final made = await _renderFromOriginal(item);
+      if (made?.large != null) return made!.large;
+    }
+
+    final original = await PodMediaService.readBytes(item);
+    if (!isTiff(item.name)) return original;
+    final png = await compute(convertToPng, original);
+    if (png == null) {
+      throw const PodMediaException('This TIFF file could not be decoded.');
+    }
+    return png;
+  }
+
+  // Read the original of [item], make both renditions from it, keep the large
+  // one in memory for the preview, and have them stored on the Pod for next
+  // time.
+
+  Future<PhotoRenditions?> _renderFromOriginal(MediaItem item) async {
+    final original = await PodMediaService.readBytes(item);
+    final made = await compute(renderPhoto, (
+      bytes: original,
+      keepOriginal: isGif(item.name),
+    ));
+    if (made == null) return null;
+
+    final large = made.large;
+    if (large != null) _store(_previews, item.url, large, previewCacheLimit);
+    MediaRenditions.backfill(item, made);
+    return made;
+  }
+
   /// What is already known about [item] without going to the Pod, or null
   /// when it has not been looked at yet. The map uses this to draw the photos
   /// it already holds while the rest are still being fetched.
@@ -152,16 +236,32 @@ class ThumbnailCache {
   /// Forget everything known about [url], so that a renamed, moved or
   /// replaced photo is fetched afresh.
 
-  void evict(String url) => _analysed.remove(url);
+  void evict(String url) {
+    _analysed.remove(url);
+    _previews.remove(url);
+  }
 
   /// Forget every photo.
 
-  void clear() => _analysed.clear();
+  void clear() {
+    _analysed.clear();
+    _previews.clear();
+  }
 
-  void _store(String url, PhotoAnalysis analysis) {
-    _analysed[url] = analysis;
-    while (_analysed.length > thumbnailCacheLimit) {
-      _analysed.remove(_analysed.keys.first);
+  // The entry for [url], moved to the end so that the most recently used
+  // entries are the last to be dropped.
+
+  static V? _touch<V>(Map<String, V> map, String url) {
+    final value = map.remove(url);
+    if (value != null) map[url] = value;
+    return value;
+  }
+
+  static void _store<V>(Map<String, V> map, String url, V value, int limit) {
+    map.remove(url);
+    map[url] = value;
+    while (map.length > limit) {
+      map.remove(map.keys.first);
     }
   }
 
@@ -184,15 +284,18 @@ class ThumbnailCache {
   }
 }
 
-/// Decode [bytes] once, producing both the grid thumbnail and whatever the
-/// photo's EXIF block has to say. Returns null when the format cannot be
+/// Decode a photo's original once and make both its renditions, along with
+/// whatever its EXIF block has to say. Returns null when the format cannot be
 /// decoded at all.
+///
+/// With `keepOriginal` no large rendition is made, because the original is
+/// what the preview should show: an animated GIF would stop moving.
 ///
 /// Declared at the top level because [compute] can only run a function that
 /// is not a closure.
 
-PhotoAnalysis? analysePhoto(Uint8List bytes) {
-  final decoded = img.decodeImage(bytes);
+PhotoRenditions? renderPhoto(({Uint8List bytes, bool keepOriginal}) input) {
+  final decoded = _decode(input.bytes);
   if (decoded == null) return null;
 
   // The EXIF block is read before the orientation is baked in, since baking
@@ -204,22 +307,59 @@ PhotoAnalysis? analysePhoto(Uint8List bytes) {
   // not shown on their side.
 
   final upright = img.bakeOrientation(decoded);
-  final longest = upright.width > upright.height
-      ? upright.width
-      : upright.height;
 
-  final resized = longest <= thumbnailSize
-      ? upright
-      : img.copyResize(
-          upright,
-          width: upright.width >= upright.height ? thumbnailSize : null,
-          height: upright.height > upright.width ? thumbnailSize : null,
-          interpolation: img.Interpolation.average,
-        );
+  // JPEG has no transparency, so a large rendition of a picture that has
+  // some is kept as PNG rather than have its clear parts turn black.
 
-  return PhotoAnalysis(
-    thumbnail: img.encodeJpg(resized, quality: 80),
+  final large = input.keepOriginal
+      ? null
+      : upright.hasAlpha
+      ? img.encodePng(_fit(upright, previewSize))
+      : img.encodeJpg(_fit(upright, previewSize), quality: 85);
+
+  return PhotoRenditions(
+    small: img.encodeJpg(_fit(upright, thumbnailSize), quality: 80),
+    large: large,
     metadata: exif.copyWithSize(width: upright.width, height: upright.height),
+  );
+}
+
+/// Decode [bytes] and produce just the grid thumbnail and the EXIF details.
+/// Used for the opening frame of a video, which needs no large rendition.
+
+PhotoAnalysis? analysePhoto(Uint8List bytes) {
+  final decoded = _decode(bytes);
+  if (decoded == null) return null;
+  final exif = readExifMetadata(decoded);
+  final upright = img.bakeOrientation(decoded);
+  return PhotoAnalysis(
+    thumbnail: img.encodeJpg(_fit(upright, thumbnailSize), quality: 80),
+    metadata: exif.copyWithSize(width: upright.width, height: upright.height),
+  );
+}
+
+// [bytes] decoded, or null when they are not a picture the `image` package
+// understands — which some of its decoders report by throwing.
+
+img.Image? _decode(Uint8List bytes) {
+  try {
+    return img.decodeImage(bytes);
+  } on Object {
+    return null;
+  }
+}
+
+// [image] scaled down so that its longest edge is at most [size], or as it is
+// when it is no bigger than that already.
+
+img.Image _fit(img.Image image, int size) {
+  final longest = image.width > image.height ? image.width : image.height;
+  if (longest <= size) return image;
+  return img.copyResize(
+    image,
+    width: image.width >= image.height ? size : null,
+    height: image.height > image.width ? size : null,
+    interpolation: img.Interpolation.average,
   );
 }
 
