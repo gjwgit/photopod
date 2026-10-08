@@ -48,9 +48,9 @@ dependencies:
   # Video playback for the preview dialog. media_kit is used in preference to
   # video_player because it covers Linux and Windows as well as Android, iOS,
   # macOS and the web.
-  media_kit: ^1.1.11
-  media_kit_video: ^1.2.5
-  media_kit_libs_video: ^1.0.5
+  media_kit: ^1.2.6
+  media_kit_video: ^2.0.1
+  media_kit_libs_video: ^1.0.7
 
   # The latitude/longitude pair flutter_map speaks in.
   latlong2: ^0.9.1
