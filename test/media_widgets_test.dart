@@ -59,11 +59,13 @@ MediaActions _actions({
   ValueChanged<String>? onAddToAlbum,
   VoidCallback? onCreateAlbum,
   VoidCallback? onDuplicate,
+  VoidCallback? onRename,
+  VoidCallback? onRefresh,
 }) => MediaActions(
   onAddFiles: () {},
   onDelete: onDelete ?? () {},
   onDuplicate: onDuplicate ?? () {},
-  onRename: () {},
+  onRename: onRename ?? () {},
   onShare: () {},
   onView: () {},
   onPreview: () {},
@@ -73,7 +75,7 @@ MediaActions _actions({
   onAddToAlbum: onAddToAlbum ?? (_) {},
   onCreateAlbum: onCreateAlbum ?? () {},
   onRemoveFromAlbum: () {},
-  onRefresh: () {},
+  onRefresh: onRefresh ?? () {},
   onSort: (_) {},
 );
 
@@ -261,6 +263,7 @@ void main() {
       bool allFavourite = false,
       List<String> albumNames = const [],
       MediaActions? actions,
+      bool canRemoveFromAlbum = false,
       bool hasShared = false,
     }) => _wrap(
       MediaToolbar(
@@ -271,11 +274,53 @@ void main() {
         sortOption: MediaSortOption.nameAscending,
         actions: actions ?? _actions(),
         albumNames: albumNames,
+        canRemoveFromAlbum: canRemoveFromAlbum,
         hasShared: hasShared,
       ),
     );
 
-    testWidgets('will not change what someone else shared', (tester) async {
+    // The names of the buttons in the row, in order, as a screen reader
+    // hears them.
+
+    List<String> rowLabels(WidgetTester tester) => tester
+        .widgetList<Semantics>(
+          find.descendant(
+            of: find.byType(MediaToolbar),
+            matching: find.byType(Semantics),
+          ),
+        )
+        .map((each) => each.properties.label)
+        .whereType<String>()
+        .where((label) => label.isNotEmpty)
+        .toList();
+
+    Future<void> openMore(WidgetTester tester) async {
+      await tester.tap(find.byIcon(Icons.more_vert));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('hides the selection actions when nothing is selected', (
+      tester,
+    ) async {
+      await tester.pumpWidget(toolbar(section: LibrarySection.library));
+
+      expect(rowLabels(tester), [
+        'Add photos and videos',
+        'Sort',
+        'View',
+        'More',
+      ]);
+
+      await openMore(tester);
+      expect(find.text('Refresh'), findsOneWidget);
+      for (final label in ['Duplicate', 'Rename', 'Get Info']) {
+        expect(find.text(label), findsNothing, reason: label);
+      }
+    });
+
+    testWidgets('shows only what can be done to something shared', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         toolbar(
           section: LibrarySection.library,
@@ -285,50 +330,49 @@ void main() {
         ),
       );
 
-      IconButton button(IconData icon) => tester.widget<IconButton>(
-        find.ancestor(of: find.byIcon(icon), matching: find.byType(IconButton)),
-      );
-
-      for (final icon in [
-        Icons.content_copy,
-        Icons.drive_file_rename_outline,
-        Icons.delete_outline,
-        Icons.share_outlined,
-      ]) {
-        expect(button(icon).onPressed, isNull, reason: '$icon');
-      }
-
       // Looking at it, giving it a heart and putting it in an album are all
-      // still the user's to do.
+      // still the user's to do; changing it is for its owner alone.
 
-      expect(button(Icons.visibility_outlined).onPressed, isNotNull);
-      expect(button(Icons.favorite_border).onPressed, isNotNull);
-      expect(button(Icons.drive_file_move_outline).onPressed, isNotNull);
+      expect(rowLabels(tester), [
+        'Add photos and videos',
+        'Add to Favourites',
+        'Add to album',
+        'Preview',
+        'Download',
+        'Sort',
+        'View',
+        'More',
+      ]);
+
+      await openMore(tester);
+      expect(find.text('Get Info'), findsOneWidget);
+      expect(find.text('Duplicate'), findsNothing);
+      expect(find.text('Rename'), findsNothing);
     });
 
-    testWidgets('disables the selection actions when nothing is selected', (
+    testWidgets('a folder alone can be changed but not previewed', (
       tester,
     ) async {
-      await tester.pumpWidget(toolbar(section: LibrarySection.library));
+      await tester.pumpWidget(
+        toolbar(section: LibrarySection.library, selectionCount: 1),
+      );
 
-      for (final icon in [
-        Icons.favorite_border,
-        Icons.info_outline,
-        Icons.visibility_outlined,
-        Icons.share_outlined,
-        Icons.delete_outline,
-      ]) {
-        final button = tester.widget<IconButton>(
-          find.ancestor(
-            of: find.byIcon(icon),
-            matching: find.byType(IconButton),
-          ),
-        );
-        expect(button.onPressed, isNull, reason: '$icon');
-      }
+      expect(rowLabels(tester), [
+        'Add photos and videos',
+        'Share',
+        'Delete',
+        'Sort',
+        'View',
+        'More',
+      ]);
+
+      await openMore(tester);
+      expect(find.text('Rename'), findsOneWidget);
+      expect(find.text('Duplicate'), findsNothing);
+      expect(find.text('Get Info'), findsNothing);
     });
 
-    testWidgets('enables Delete once something is selected', (tester) async {
+    testWidgets('Delete acts once something is selected', (tester) async {
       var deleted = false;
 
       await tester.pumpWidget(
@@ -345,21 +389,32 @@ void main() {
       expect(deleted, isTrue);
     });
 
-    testWidgets('Get Info acts on a selected file', (tester) async {
-      var asked = false;
+    testWidgets('the More menu holds the occasional actions', (tester) async {
+      final done = <String>[];
 
       await tester.pumpWidget(
         toolbar(
-          section: LibrarySection.library,
+          section: LibrarySection.favourites,
           selectionCount: 1,
           fileCount: 1,
-          actions: _actions(onGetInfo: () => asked = true),
+          actions: _actions(
+            onDuplicate: () => done.add('Duplicate'),
+            onRename: () => done.add('Rename'),
+            onGetInfo: () => done.add('Get Info'),
+            onRefresh: () => done.add('Refresh'),
+          ),
         ),
       );
 
-      await tester.tap(find.byIcon(Icons.info_outline));
-      await tester.pump();
-      expect(asked, isTrue);
+      for (final label in ['Duplicate', 'Rename', 'Get Info', 'Refresh']) {
+        expect(find.bySemanticsLabel(label), findsNothing, reason: label);
+
+        await openMore(tester);
+        await tester.tap(find.text(label));
+        await tester.pumpAndSettle();
+      }
+
+      expect(done, ['Duplicate', 'Rename', 'Get Info', 'Refresh']);
     });
 
     testWidgets('the heart offers to remove when everything is a favourite', (
@@ -385,28 +440,6 @@ void main() {
       expect(toggled, isTrue);
     });
 
-    testWidgets('a folder alone has nothing to preview or describe', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        toolbar(section: LibrarySection.library, selectionCount: 1),
-      );
-
-      for (final icon in [
-        Icons.favorite_border,
-        Icons.info_outline,
-        Icons.visibility_outlined,
-      ]) {
-        final button = tester.widget<IconButton>(
-          find.ancestor(
-            of: find.byIcon(icon),
-            matching: find.byType(IconButton),
-          ),
-        );
-        expect(button.onPressed, isNull, reason: '$icon');
-      }
-    });
-
     testWidgets('offers Add in the Library only', (tester) async {
       await tester.pumpWidget(toolbar(section: LibrarySection.library));
       expect(find.byIcon(Icons.add), findsOneWidget);
@@ -415,52 +448,13 @@ void main() {
       expect(find.byIcon(Icons.add), findsNothing);
     });
 
-    testWidgets('puts Duplicate and Rename in the row, with no menu', (
-      tester,
-    ) async {
-      var duplicated = false;
-      var renamed = false;
-
-      await tester.pumpWidget(
-        toolbar(
-          section: LibrarySection.favourites,
-          selectionCount: 1,
-          fileCount: 1,
-          actions: MediaActions(
-            onAddFiles: () {},
-            onDelete: () {},
-            onDuplicate: () => duplicated = true,
-            onRename: () => renamed = true,
-            onShare: () {},
-            onView: () {},
-            onPreview: () {},
-            onGetInfo: () {},
-            onDownload: () {},
-            onToggleFavourite: () {},
-            onAddToAlbum: (_) {},
-            onCreateAlbum: () {},
-            onRemoveFromAlbum: () {},
-            onRefresh: () {},
-            onSort: (_) {},
-          ),
-        ),
-      );
-
-      expect(find.byIcon(Icons.more_horiz), findsNothing);
-
-      await tester.tap(find.byIcon(Icons.content_copy));
-      await tester.tap(find.byIcon(Icons.drive_file_rename_outline));
-      await tester.pump();
-      expect(duplicated, isTrue);
-      expect(renamed, isTrue);
-    });
-
     testWidgets('draws every icon at the same size', (tester) async {
       await tester.pumpWidget(
         toolbar(
           section: LibrarySection.albums,
           selectionCount: 1,
           fileCount: 1,
+          canRemoveFromAlbum: true,
         ),
       );
 
@@ -515,18 +509,6 @@ void main() {
       expect(created, isTrue);
     });
 
-    testWidgets('Add to album waits for a selected file', (tester) async {
-      await tester.pumpWidget(toolbar(section: LibrarySection.library));
-
-      final button = tester.widget<IconButton>(
-        find.ancestor(
-          of: find.byIcon(Icons.drive_file_move_outline),
-          matching: find.byType(IconButton),
-        ),
-      );
-      expect(button.onPressed, isNull);
-    });
-
     testWidgets('keeps to the agreed order, Create new album first', (
       tester,
     ) async {
@@ -535,36 +517,22 @@ void main() {
           section: LibrarySection.albums,
           selectionCount: 1,
           fileCount: 1,
+          canRemoveFromAlbum: true,
         ),
       );
 
-      final labels = tester
-          .widgetList<Semantics>(
-            find.descendant(
-              of: find.byType(MediaToolbar),
-              matching: find.byType(Semantics),
-            ),
-          )
-          .map((each) => each.properties.label)
-          .whereType<String>()
-          .where((label) => label.isNotEmpty)
-          .toList();
-
-      expect(labels, [
+      expect(rowLabels(tester), [
         'Create new album',
         'Add to Favourites',
         'Add to album',
-        'Duplicate',
         'Preview',
         'Download',
-        'Rename',
+        'Share',
         'Delete',
         'Remove from album',
-        'Share',
-        'Get Info',
         'Sort',
         'View',
-        'Refresh',
+        'More',
       ]);
     });
 
@@ -574,6 +542,7 @@ void main() {
           section: LibrarySection.albums,
           selectionCount: 1,
           fileCount: 1,
+          canRemoveFromAlbum: true,
         ),
       );
 
@@ -598,13 +567,32 @@ void main() {
       expect(find.bySemanticsLabel('Create new album'), findsOneWidget);
     });
 
-    testWidgets('offers Remove from album in the Albums section only', (
+    testWidgets('offers Remove from album only when it can be done', (
       tester,
     ) async {
-      await tester.pumpWidget(toolbar(section: LibrarySection.library));
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.library,
+          selectionCount: 1,
+          fileCount: 1,
+          canRemoveFromAlbum: true,
+        ),
+      );
       expect(find.byIcon(Icons.remove_circle_outline), findsNothing);
 
-      await tester.pumpWidget(toolbar(section: LibrarySection.albums));
+      await tester.pumpWidget(
+        toolbar(section: LibrarySection.albums, selectionCount: 1),
+      );
+      expect(find.byIcon(Icons.remove_circle_outline), findsNothing);
+
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.albums,
+          selectionCount: 1,
+          fileCount: 1,
+          canRemoveFromAlbum: true,
+        ),
+      );
       expect(find.byIcon(Icons.remove_circle_outline), findsOneWidget);
     });
   });

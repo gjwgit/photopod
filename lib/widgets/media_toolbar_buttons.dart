@@ -69,14 +69,12 @@ class _ToolbarMenu extends StatelessWidget {
   const _ToolbarMenu({
     required this.icon,
     required this.label,
-    required this.enabled,
     required this.tooltip,
     required this.children,
   });
 
   final IconData icon;
   final String label;
-  final bool enabled;
   final String tooltip;
   final List<Widget> children;
 
@@ -88,9 +86,8 @@ class _ToolbarMenu extends StatelessWidget {
       child: _ToolbarIcon(
         icon: icon,
         label: label,
-        onPressed: enabled
-            ? () => controller.isOpen ? controller.close() : controller.open()
-            : null,
+        onPressed: () =>
+            controller.isOpen ? controller.close() : controller.open(),
       ),
     ),
   );
@@ -98,13 +95,11 @@ class _ToolbarMenu extends StatelessWidget {
 
 class _FavouriteButton extends StatelessWidget {
   const _FavouriteButton({
-    required this.enabled,
     required this.favourite,
     required this.many,
     required this.onPressed,
   });
 
-  final bool enabled;
   final bool favourite;
   final bool many;
   final VoidCallback onPressed;
@@ -116,9 +111,8 @@ class _FavouriteButton extends StatelessWidget {
     return MediaToolbar._button(
       icon: favourite ? Icons.favorite : Icons.favorite_border,
       label: label,
-      enabled: enabled,
       onPressed: onPressed,
-      colour: enabled && favourite ? const Color(0xFFE53935) : null,
+      colour: favourite ? const Color(0xFFE53935) : null,
       tooltip:
           '''
 
@@ -139,14 +133,12 @@ class _FavouriteButton extends StatelessWidget {
 
 class _AddToAlbumButton extends StatelessWidget {
   const _AddToAlbumButton({
-    required this.enabled,
     required this.many,
     required this.albumNames,
     required this.onAdd,
     required this.onCreate,
   });
 
-  final bool enabled;
   final bool many;
   final List<String> albumNames;
   final ValueChanged<String> onAdd;
@@ -156,7 +148,6 @@ class _AddToAlbumButton extends StatelessWidget {
   Widget build(BuildContext context) => _ToolbarMenu(
     icon: Icons.drive_file_move_outline,
     label: 'Add to album',
-    enabled: enabled,
     tooltip:
         '''
 
@@ -201,7 +192,6 @@ class _SortButton extends StatelessWidget {
   Widget build(BuildContext context) => _ToolbarMenu(
     icon: Icons.sort,
     label: 'Sort',
-    enabled: true,
     tooltip:
         '''
 
@@ -224,5 +214,29 @@ class _SortButton extends StatelessWidget {
           child: Text(option.displayLabel),
         ),
     ],
+  );
+}
+
+/// The overflow menu at the end of the row, holding the actions reached for
+/// less often. Like the row, it lists only what can be done right now.
+
+class _MoreButton extends StatelessWidget {
+  const _MoreButton({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) => _ToolbarMenu(
+    icon: Icons.more_vert,
+    label: 'More',
+    tooltip: '''
+
+    **More**
+
+    The actions used less often, such as duplicating, renaming or describing
+    the selected items, and reading everything from your Pod again.
+
+    ''',
+    children: children,
   );
 }
