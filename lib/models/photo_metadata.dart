@@ -99,6 +99,53 @@ class PhotoMetadata {
     this.altitude,
   });
 
+  /// The details as stored beside the photo's thumbnail on the Pod, so that
+  /// the map and the Get Info panel need not fetch the photo itself. Only
+  /// what is known is written.
+
+  Map<String, Object> toJson() => {
+    'width': ?width,
+    'height': ?height,
+    'taken': ?taken?.toIso8601String(),
+    'cameraMake': ?cameraMake,
+    'cameraModel': ?cameraModel,
+    'lens': ?lens,
+    'exposureSeconds': ?exposureSeconds,
+    'aperture': ?aperture,
+    'focalLength': ?focalLength,
+    'iso': ?iso,
+    'latitude': ?latitude,
+    'longitude': ?longitude,
+    'altitude': ?altitude,
+  };
+
+  /// The details [toJson] wrote. Anything missing or of the wrong type is
+  /// left unknown rather than failing the whole read.
+
+  factory PhotoMetadata.fromJson(Map<String, dynamic> json) {
+    num? number(String key) => json[key] is num ? json[key] as num : null;
+    int? whole(String key) => number(key)?.toInt();
+    double? real(String key) => number(key)?.toDouble();
+    String? text(String key) =>
+        json[key] is String ? json[key] as String : null;
+
+    return PhotoMetadata(
+      width: whole('width'),
+      height: whole('height'),
+      taken: DateTime.tryParse(text('taken') ?? ''),
+      cameraMake: text('cameraMake'),
+      cameraModel: text('cameraModel'),
+      lens: text('lens'),
+      exposureSeconds: real('exposureSeconds'),
+      aperture: real('aperture'),
+      focalLength: real('focalLength'),
+      iso: whole('iso'),
+      latitude: real('latitude'),
+      longitude: real('longitude'),
+      altitude: real('altitude'),
+    );
+  }
+
   /// The same details with the pixel dimensions filled in.
   ///
   /// The width and height are taken from the decoded image rather than from
