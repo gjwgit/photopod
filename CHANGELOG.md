@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.0 Initial Functional Release
 
++ Hide unused buttons [1.0.1 20261008 tonypioneer]
 + Move to simplified Login of solidui 1.5 [1.0.0 20261008 gjw]
 
 ## 0.1 Initial App
