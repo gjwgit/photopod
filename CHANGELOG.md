@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 0.1 Initial App
 
++ Use ad hoc build for macOS installer when unsigned [0.1.15 20261008 gjw]
 + Esri topographic is now the default map [0.1.14 20261008 gjw]
 + Update to solidui 1.4.6 to avoid login screen flash [0.1.13 20261008 gjw]
 + Drag and drop photos and videos into the Library [0.1.12 20261007 tonypioneer]
