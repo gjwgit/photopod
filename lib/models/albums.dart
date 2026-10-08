@@ -23,22 +23,17 @@
 
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
-import 'package:solidpod/solidpod.dart'
-    show
-        PathType,
-        ResourceContentType,
-        deleteResource,
-        getDataDirPath,
-        getFileUrl,
-        isUserLoggedIn,
-        readPod,
-        writePod;
+import 'package:solidpod/solidpod.dart' show getDataDirPath, isUserLoggedIn;
 
+import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/encrypted_json_file.dart';
+import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/utils/name_validator.dart';
 
@@ -49,10 +44,23 @@ import 'package:photopod/utils/name_validator.dart';
 
 const String albumsFolderName = 'albums';
 
-/// The extension every album file carries. The file name without it is the
-/// album's name.
+/// The extension every album file carries, before the encryption suffix.
+/// The file name without either is the album's name, so the album Holiday is
+/// stored as `Holiday.json.enc.ttl`; see [EncryptedJsonFile].
 
 const String albumFileExtension = '.json';
+
+/// The name of the album file is stored under, the encryption suffix
+/// included, or null when [rawName] — as a container listing spells it — is
+/// not an album file. An album written by an earlier build is plain JSON and
+/// has no suffix.
+
+String? albumNameOfFile(String rawName) {
+  final file = displayNameOf(PodMediaService.decodeName(rawName));
+  if (!file.endsWith(albumFileExtension)) return null;
+  final name = file.substring(0, file.length - albumFileExtension.length);
+  return name.isEmpty ? null : name;
+}
 
 /// The name Favourites goes by when it is shown among the albums. It is a
 /// system album, so no album of the user's own may take the same name.
@@ -134,6 +142,11 @@ class Albums extends ChangeNotifier {
   bool _loaded = false;
   String? _error;
 
+  // Whether the albums have actually been read from the Pod. Until they
+  // have, none is written, or an album already there could be overwritten.
+
+  bool _fromPod = false;
+
   /// Writes are chained rather than issued in parallel, so that two changes
   /// in quick succession cannot race and leave the older one on the Pod.
 
@@ -168,6 +181,9 @@ class Albums extends ChangeNotifier {
       _albums[name]?.contains(item.path) ?? false;
 
   /// Read every album from the Pod.
+  ///
+  /// The album files are encrypted. Without the security key they stay
+  /// unread, and are read as soon as the key is entered.
 
   Future<void> load() async {
     try {
@@ -177,34 +193,35 @@ class Albums extends ChangeNotifier {
         await PodMediaService.folderUrl(folder),
       );
 
-      final found = <String, Set<String>>{};
+      final names = <String>{};
       for (final entry in await PodMediaService.listFolder(folder)) {
-        if (entry.isFolder || !entry.rawName.endsWith(albumFileExtension)) {
-          continue;
-        }
-        final name = entry.name.substring(
-          0,
-          entry.name.length - albumFileExtension.length,
-        );
+        if (entry.isFolder) continue;
+        final name = albumNameOfFile(entry.rawName);
+
         // Favourites has a file of its own elsewhere, so a stray album file
         // of the same name, made outside PhotoPod, is passed over rather
         // than shown as a second Favourites.
 
-        if (name.isEmpty ||
+        if (name == null ||
             name.toLowerCase() == favouritesAlbumName.toLowerCase()) {
           continue;
         }
-        final content = await readPod(
-          entry.path,
-          pathType: PathType.relativeToPod,
-        );
-        found[name] = decodeAlbum(content);
+        names.add(name);
+      }
+
+      final found = <String, Set<String>>{};
+      for (final name in names) {
+        final content = await _fileOf(name).read();
+        found[name] = content == null ? <String>{} : decodeAlbum(content);
       }
 
       _albums
         ..clear()
         ..addAll(found);
+      _fromPod = true;
       _error = null;
+    } on SecurityKeyNeeded {
+      unawaited(PodKeys.unlocked().then((_) => load()));
     } on Object catch (e) {
       _error = '$e';
       debugPrint('PhotoPod: could not read the albums: $e');
@@ -383,6 +400,8 @@ class Albums extends ChangeNotifier {
   Future<bool> _chain(Future<void> Function() action) {
     final write = _writes.then((_) async {
       try {
+        if (!_fromPod) await load();
+        if (!_fromPod) throw SecurityKeyNeeded(albumsFolderName);
         await action();
         _error = null;
         return true;
@@ -395,46 +414,27 @@ class Albums extends ChangeNotifier {
     return write;
   }
 
-  // The album files hold JSON, not Turtle, and are written unencrypted for
-  // the same reason as the favourites: asking for the security key merely to
-  // list the albums would put a password prompt in front of an empty page.
+  // Each album is encrypted with a key of its own, and has an access list of
+  // its own, so that sharing one album shares nothing of the others.
+
+  static EncryptedJsonFile _fileOf(String name) => EncryptedJsonFile(
+    '$albumsFolderName/$name$albumFileExtension',
+    createAcl: true,
+  );
 
   static Future<void> _write(String name, Set<String> paths) async {
-    final folder = await _folderPath();
-    await PodMediaService.ensureFolder(await PodMediaService.folderUrl(folder));
-    await writePod(
-      '$folder/$name$albumFileExtension',
-      encodeAlbum(paths),
-      encrypted: false,
-      overwrite: true,
-      pathType: PathType.relativeToPod,
+    await PodMediaService.ensureFolder(
+      await PodMediaService.folderUrl(await _folderPath()),
     );
+    await _fileOf(name).write(encodeAlbum(paths));
   }
 
-  // An album file is plain JSON with no encryption key and no sharing, so it
-  // is removed with a bare DELETE rather than solidpod's file delete, which
-  // would go on to look for a key and an access list that were never made.
-
-  static Future<void> _remove(String name) async {
-    final folderUrl = await PodMediaService.folderUrl(await _folderPath());
-    final url =
-        '${folderUrl.endsWith('/') ? folderUrl : '$folderUrl/'}'
-        '$name$albumFileExtension';
-    try {
-      await deleteResource(url, ResourceContentType.any);
-    } on Object catch (e) {
-      // Already gone is as good as removed.
-
-      if ('$e'.contains('404') || '$e'.contains('NotFound')) return;
-      rethrow;
-    }
-  }
+  static Future<void> _remove(String name) => _fileOf(name).delete();
 
   /// The URL of the file that holds the album called [name], which is what
   /// is shared when the album is.
 
-  static Future<String> fileUrlOf(String name) async =>
-      getFileUrl('${await _folderPath()}/$name$albumFileExtension');
+  static Future<String> fileUrlOf(String name) => _fileOf(name).url();
 
   static Future<String> _folderPath() async =>
       '${await getDataDirPath()}/$albumsFolderName';

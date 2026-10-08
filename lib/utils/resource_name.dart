@@ -102,3 +102,34 @@ String? unsafeSegmentOf(String podPath) {
   }
   return null;
 }
+
+/// The characters a file name the user sees may not hold.
+///
+/// A file's own name never reaches a URL, since it is stored under a random
+/// one, so any script and any spacing will do. What is left out is what no
+/// common file system accepts, which is where a downloaded photo ends up:
+/// the path separators, `: * ? " < > |` that Windows refuses, and control
+/// characters.
+
+final RegExp _forbiddenInFileName = RegExp(r'[/\\:*?"<>|\x00-\x1f\x7f]');
+
+/// The single character in the file name [name] that keeps it from being
+/// used as it stands, or null when there is none.
+
+String? firstForbiddenFileNameCharacter(String name) =>
+    _forbiddenInFileName.firstMatch(name)?.group(0);
+
+/// [name], the name a file arrived with, made fit to be shown and later
+/// saved back to a file system: every forbidden character becomes an
+/// underscore and surrounding spaces go. Letters of every script are kept,
+/// so `海滩 照片.jpg` stays exactly as it is.
+
+String safeFileName(String name) {
+  final replaced = name.replaceAll(_forbiddenInFileName, '_').trim();
+  if (replaced.isEmpty) return 'file';
+
+  // A name that begins with a full stop reads as a hidden file once it is
+  // downloaded.
+
+  return replaced.startsWith('.') ? 'file$replaced' : replaced;
+}

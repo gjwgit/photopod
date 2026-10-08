@@ -33,7 +33,7 @@ import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/albums.dart' show albumsFolderName;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/container_listing.dart';
-import 'package:photopod/utils/resource_name.dart';
+import 'package:photopod/services/media_names.dart';
 
 /// Raised when the Solid server refuses or fails a request. The message is
 /// written for the user, since it is what the error dialogues display.
@@ -53,9 +53,11 @@ class PodMediaException implements Exception {
 ///
 /// Media is stored the way every Pod app in this family stores its data:
 /// through solidpod's [writePod], which encrypts the content, wraps it in
-/// Turtle and writes an accompanying `.acl`. A photo added as `beach.jpg`
-/// becomes `beach.jpg.enc.ttl` on the server, and PhotoPod shows the name
-/// without that suffix.
+/// Turtle and writes an accompanying `.acl`. Each file is stored under a
+/// random name of its own, such as `3f9c…e1.jpg.enc.ttl`, and the name the
+/// user gave it is kept in [MediaNames]. Files added before that keep the
+/// name they were stored under, `beach.jpg.enc.ttl`, and PhotoPod shows it
+/// without the suffix.
 ///
 /// The alternative — writing the raw bytes under their own name — leaves the
 /// files invisible to the shared file browsers, which list only `.ttl`
@@ -90,6 +92,7 @@ class PodMediaService {
   }) async {
     final url = await folderUrl(podPath);
     final body = await _get(url, 'listing the folder');
+    await MediaNames.ensureLoaded();
     final entries = parseContainerListing(body);
 
     // The album files are PhotoPod's own bookkeeping, filed in a folder of
@@ -107,12 +110,16 @@ class PodMediaService {
       if (raw.isEmpty || raw.startsWith('.')) continue;
       if (atRoot && isFolder && raw == albumsFolderName) continue;
 
-      // The server name carries the encryption suffix; the user never sees
-      // it, and the extension that decides which section a file belongs to is
-      // the one underneath.
+      // A file is shown under the name the user gave it. One added before
+      // names were kept apart is shown under its stored name, less the
+      // encryption suffix the user never sees. Either way, the extension that
+      // decides which section a file belongs to is the one in that name.
 
+      final path = '$podPath/$raw';
       final storedName = decodeName(raw);
-      final name = isFolder ? storedName : displayNameOf(storedName);
+      final name = isFolder
+          ? storedName
+          : MediaNames.nameOf(path) ?? displayNameOf(storedName);
       if (!isFolder && kinds != null && !kinds.contains(kindOf(name))) {
         continue;
       }
@@ -121,7 +128,7 @@ class PodMediaService {
         MediaItem(
           name: name,
           rawName: raw,
-          path: '$podPath/$raw',
+          path: path,
           url: '${_withSlash(url)}$raw${isFolder ? '/' : ''}',
           isFolder: isFolder,
           isEncrypted: !isFolder && storedName.endsWith(encryptedSuffix),
@@ -158,7 +165,7 @@ class PodMediaService {
     }
   }
 
-  /// Store [bytes] as a file called [displayName] inside [podPath].
+  /// Store [bytes] at Pod-relative [path], as found by [newStoredPath].
   ///
   /// The file is encrypted and given an access control list, so it shows up
   /// in the shared file browsers and can be shared with another WebID. The
@@ -166,35 +173,28 @@ class PodMediaService {
   /// `getKeyFromUserIfRequired`.
 
   static Future<void> writeMedia({
-    required String podPath,
-    required String displayName,
+    required String path,
     required Uint8List bytes,
   }) async {
-    await writePod(
-      storedPath(podPath, displayName),
-      base64Encode(bytes),
-      pathType: PathType.relativeToPod,
-    );
+    await writePod(path, base64Encode(bytes), pathType: PathType.relativeToPod);
   }
 
-  /// The Pod-relative path a file called [displayName] takes when [writeMedia]
-  /// stores it inside [podPath].
+  /// A Pod-relative path inside [podPath], under a random name, for a new
+  /// file the user calls [displayName].
   ///
-  /// Favourites are recorded against this path, so the two have to agree
-  /// exactly: the name is reduced to one that needs no percent-escaping and
-  /// carries the encryption suffix, just as it does on the server.
+  /// The random part is long enough that two files will never draw the same
+  /// name, but the folder is asked anyway, and a name already taken is drawn
+  /// again.
 
-  static String storedPath(String podPath, String displayName) =>
-      '$podPath/${storedNameOf(safeResourceName(displayName))}';
-
-  /// Whether a file called [displayName] is already in [podPath], under
-  /// either the encrypted name or a plain one.
-
-  static Future<bool> mediaExists(String podPath, String displayName) async {
+  static Future<String> newStoredPath(
+    String podPath,
+    String displayName,
+  ) async {
     final dirUrl = await folderUrl(podPath);
-    final name = safeResourceName(displayName);
-    return await fileExists('$dirUrl${storedNameOf(name)}') ||
-        await fileExists('$dirUrl$name');
+    while (true) {
+      final name = randomStoredName(displayName);
+      if (!await fileExists('$dirUrl$name')) return '$podPath/$name';
+    }
   }
 
   static Future<Uint8List> _readRaw(String url) async {

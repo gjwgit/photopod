@@ -61,14 +61,30 @@ void main() {
       expect(validateName(name, isFolder: false), isNotNull);
     });
 
-    test('rejects characters that would break the URL', () {
+    test('accepts any script, spaces and URL punctuation', () {
+      // A file is stored under a random name, so its own name never has to
+      // pass through a URL.
+
+      for (final name in [
+        '海滩 照片.jpg',
+        'ビーチ.png',
+        '바다.mov',
+        'holiday snap.jpg',
+        'a#b.jpg',
+        'a%b.jpg',
+        'café & co.jpeg',
+      ]) {
+        expect(validateName(name, isFolder: false), isNull, reason: name);
+      }
+    });
+
+    test('rejects what a file system will not take', () {
       for (final name in [
         'a/b.jpg',
         r'a\b.jpg',
         'a?b.jpg',
-        'a#b.jpg',
-        'a%b.jpg',
         'a*b.jpg',
+        'a\tb.jpg',
         'a:b.jpg',
         'a"b.jpg',
         'a<b.jpg',
@@ -119,7 +135,6 @@ void main() {
       // putting them back, so an escaped name loses its key.
 
       expect(validateName('Holiday 2026', isFolder: true), isNotNull);
-      expect(validateName('holiday snap.jpg', isFolder: false), isNotNull);
     });
 
     test('rejects a name outside the Latin alphabet for the same reason', () {

@@ -23,6 +23,8 @@
 
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:solidpod/solidpod.dart'
@@ -56,9 +58,24 @@ class PodKeys {
   static Future<void>? _priming;
   static bool _primed = false;
 
+  // Completed the first time the keys are read, so that whatever has to wait
+  // for the user to enter their security key can do so without asking for it
+  // itself.
+
+  static Completer<void> _unlocked = Completer<void>();
+
   /// Whether the keys are already in memory.
 
   static bool get isPrimed => _primed;
+
+  /// Wait until the keys are in memory: at once when the security key is
+  /// already on this device, otherwise once the user has entered it wherever
+  /// PhotoPod next asks for it.
+
+  static Future<void> unlocked() async {
+    await prime();
+    if (!_primed) await _unlocked.future;
+  }
 
   /// Read the master key and the individual key map, once.
   ///
@@ -87,6 +104,7 @@ class PodKeys {
         await getDirUrl(await getDataDirPath()),
       );
       _primed = true;
+      if (!_unlocked.isCompleted) _unlocked.complete();
     } on Object catch (e) {
       debugPrint('PhotoPod: could not read the Pod keys: $e');
     } finally {
@@ -100,5 +118,6 @@ class PodKeys {
   static void reset() {
     _primed = false;
     _priming = null;
+    if (_unlocked.isCompleted) _unlocked = Completer<void>();
   }
 }
