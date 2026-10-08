@@ -30,6 +30,10 @@ then please show some ❤️ and tap on the star at
 This app is authored by Tony Chen and [Graham
 Williams](https://togaware.com/Graham.Williams.html).
 
+## 1.0 Initial Functional Release
+
++ Move to simplified Login of solidui 1.5 [1.0.0 20261008 gjw]
+
 ## 0.1 Initial App
 
 + Use ad hoc build for macOS installer when unsigned [0.1.15 20261008 gjw]
