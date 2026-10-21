@@ -200,9 +200,19 @@ class ThumbnailCache {
       if (made?.large != null) return made!.large;
     }
 
-    final original = await PodMediaService.readBytes(item);
-    if (!isTiff(item.name)) return original;
-    final png = await compute(convertToPng, original);
+    return original(item);
+  }
+
+  /// The photo [item] at its full resolution, for a preview zoomed in beyond
+  /// what the large rendition can show sharply. A TIFF original is converted,
+  /// since Flutter has no codec for it.
+  ///
+  /// Originals can be many megabytes, so they are not kept here.
+
+  Future<Uint8List> original(MediaItem item) async {
+    final bytes = await PodMediaService.readBytes(item);
+    if (!isTiff(item.name)) return bytes;
+    final png = await compute(convertToPng, bytes);
     if (png == null) {
       throw const PodMediaException('This TIFF file could not be decoded.');
     }
