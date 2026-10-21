@@ -44,6 +44,24 @@ class MediaThumbnail extends StatefulWidget {
 
   final MediaItem item;
 
+  /// The thumbnails on screen, by the URL of the file each pictures, most
+  /// recently shown last.
+
+  static final Map<String, List<_MediaThumbnailState>> _onScreen = {};
+
+  /// Where [item]'s thumbnail sits on screen, in global coordinates, or null
+  /// when none is showing. The preview grows out of this when it opens.
+
+  static Rect? rectOf(MediaItem item) {
+    for (final state in (_onScreen[item.url] ?? const []).reversed) {
+      final box = state.context.findRenderObject();
+      if (box is RenderBox && box.attached && box.hasSize) {
+        return box.localToGlobal(Offset.zero) & box.size;
+      }
+    }
+    return null;
+  }
+
   @override
   State<MediaThumbnail> createState() => _MediaThumbnailState();
 }
@@ -54,13 +72,34 @@ class _MediaThumbnailState extends State<MediaThumbnail> {
   @override
   void initState() {
     super.initState();
+    _register();
     _request();
   }
 
   @override
   void didUpdateWidget(MediaThumbnail oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.item.url != widget.item.url) _request();
+    if (oldWidget.item.url != widget.item.url) {
+      _unregister(oldWidget.item.url);
+      _register();
+      _request();
+    }
+  }
+
+  @override
+  void dispose() {
+    _unregister(widget.item.url);
+    super.dispose();
+  }
+
+  void _register() =>
+      (MediaThumbnail._onScreen[widget.item.url] ??= []).add(this);
+
+  void _unregister(String url) {
+    final states = MediaThumbnail._onScreen[url];
+    if (states == null) return;
+    states.remove(this);
+    if (states.isEmpty) MediaThumbnail._onScreen.remove(url);
   }
 
   void _request() {
