@@ -29,6 +29,7 @@ import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
+import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/download_media.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
 import 'package:photopod/models/favourites.dart';
@@ -43,8 +44,9 @@ import 'package:photopod/widgets/video_preview.dart';
 /// Photos can be pinched or scrolled to zoom; videos get playback controls.
 /// A photo is shown from its large rendition, big enough to fill the screen
 /// and far quicker to fetch than the original, with the grid's thumbnail
-/// standing in until it arrives. The original is fetched only by Download.
-/// A video needs the whole file to play, so it is fetched in full.
+/// standing in until it arrives. Once the photo is zoomed in, the original is
+/// fetched as well and drawn over the rendition, so that the detail stays
+/// sharp. A video needs the whole file to play, so it is fetched in full.
 ///
 /// When [items] is given, arrows either side of the preview (and the left and
 /// right arrow keys) step to the previous and next photo or video in it.
@@ -92,6 +94,13 @@ class _PreviewDialogState extends State<_PreviewDialog> {
   Uint8List? _bytes;
   String? _error;
 
+  /// The original photo, fetched once the preview is first zoomed in.
+
+  Uint8List? _original;
+  bool _originalRequested = false;
+
+  final _transform = TransformationController();
+
   MediaItem get _item => widget.items[_index];
 
   bool get _hasPrevious => _index > 0;
@@ -102,7 +111,16 @@ class _PreviewDialogState extends State<_PreviewDialog> {
   void initState() {
     super.initState();
     _index = widget.initialIndex;
+    _transform.addListener(_onTransform);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _transform
+      ..removeListener(_onTransform)
+      ..dispose();
+    super.dispose();
   }
 
   /// Move [step] places through the list and fetch the file found there.
@@ -114,8 +132,37 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       _index = next;
       _bytes = null;
       _error = null;
+      _original = null;
+      _originalRequested = false;
     });
+    _transform.value = Matrix4.identity();
     _load();
+  }
+
+  // Fetch the original the first time the photo is zoomed in. An animated GIF
+  // is already previewed from its original, so it needs nothing more.
+
+  void _onTransform() {
+    if (_originalRequested || _bytes == null) return;
+    if (_item.isVideo || isGif(_item.name)) return;
+    if (_transform.value.getMaxScaleOnAxis() <= 1.01) return;
+    _originalRequested = true;
+    _loadOriginal();
+  }
+
+  Future<void> _loadOriginal() async {
+    final item = _item;
+    try {
+      final bytes = await ThumbnailCache.instance.original(item);
+      if (mounted && identical(item, _item)) {
+        setState(() => _original = bytes);
+      }
+    } on Object catch (e) {
+      // The large rendition is still on screen, so the zoom carries on with
+      // that rather than reporting an error.
+
+      debugPrint('PhotoPod: could not read the original of ${item.url}: $e');
+    }
   }
 
   Future<void> _load() async {
@@ -325,16 +372,37 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       );
     }
 
+    // The large rendition always sets the size of the picture, so the
+    // dialogue does not jump when the original arrives. The original is drawn
+    // over it, filling the same box; should it fail to decode, the rendition
+    // simply stays visible beneath.
+
+    final original = _original;
     return InteractiveViewer(
+      transformationController: _transform,
       maxScale: 8,
       child: Center(
-        child: Image.memory(
-          bytes,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stack) => const Padding(
-            padding: EdgeInsets.all(32),
-            child: Text('This photo could not be displayed.'),
-          ),
+        child: Stack(
+          children: [
+            Image.memory(
+              bytes,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stack) => const Padding(
+                padding: EdgeInsets.all(32),
+                child: Text('This photo could not be displayed.'),
+              ),
+            ),
+            if (original != null)
+              Positioned.fill(
+                child: Image.memory(
+                  original,
+                  fit: BoxFit.contain,
+                  filterQuality: FilterQuality.medium,
+                  errorBuilder: (context, error, stack) =>
+                      const SizedBox.shrink(),
+                ),
+              ),
+          ],
         ),
       ),
     );
