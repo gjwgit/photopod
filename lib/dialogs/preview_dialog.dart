@@ -23,7 +23,11 @@
 
 library;
 
+import 'dart:math';
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:gap/gap.dart';
@@ -37,6 +41,7 @@ import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
+import 'package:photopod/widgets/media_thumbnail.dart';
 import 'package:photopod/widgets/video_preview.dart';
 
 /// Preview [item] in a modal dialogue.
@@ -51,6 +56,9 @@ import 'package:photopod/widgets/video_preview.dart';
 /// When [items] is given, arrows either side of the preview (and the left and
 /// right arrow keys) step to the previous and next photo or video in it.
 /// Folders and files PhotoPod cannot show are skipped.
+///
+/// When [item]'s thumbnail is on screen the dialogue grows out of it as it
+/// opens. Stepping between files inside the dialogue is not animated.
 
 Future<void> showPreviewDialog(
   BuildContext context,
@@ -68,14 +76,217 @@ Future<void> showPreviewDialog(
     index = 0;
   }
 
-  return showDialog<void>(
-    context: context,
-    builder: (context) => _PreviewDialog(items: playable, initialIndex: index),
+  // What showDialog would do, but with a route of PhotoPod's own so that the
+  // dialogue can grow out of the tile that was opened.
+
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final contentKey = GlobalKey();
+  return navigator.push(
+    _PreviewRoute(
+      context: context,
+      themes: InheritedTheme.capture(from: context, to: navigator.context),
+      barrierColor:
+          DialogTheme.of(context).barrierColor ??
+          Theme.of(context).dialogTheme.barrierColor ??
+          Colors.black54,
+      origin: MediaThumbnail.rectOf(item),
+      contentKey: contentKey,
+      builder: (context) => _PreviewDialog(
+        items: playable,
+        initialIndex: index,
+        contentKey: contentKey,
+      ),
+    ),
   );
 }
 
+/// The preview's route: an ordinary dialogue route whose opening transition
+/// grows the dialogue from [origin], the rectangle of the tile that was
+/// opened, to its full size. Without an origin it opens as any dialogue does.
+
+class _PreviewRoute extends DialogRoute<void> {
+  _PreviewRoute({
+    required super.context,
+    required super.builder,
+    required this.origin,
+    required this.contentKey,
+    super.themes,
+    super.barrierColor,
+  });
+
+  final Rect? origin;
+
+  /// Marks the dialogue's panel, whose laid out rectangle is where the
+  /// growth ends.
+
+  final GlobalKey contentKey;
+
+  static const _grow = Duration(milliseconds: 300);
+
+  @override
+  Duration get transitionDuration =>
+      origin == null ? super.transitionDuration : _grow;
+
+  @override
+  Duration get reverseTransitionDuration =>
+      origin == null ? super.reverseTransitionDuration : _fadeOut;
+
+  static const _fadeOut = Duration(milliseconds: 150);
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final origin = this.origin;
+    if (origin == null) {
+      return super.buildTransitions(
+        context,
+        animation,
+        secondaryAnimation,
+        child,
+      );
+    }
+
+    // The same widgets are built while opening and closing, so that the
+    // dialogue keeps its state. Closing only fades: by then the user may
+    // have stepped to a file whose tile is elsewhere, or off screen.
+
+    return AnimatedBuilder(
+      animation: animation,
+      child: child,
+      builder: (context, child) {
+        final closing = animation.status == AnimationStatus.reverse;
+        final value = animation.value;
+        return _GrowFrom(
+          origin: origin,
+          target: contentKey,
+          progress: closing ? 1 : Curves.easeOutCubic.transform(value),
+          child: Opacity(
+            opacity: closing ? value : const Interval(0, 0.35).transform(value),
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Paints its child scaled and moved so that the panel marked by [target]
+/// starts within [origin] and, as [progress] runs from 0 to 1, grows to
+/// where it was laid out.
+///
+/// The panel keeps its own shape throughout, starting as large as fits in
+/// the tile, so the photo and the header are never stretched. Layout is
+/// untouched: only painting is transformed.
+
+class _GrowFrom extends SingleChildRenderObjectWidget {
+  const _GrowFrom({
+    required this.origin,
+    required this.target,
+    required this.progress,
+    super.child,
+  });
+
+  /// Where the growth starts, in global coordinates.
+
+  final Rect origin;
+
+  final GlobalKey target;
+
+  final double progress;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderGrowFrom(origin: origin, target: target, progress: progress);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderGrowFrom renderObject) {
+    renderObject
+      ..origin = origin
+      ..target = target
+      ..progress = progress;
+  }
+}
+
+class _RenderGrowFrom extends RenderProxyBox {
+  _RenderGrowFrom({
+    required Rect origin,
+    required GlobalKey target,
+    required double progress,
+  }) : _origin = origin,
+       _target = target,
+       _progress = progress;
+
+  Rect _origin;
+  set origin(Rect value) {
+    if (value == _origin) return;
+    _origin = value;
+    markNeedsPaint();
+  }
+
+  GlobalKey _target;
+  set target(GlobalKey value) {
+    if (value == _target) return;
+    _target = value;
+    markNeedsPaint();
+  }
+
+  double _progress;
+  set progress(double value) {
+    if (value == _progress) return;
+    _progress = value;
+    markNeedsPaint();
+  }
+
+  // The panel is found when painting, after it has been laid out, so the
+  // growth always ends exactly where the dialogue sits.
+
+  Matrix4? _transform() {
+    if (_progress >= 1) return null;
+    final box = _target.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || box.size.isEmpty) return null;
+
+    final end = MatrixUtils.transformRect(
+      box.getTransformTo(this),
+      Offset.zero & box.size,
+    );
+    final start = globalToLocal(_origin.topLeft) & _origin.size;
+    final first = min(start.width / end.width, start.height / end.height);
+
+    final scale = lerpDouble(first, 1, _progress)!;
+    final centre = Offset.lerp(start.center, end.center, _progress)!;
+    return Matrix4.translationValues(centre.dx, centre.dy, 0)
+      ..multiply(Matrix4.diagonal3Values(scale, scale, 1))
+      ..multiply(Matrix4.translationValues(-end.center.dx, -end.center.dy, 0));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    final transform = _transform();
+    if (transform == null) {
+      layer = null;
+      super.paint(context, offset);
+      return;
+    }
+    layer = context.pushTransform(
+      needsCompositing,
+      offset,
+      transform,
+      super.paint,
+      oldLayer: layer is TransformLayer ? layer as TransformLayer : null,
+    );
+  }
+}
+
 class _PreviewDialog extends StatefulWidget {
-  const _PreviewDialog({required this.items, required this.initialIndex});
+  const _PreviewDialog({
+    required this.items,
+    required this.initialIndex,
+    required this.contentKey,
+  });
 
   /// The files the arrows step through, in display order.
 
@@ -84,6 +295,10 @@ class _PreviewDialog extends StatefulWidget {
   /// Where in [items] the preview starts.
 
   final int initialIndex;
+
+  /// Marks the panel the opening transition grows.
+
+  final GlobalKey contentKey;
 
   @override
   State<_PreviewDialog> createState() => _PreviewDialogState();
@@ -205,6 +420,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
           // below instead, in both.
           constraints: const BoxConstraints(minWidth: 280),
           child: ConstrainedBox(
+            key: widget.contentKey,
             constraints: BoxConstraints(
               maxWidth: media.width * 0.9,
               maxHeight: media.height * 0.9,
