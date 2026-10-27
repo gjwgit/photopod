@@ -35,7 +35,18 @@ import 'package:solidpod/solidpod.dart'
         getResource,
         getWebId,
         isUserLoggedIn,
-        readPod;
+        readPod,
+        updateFileByQuery;
+// solidpod keeps the recipient's side of a revocation to itself: the key it
+// hands over with a shared file is removed only from within revokePermission,
+// which also needs control of the owner's ACL. Declining a share needs that
+// one step on its own, in exactly the form solidpod wrote the key.
+// ignore: implementation_imports
+import 'package:solidpod/src/solid/api/revoke_permission_api.dart'
+    show removeSharedKey;
+// ignore: implementation_imports
+import 'package:solidpod/src/solid/utils/get_url_helper.dart'
+    show getUniqueIdResUrl;
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/albums.dart';
@@ -203,6 +214,7 @@ typedef PermissionLogLine = ({
   String type,
   String granter,
   String recipient,
+  String permissions,
 });
 
 /// A shared resource that has survived the permission log: its URL and its
@@ -238,6 +250,7 @@ Map<String, PermissionLogLine> latestLogLines(String content) {
       type: fields[3].toLowerCase(),
       granter: fields[4],
       recipient: fields[5],
+      permissions: fields.length > 6 ? fields[6] : '',
     );
     final before = latest[line.url];
     if (before == null || line.time.compareTo(before.time) >= 0) {
@@ -302,6 +315,53 @@ String sameWebId(String webId) {
   return (media: media, albums: albums);
 }
 
+/// The SPARQL update that adds to the user's permission log the line
+/// recording that [me] has declined the photo at [url], owned by [owner],
+/// shared with [me] as [recipient] with [permissions].
+///
+/// The line is written just as solidpod writes a revocation, local time and
+/// all. Its time is now,
+/// or, should this device's clock be behind the one the grant was written
+/// with, a second after the grant's time [after], so that it is always the
+/// latest line for the photo.
+
+String declineLogQuery({
+  required String url,
+  required String owner,
+  required String me,
+  required String recipient,
+  required String permissions,
+  String? after,
+  DateTime? now,
+}) {
+  var at = now ?? DateTime.now();
+  final grantedAt = after == null ? null : _parseLogTime(after);
+  if (grantedAt != null && !at.isAfter(grantedAt)) {
+    at = grantedAt.add(const Duration(seconds: 1));
+  }
+  final time = _logTime(at);
+  final id = '$time${at.millisecond.toString().padLeft(3, '0')}';
+  final record = '$time;$url;$owner;revoke;$me;$recipient;$permissions';
+  return 'PREFIX logId: <https://solidcommunity.au/predicates/logid#> '
+      'PREFIX data: <https://solidcommunity.au/predicates/data#> '
+      'INSERT DATA {logId:$id data:log "<$record>"};';
+}
+
+String _two(int n) => n.toString().padLeft(2, '0');
+
+String _logTime(DateTime at) =>
+    '${at.year.toString().padLeft(4, '0')}${_two(at.month)}${_two(at.day)}'
+    'T${_two(at.hour)}${_two(at.minute)}${_two(at.second)}';
+
+DateTime? _parseLogTime(String time) {
+  final match = RegExp(
+    r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})',
+  ).firstMatch(time);
+  if (match == null) return null;
+  final parts = [for (var i = 1; i <= 6; i++) int.parse(match.group(i)!)];
+  return DateTime(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
+}
+
 /// How long what is shared with the user is trusted before it is read again.
 /// Someone may share something at any moment, so every visit to a section
 /// that shows shared items reads the log afresh once this has passed.
@@ -318,6 +378,7 @@ const Duration sharedRefreshAfter = Duration(seconds: 20);
 class SharedWithMe extends ChangeNotifier {
   List<MediaItem> _items = const [];
   List<SharedAlbum> _albums = const [];
+  Map<String, PermissionLogLine> _lines = const {};
   DateTime? _readAt;
   Future<void>? _loading;
   String? _error;
@@ -375,6 +436,7 @@ class SharedWithMe extends ChangeNotifier {
         debugPrint('PhotoPod: no permission log at $logUrl: $e');
         _items = const [];
         _albums = const [];
+        _lines = const {};
         _error = null;
         _readAt = DateTime.now();
         return;
@@ -395,9 +457,12 @@ class SharedWithMe extends ChangeNotifier {
         albums.add(album);
 
         // Sharing an album shares what is in it, so its photos are shown
-        // even where the log has no line of their own for them.
+        // even where the log has no line of their own for them — but not one
+        // whose own line is a revocation, which is also how a photo the user
+        // has declined stays away while the album still lists it.
 
         for (final url in album.itemUrls) {
+          if (lines[url]?.type == 'revoke') continue;
           items.putIfAbsent(url, () => _itemFor(url, grant.owner));
         }
       }
@@ -413,6 +478,7 @@ class SharedWithMe extends ChangeNotifier {
         items.values.where((item) => item.kind != null),
       );
       _albums = List.unmodifiable(albums);
+      _lines = lines;
       _error = null;
       _readAt = DateTime.now();
     } on Object catch (e) {
@@ -421,6 +487,158 @@ class SharedWithMe extends ChangeNotifier {
     } finally {
       notifyListeners();
     }
+  }
+
+  /// Stop [items], photos and videos someone else shared with the user,
+  /// being shared with the user, and report the ones that could not be
+  /// declined along with why.
+  ///
+  /// Only the owner can take the user out of a photo's ACL, so declining is
+  /// done entirely in the user's own Pod: the key the owner shared to
+  /// decrypt the photo is removed from the user's shared keys, and a
+  /// revocation is added to the user's permission log, which from then on is
+  /// the latest line for the photo and keeps it out of the Library, the
+  /// albums and every other section. Should the owner share it again, their
+  /// new grant is later still and the photo comes back.
+
+  Future<Map<MediaItem, String>> decline(Iterable<MediaItem> items) async {
+    final failed = <MediaItem, String>{};
+    final declined = <String>{};
+
+    final me = await getWebId();
+    if (me == null) {
+      for (final item in items) {
+        failed[item] = 'You are not logged in.';
+      }
+      return failed;
+    }
+    final logUrl = await _logUrl();
+
+    for (final item in items) {
+      if (!item.isShared) continue;
+      try {
+        await _declineUrl(item.url, item.sharedBy!, me, logUrl);
+        declined.add(item.url);
+      } on Object catch (e) {
+        failed[item] = '$e';
+      }
+    }
+
+    _forget(declined);
+    return failed;
+  }
+
+  /// Stop [album], an album someone else shared with the user, being shared
+  /// with the user, along with the photos and videos in it that no other
+  /// album still shared with the user holds.
+  ///
+  /// This is the recipient's side of what the owner's unsharing does: a
+  /// photo goes with the album only when no other shared album keeps it, so
+  /// declining one album never takes a photo out of another. Each is
+  /// declined as [decline] declines a photo. Returns the URLs of the photos
+  /// and videos that went, and what could not be declined, with why.
+
+  Future<({List<String> gone, List<String> failed})> declineAlbum(
+    SharedAlbum album,
+  ) async {
+    final me = await getWebId();
+    if (me == null) {
+      return (gone: <String>[], failed: ['You are not logged in.']);
+    }
+    final logUrl = await _logUrl();
+
+    final failed = <String>[];
+    try {
+      await _declineUrl(album.url, album.ownerWebId, me, logUrl);
+    } on Object catch (e) {
+      // Should the album itself stay, its photos stay with it.
+
+      return (gone: <String>[], failed: ['${album.name}: $e']);
+    }
+
+    final kept = {
+      for (final other in _albums)
+        if (other.url != album.url) ...other.itemUrls,
+    };
+    final declined = <String>{};
+    for (final item in _items) {
+      if (!album.itemUrls.contains(item.url) || kept.contains(item.url)) {
+        continue;
+      }
+      try {
+        await _declineUrl(
+          item.url,
+          item.sharedBy ?? album.ownerWebId,
+          me,
+          logUrl,
+        );
+        declined.add(item.url);
+      } on Object catch (e) {
+        failed.add('${item.name}: $e');
+      }
+    }
+
+    _albums = List.unmodifiable(_albums.where((each) => each.url != album.url));
+    _forget(declined);
+    if (declined.isEmpty) {
+      _readAt = null;
+      notifyListeners();
+    }
+    return (gone: declined.toList(), failed: failed);
+  }
+
+  static Future<String> _logUrl() async {
+    final app = (await getDataDirPath()).split('/').first;
+    return getFileUrl('$app/logs/permissions-log.ttl');
+  }
+
+  // Decline the resource at [url], owned by [owner], for the user [me]:
+  // remove the key its owner shared with it and add a revocation to the
+  // user's permission log at [logUrl].
+
+  Future<void> _declineUrl(
+    String url,
+    String owner,
+    String me,
+    String logUrl,
+  ) async {
+    final line = _lines[url];
+
+    // The key is filed under the WebID as the owner typed it, which the log
+    // line records, and may differ from the login's own spelling.
+
+    final spellings = {if (line != null) line.recipient, me};
+    for (final spelling in spellings) {
+      await removeSharedKey(me, getUniqueIdResUrl(url, spelling));
+    }
+
+    await updateFileByQuery(
+      logUrl,
+      declineLogQuery(
+        url: url,
+        owner: owner,
+        me: me,
+        recipient: line?.recipient ?? me,
+        permissions: line?.permissions ?? 'read',
+        after: line?.time,
+      ),
+    );
+  }
+
+  // Stop showing the photos and videos at [urls], which have just been
+  // declined.
+
+  void _forget(Set<String> urls) {
+    if (urls.isEmpty) return;
+    _items = List.unmodifiable(
+      _items.where((item) => !urls.contains(item.url)),
+    );
+
+    // The log is read afresh next time rather than patched here, so that
+    // what is shown always comes from the Pod.
+
+    _readAt = null;
+    notifyListeners();
   }
 
   // An album file is plain JSON listing Pod-relative paths in its owner's

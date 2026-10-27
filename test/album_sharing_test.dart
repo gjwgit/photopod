@@ -287,6 +287,43 @@ logId:broken data:log "<not a log line>".
       );
     });
 
+    test('a declined photo stays declined, until it is shared again', () {
+      final url = '$root/beach.jpg.enc.ttl';
+      final grant = line('20260930T100000', url, 'grant');
+
+      // The device's clock is behind the one the grant was written with, so
+      // the decline is dated a second after the grant instead.
+
+      final query = declineLogQuery(
+        url: url,
+        owner: alice,
+        me: me,
+        recipient: me,
+        permissions: 'read',
+        after: '20260930T100000',
+        now: DateTime(2026, 9, 30, 9),
+      );
+      final declined = RegExp(r'\{(.*)\}').firstMatch(query)!.group(1)!;
+      expect(declined, contains('"<20260930T100001;$url;$alice;revoke;'));
+
+      final lines = latestLogLines('$grant\n$declined.');
+      expect(lines[url]!.type, 'revoke');
+      expect(
+        sortSharedLog(lines, me: me, dataDir: 'photopod/data').media,
+        isEmpty,
+      );
+
+      final again = line('20260930T120000', url, 'grant');
+      expect(
+        sortSharedLog(
+          latestLogLines('$grant\n$declined.\n$again'),
+          me: me,
+          dataDir: 'photopod/data',
+        ).media,
+        hasLength(1),
+      );
+    });
+
     test('names the owner from their WebID', () {
       expect(webIdLabel(alice), 'alice');
       expect(
