@@ -102,9 +102,6 @@ https://solid.dev.empwr.au/Analyser
 https://www.heart.org/
 https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings
 https://solid.dev.empwr.au/bob/profile/card#me
-https://solidcommunity.au/installers/photopod-macos.dmg
-https://solidcommunity.au/installers/photopod-macos.zip
-https://solidcommunity.au/installers/photopod.aab
 
 # 20260605 gjw Failing solid servers
 
@@ -146,6 +143,7 @@ http://x
 https://live-radio01.mediahubaustralia.com/2FMW/mp3/
 http://live-radio01.mediahubaustralia.com/PBW/mp3/
 https://mediaserviceslive.akamaized.net/hls/live/newsradio.m3u8
+file:///home/me/feed.xml
 
 # 20260924 Locations that do not accept connection from githb
 

@@ -20,6 +20,7 @@ qtest_*.txt
 installers/*.apk
 installers/*.exe
 installers/*.snap
+installers/*.flatpak
 installers/*.tar.gz
 installers/*-linux.zip
 installers/*-macos.zip
@@ -432,3 +433,9 @@ macos/Flutter/GeneratedPluginRegistrant.swift
 windows/flutter/generated_plugin_registrant.cc
 windows/flutter/generated_plugins.cmake
 pubspec.lock
+
+
+# 20261016 gjw Build-time keys (Podcast Index), passed by support/flutter.mk
+# with --dart-define-from-file. Never commit.
+
+dart_defines.json
