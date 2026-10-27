@@ -71,7 +71,7 @@ dependencies:
   solidpod: ^1.1.2
 
   # Solid app scaffold, login flow, sharing UI, and shared settings/about UI.
-  solidui: ^1.5.12
+  solidui: ^1.5.13
 
   # Restore the last window size/position on Linux/macOS/Windows desktop.
   window_manager: ^0.5.1
