@@ -39,16 +39,31 @@ import 'package:photopod/services/thumbnail_cache.dart';
 
 const Duration _firstFrameTimeout = Duration(seconds: 15);
 
+                                           /// How often to ask the headless
+/// player for its frame while waiting for the
+/// first one to be decoded.
+
+const Duration _framePollInterval = Duration(milliseconds: 100);
+
 /// The opening frame of [bytes], a video called [fileName], as a JPEG scaled
 /// to the grid's thumbnail size, or null when no frame could be read.
 ///
-/// The video is opened, paused, in a player that is never shown. The player
-/// is given a video output because without one media_kit does not decode the
-/// picture at all, and so has nothing to take a screenshot of. The frame then
-/// goes through the same downscaling as a photo, so that what is stored is
-/// small however large the video is.
+/// The video is opened, paused, in a player that is never shown. The frame
+/// then goes through the same downscaling as a photo, so that what is stored
+/// is small however large the video is.
 
-Future<Uint8List?> firstFrameThumbnail(Uint8List bytes, String fileName) async {
+Future<Uint8List?> firstFrameThumbnail(Uint8List bytes, String fileName) {
+  return !kIsWeb && defaultTargetPlatform == TargetPlatform.linux
+      ? _headlessFirstFrame(bytes, fileName)
+      : _rendererFirstFrame(bytes, fileName);
+}
+
+/// Capture through a [VideoController], as the preview dialogue plays.
+///
+/// The player is given a video output because without one media_kit does not
+/// decode the picture at all, and so has nothing to take a screenshot of.
+
+Future<Uint8List?> _rendererFirstFrame(Uint8List bytes, String fileName) async {
   final player = Player();
   final controller = VideoController(player);
 
@@ -59,13 +74,66 @@ Future<Uint8List?> firstFrameThumbnail(Uint8List bytes, String fileName) async {
     await controller.waitUntilFirstFrameRendered.timeout(_firstFrameTimeout);
 
     final frame = await player.screenshot(format: 'image/jpeg');
-    if (frame == null || frame.isEmpty) return null;
-
-    return (await compute(analysePhoto, frame))?.thumbnail;
+    return await _toThumbnail(frame);
   } on Object catch (e) {
     debugPrint('PhotoPod: could not capture a frame of $fileName: $e');
     return null;
   } finally {
     await player.dispose();
   }
+}
+
+/// Capture on Linux, where a [VideoController] cannot be used off screen.
+///
+/// media_kit_video on Linux draws each frame only when Flutter paints the
+/// video's texture, which happens only while a Video widget is mounted. A
+/// player that is never shown therefore never draws anything: its "first
+/// frame rendered" signal fires straight away for a 1x1 placeholder, and the
+/// screenshot that follows comes back empty.
+///
+/// Instead the player is given mpv's null video output, with video decoding
+/// switched back on (media_kit turns it off unless a controller is
+/// attached). The null output keeps the last decoded frame, which is what a
+/// screenshot falls back to, so the frame is read without anything being
+/// drawn. Audio is not decoded at all.
+
+Future<Uint8List?> _headlessFirstFrame(Uint8List bytes, String fileName) async {
+  final player = Player(
+    configuration: const PlayerConfiguration(vo: 'null', muted: true),
+  );
+
+  try {
+    final native = player.platform as NativePlayer;
+    await native.setProperty('vid', 'auto');
+    await native.setProperty('aid', 'no');
+
+    final media = await Media.memory(bytes, type: contentTypeOf(fileName));
+    await player.open(media, play: false);
+
+    // Paused at the start, mpv still decodes and hands over the opening
+    // frame, but a moment after the file is opened rather than at once, so
+    // the screenshot is retried until that frame has arrived.
+
+    final deadline = DateTime.now().add(_firstFrameTimeout);
+    while (DateTime.now().isBefore(deadline)) {
+      final frame = await player.screenshot(format: 'image/jpeg');
+      if (frame != null && frame.isNotEmpty) return await _toThumbnail(frame);
+      await Future<void>.delayed(_framePollInterval);
+    }
+
+    debugPrint('PhotoPod: no frame of $fileName was decoded in time');
+    return null;
+  } on Object catch (e) {
+    debugPrint('PhotoPod: could not capture a frame of $fileName: $e');
+    return null;
+  } finally {
+    await player.dispose();
+  }
+}
+
+/// Downscale a captured [frame] to the grid's thumbnail size.
+
+Future<Uint8List?> _toThumbnail(Uint8List? frame) async {
+  if (frame == null || frame.isEmpty) return null;
+  return (await compute(analysePhoto, frame))?.thumbnail;
 }
