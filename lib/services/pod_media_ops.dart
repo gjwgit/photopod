@@ -203,7 +203,7 @@ class PodMediaOps {
   ) async {
     final bytes = await PodMediaService.readBytes(item);
     final path = await PodMediaService.newStoredPath(destPodPath, name);
-    await MediaNames.set(path, name);
+    await MediaNames.set(path, name, taken: item.taken);
     await PodMediaService.writeMedia(path: path, bytes: bytes);
     await MediaRenditions.copy(item.path, path);
     return path;
@@ -240,11 +240,12 @@ class PodMediaOps {
       await MediaRenditions.copy(child.path, childPath);
 
       // The path of a plain file changes by more than its folder, so a name
-      // the user gave it is carried across by hand.
+      // the user gave it, and the date it belongs under, are carried across
+      // by hand.
 
       final name = MediaNames.nameOf(child.path);
       if (stored != child.rawName && name != null) {
-        await MediaNames.set(childPath, name);
+        await MediaNames.set(childPath, name, taken: child.taken);
       }
     }
   }

@@ -133,6 +133,7 @@ class PodMediaService {
           isFolder: isFolder,
           isEncrypted: !isFolder && storedName.endsWith(encryptedSuffix),
           modified: entry.modified,
+          taken: isFolder ? null : MediaNames.takenOf(path),
           size: isFolder ? null : entry.size,
         ),
       );

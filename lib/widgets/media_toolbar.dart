@@ -139,6 +139,7 @@ class MediaToolbar extends StatelessWidget {
     required this.allFavourite,
     required this.sortOption,
     required this.actions,
+    this.canSort = true,
     this.albumNames = const [],
     this.canRemoveFromAlbum = false,
     this.hasShared = false,
@@ -169,6 +170,11 @@ class MediaToolbar extends StatelessWidget {
   /// The callbacks the buttons invoke.
 
   final MediaActions actions;
+
+  /// Whether the order can be chosen. The Library's timeline always puts
+  /// the latest day first, so it has no Sort menu.
+
+  final bool canSort;
 
   /// The user's own albums, listed in the Add to album menu beneath
   /// Favourites.
@@ -320,7 +326,8 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
-        _SortButton(sortOption: sortOption, onSort: actions.onSort),
+        if (canSort)
+          _SortButton(sortOption: sortOption, onSort: actions.onSort),
         _button(
           icon: Icons.tune,
           label: 'View',

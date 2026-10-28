@@ -64,11 +64,13 @@ enum MediaSortOption {
 
   nameDescending('File name', 'Z → A'),
 
-  /// By the time the server last recorded a change, oldest first.
+  /// By when the item was taken, or where that is unknown when the server
+  /// last recorded a change, oldest first.
 
   dateAscending('Creation time', 'Oldest first'),
 
-  /// By the time the server last recorded a change, newest first.
+  /// By when the item was taken, or where that is unknown when the server
+  /// last recorded a change, newest first.
 
   dateDescending('Creation time', 'Newest first');
 

@@ -39,7 +39,7 @@ import 'package:photopod/services/thumbnail_cache.dart';
 
 const Duration _firstFrameTimeout = Duration(seconds: 15);
 
-                                           /// How often to ask the headless
+/// How often to ask the headless
 /// player for its frame while waiting for the
 /// first one to be decoded.
 

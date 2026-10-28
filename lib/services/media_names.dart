@@ -68,29 +68,44 @@ String randomStoredName(String displayName) {
   return '$hex${extension.isEmpty ? '' : '.$extension'}$encryptedSuffix';
 }
 
-/// Render [names] as the JSON the Pod holds, sorted so that the same names
-/// always produce the same bytes.
+/// Render [names], and the [dates] the photos and videos were taken, as the
+/// JSON the Pod holds, sorted so that the same table always produces the
+/// same bytes.
 
-String encodeNames(Map<String, String> names) {
-  final sorted = Map.fromEntries(
-    names.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+String encodeNames(
+  Map<String, String> names, [
+  Map<String, String> dates = const {},
+]) {
+  Map<String, String> sorted(Map<String, String> map) => Map.fromEntries(
+    map.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
   );
-  return const JsonEncoder.withIndent(
-    '  ',
-  ).convert({'version': 1, 'names': sorted});
+  return const JsonEncoder.withIndent('  ').convert({
+    'version': 1,
+    'names': sorted(names),
+    if (dates.isNotEmpty) 'dates': sorted(dates),
+  });
 }
 
 /// Read back what [encodeNames] wrote. Anything that is not the expected
 /// shape yields no names rather than an error, so the files show under their
 /// stored names instead of not at all.
 
-Map<String, String> decodeNames(String text) {
+Map<String, String> decodeNames(String text) => _decodeTable(text, 'names');
+
+/// Read back the dates [encodeNames] wrote, as ISO 8601 text keyed by path.
+/// A table written before dates were kept has none.
+
+Map<String, String> decodeDates(String text) =>
+    _decodeTable(text, 'dates')
+      ..removeWhere((_, value) => DateTime.tryParse(value) == null);
+
+Map<String, String> _decodeTable(String text, String key) {
   try {
     final decoded = jsonDecode(text);
-    final names = decoded is Map<String, dynamic> ? decoded['names'] : null;
-    if (names is! Map<String, dynamic>) return <String, String>{};
+    final table = decoded is Map<String, dynamic> ? decoded[key] : null;
+    if (table is! Map<String, dynamic>) return <String, String>{};
     return {
-      for (final entry in names.entries)
+      for (final entry in table.entries)
         if (entry.value is String && (entry.value as String).isNotEmpty)
           entry.key: entry.value as String,
     };
@@ -98,6 +113,15 @@ Map<String, String> decodeNames(String text) {
     return <String, String>{};
   }
 }
+
+/// [when] as the table stores it.
+///
+/// A time with no zone, which is what an EXIF date is, is kept as the clock
+/// on the camera read, so that a photo taken at ten past nine in the morning
+/// stays on that day wherever it is later looked at. A file's own time is a
+/// real instant, and is kept in UTC.
+
+String encodeDate(DateTime when) => when.toIso8601String();
 
 /// The name the user knows each photo and video by, keyed by the Pod-relative
 /// path of the file that holds it.
@@ -110,11 +134,18 @@ Map<String, String> decodeNames(String text) {
 /// A file with no entry is shown under its stored name, less the encryption
 /// suffix, which is how the files added before random names keep the names
 /// they had.
+///
+/// The table also keeps the date each photo and video belongs under: when it
+/// was taken, from its EXIF block, or failing that when the file itself was
+/// last changed before it was added. The Pod only knows when the file was
+/// uploaded, and keeping the date here, beside the name, means the Library
+/// learns it from the one read it makes anyway.
 
 class MediaNames {
   const MediaNames._();
 
   static final Map<String, String> _names = <String, String>{};
+  static final Map<String, String> _dates = <String, String>{};
 
   // The URL the table was read from, so that logging in as someone else reads
   // theirs, and the read in progress, so that the many listings a screen
@@ -132,6 +163,15 @@ class MediaNames {
   /// was never given one.
 
   static String? nameOf(String path) => _names[path];
+
+  /// When the photo or video at Pod-relative [path] was taken, or failing
+  /// that when the file was last changed before it was added; null for a file
+  /// added before dates were kept.
+
+  static DateTime? takenOf(String path) {
+    final text = _dates[path];
+    return text == null ? null : DateTime.tryParse(text);
+  }
 
   /// Whether the table is on the Pod but cannot be read until the user enters
   /// their security key, which is worth asking for before listing a folder.
@@ -167,22 +207,39 @@ class MediaNames {
 
   static void invalidate() => _loadedFrom = null;
 
-  /// Record that the file at [path] is called [name], and store the table.
+  /// Record that the file at [path] is called [name], and, when [taken] is
+  /// given, the date it belongs under, then store the table. A date already
+  /// recorded is kept when [taken] is left out, so renaming a photo does not
+  /// move it to another day.
   ///
   /// Throws [PodMediaException] when the Pod refuses the write, leaving the
   /// table as it was.
 
-  static Future<void> set(String path, String name) =>
-      _change((names) => names[path] = name);
+  static Future<void> set(String path, String name, {DateTime? taken}) =>
+      _change((names, dates) {
+        names[path] = name;
+        if (taken != null) dates[path] = encodeDate(taken);
+      });
 
-  /// Copy the names of everything at or beneath each old path in [moves] to
-  /// the matching new path, for files and folders that have been copied.
+  /// Record the date each path in [dates] belongs under, leaving alone any
+  /// path that already has one, and store the table once for them all.
 
-  static Future<void> copy(Map<String, String> moves) => _change((names) {
-    for (final entry in _moved(names, moves).entries) {
-      names[entry.key] = entry.value;
-    }
-  });
+  static Future<void> setDates(Map<String, DateTime> dates) =>
+      _change((names, stored) {
+        for (final entry in dates.entries) {
+          stored.putIfAbsent(entry.key, () => encodeDate(entry.value));
+        }
+      });
+
+  /// Copy the names and dates of everything at or beneath each old path in
+  /// [moves] to the matching new path, for files and folders that have been
+  /// copied.
+
+  static Future<void> copy(Map<String, String> moves) =>
+      _change((names, dates) {
+        names.addAll(_moved(names, moves));
+        dates.addAll(_moved(dates, moves));
+      });
 
   /// Forget [paths], and everything beneath those that are folders, for items
   /// that have been deleted. Nothing that goes wrong is reported: a name left
@@ -192,11 +249,11 @@ class MediaNames {
     final gone = paths.toList();
     if (gone.isEmpty) return;
     try {
-      await _change(
-        (names) => names.removeWhere(
-          (path, _) => gone.any((each) => _within(path, each)),
-        ),
-      );
+      bool isGone(String path, _) => gone.any((each) => _within(path, each));
+      await _change((names, dates) {
+        names.removeWhere(isGone);
+        dates.removeWhere(isGone);
+      });
     } on Object catch (e) {
       debugPrint('PhotoPod: could not forget the names of deleted files: $e');
     }
@@ -220,7 +277,9 @@ class MediaNames {
 
   // Apply [edit] to a copy of the table, store it, and only then adopt it.
 
-  static Future<void> _change(void Function(Map<String, String>) edit) {
+  static Future<void> _change(
+    void Function(Map<String, String> names, Map<String, String> dates) edit,
+  ) {
     final write = _writes.then((_) async {
       // A table that could not be read must not be written over with only
       // the change.
@@ -231,11 +290,12 @@ class MediaNames {
       }
 
       final updated = Map<String, String>.from(_names);
-      edit(updated);
-      if (mapEquals(updated, _names)) return;
+      final dated = Map<String, String>.from(_dates);
+      edit(updated, dated);
+      if (mapEquals(updated, _names) && mapEquals(dated, _dates)) return;
 
       try {
-        await _file.write(encodeNames(updated));
+        await _file.write(encodeNames(updated, dated));
       } on PodMediaException {
         rethrow;
       } on Object catch (e) {
@@ -244,6 +304,9 @@ class MediaNames {
       _names
         ..clear()
         ..addAll(updated);
+      _dates
+        ..clear()
+        ..addAll(dated);
     });
 
     // The chain itself never carries a failure forward, or one refused write
@@ -255,10 +318,12 @@ class MediaNames {
 
   static Future<void> _load(String url) async {
     final content = await _file.read();
-    final names = content == null ? <String, String>{} : decodeNames(content);
     _names
       ..clear()
-      ..addAll(names);
+      ..addAll(content == null ? const {} : decodeNames(content));
+    _dates
+      ..clear()
+      ..addAll(content == null ? const {} : decodeDates(content));
     _loadedFrom = url;
   }
 }

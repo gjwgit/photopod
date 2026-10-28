@@ -23,6 +23,8 @@
 
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -49,6 +51,7 @@ import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/media_dates_backfill.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
@@ -64,6 +67,7 @@ import 'package:photopod/widgets/album_list.dart';
 import 'package:photopod/widgets/breadcrumb_bar.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
+import 'package:photopod/widgets/media_timeline.dart';
 import 'package:photopod/widgets/media_toolbar.dart';
 import 'package:photopod/widgets/pagination_bar.dart';
 
@@ -279,6 +283,7 @@ class MediaBrowserState extends State<MediaBrowser> {
         _loading = false;
         _selected.removeWhere((id) => !items.any((item) => item.id == id));
       });
+      unawaited(_readWholeAlbum());
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {
@@ -286,6 +291,30 @@ class MediaBrowserState extends State<MediaBrowser> {
         _error = e.toString();
       });
     }
+  }
+
+  // The memories along the top of the Library look across the whole album,
+  // so the Library walks it too, in the background once its own folder is
+  // showing; the walk is shared with the other sections and only repeated
+  // when something has changed. Any photo added before PhotoPod kept dates
+  // then has its date filled in, and the timeline is rearranged once that is
+  // done.
+
+  Future<void> _readWholeAlbum() async {
+    final index = context.read<MediaIndex>();
+    await index.refresh();
+    if (!mounted || index.error != null) return;
+
+    final recorded = await MediaDatesBackfill.run(index.items);
+    if (!mounted || recorded == 0) return;
+
+    index.applyDates();
+    setState(
+      () => _items = [
+        for (final item in _items)
+          item.withTaken(MediaNames.takenOf(item.path)),
+      ],
+    );
   }
 
   // Every thumbnail of an encrypted photo has to be decrypted before it can
@@ -377,6 +406,13 @@ class MediaBrowserState extends State<MediaBrowser> {
       ? _error
       : _error ?? context.read<MediaIndex>().error;
 
+  /// Whether the Library is showing its tiles as a timeline, one day under
+  /// each heading. The Details view keeps its sortable, paged list.
+
+  bool get _isTimeline =>
+      widget.section == LibrarySection.library &&
+      context.read<ViewPrefs>().viewMode == MediaViewMode.grid;
+
   /// Everything this section shows, folders first and then files, each group
   /// in the order the user has chosen.
 
@@ -385,6 +421,17 @@ class MediaBrowserState extends State<MediaBrowser> {
     final all = _source;
     final folders = all.where((item) => item.isFolder).toList();
     final files = all.where((item) => !item.isFolder).toList();
+
+    // The timeline sets its own order, the latest day first, and the
+    // selection and the preview follow the tiles as they are laid out.
+
+    if (_isTimeline) {
+      _sortInPlace(folders, MediaSortOption.nameAscending);
+      return [
+        ...folders,
+        for (final group in groupByDay(files)) ...group.items,
+      ];
+    }
     _sortInPlace(folders, option);
     _sortInPlace(files, option);
     return [...folders, ...files];
@@ -406,12 +453,13 @@ class MediaBrowserState extends State<MediaBrowser> {
   static int _byName(MediaItem a, MediaItem b) =>
       a.name.toLowerCase().compareTo(b.name.toLowerCase());
 
-  // Items the server gave no date for sort to the end of an ascending list,
-  // rather than jumping to the front as the epoch would.
+  // Items sort by when they were taken, where that is known. Those with no
+  // date at all sort to the end of an ascending list, rather than jumping to
+  // the front as the epoch would.
 
   static int _byDate(MediaItem a, MediaItem b) {
-    final left = a.modified;
-    final right = b.modified;
+    final left = a.date;
+    final right = b.date;
     if (left == null && right == null) return _byName(a, b);
     if (left == null) return 1;
     if (right == null) return -1;

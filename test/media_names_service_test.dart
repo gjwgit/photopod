@@ -75,6 +75,43 @@ void main() {
     });
   });
 
+  group('the dates in the table of names', () {
+    test('round trip beside the names', () {
+      final names = {'photopod/data/a.jpg.enc.ttl': 'beach.jpg'};
+      final dates = {
+        'photopod/data/a.jpg.enc.ttl': encodeDate(DateTime(2025, 4, 5, 9, 10)),
+      };
+      final text = encodeNames(names, dates);
+
+      expect(decodeNames(text), names);
+      expect(decodeDates(text), dates);
+      expect(
+        DateTime.parse(decodeDates(text).values.single),
+        DateTime(2025, 4, 5, 9, 10),
+      );
+    });
+
+    test('keep a camera clock as it was read and a file time in UTC', () {
+      expect(
+        encodeDate(DateTime(2025, 4, 5, 9, 10)),
+        '2025-04-05T09:10:00.000',
+      );
+      expect(
+        encodeDate(DateTime.utc(2025, 4, 5, 9, 10)),
+        '2025-04-05T09:10:00.000Z',
+      );
+    });
+
+    test('are absent from a table written before dates were kept', () {
+      expect(decodeDates(encodeNames({'a': 'b'})), isEmpty);
+      expect(encodeNames({'a': 'b'}), isNot(contains('dates')));
+    });
+
+    test('leave out anything that is not a date', () {
+      expect(decodeDates('{"dates": {"a": "yesterday", "b": 3}}'), isEmpty);
+    });
+  });
+
   group('safeFileName', () {
     test('keeps every script and spacing', () {
       expect(safeFileName('海滩 照片.jpg'), '海滩 照片.jpg');
