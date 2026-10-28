@@ -31,28 +31,19 @@ import 'package:solidpod/solidpod.dart'
     show
         PathType,
         getDataDirPath,
-        getFileUrl,
         getResource,
         getWebId,
         isUserLoggedIn,
-        readPod,
-        updateFileByQuery;
-// solidpod keeps the recipient's side of a revocation to itself: the key it
-// hands over with a shared file is removed only from within revokePermission,
-// which also needs control of the owner's ACL. Declining a share needs that
-// one step on its own, in exactly the form solidpod wrote the key.
-// ignore: implementation_imports
-import 'package:solidpod/src/solid/api/revoke_permission_api.dart'
-    show removeSharedKey;
-// ignore: implementation_imports
-import 'package:solidpod/src/solid/utils/get_url_helper.dart'
-    show getUniqueIdResUrl;
+        readPod;
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/albums.dart';
-import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/services/share_decline.dart';
+import 'package:photopod/services/shared_log.dart';
+
+export 'package:photopod/services/shared_log.dart';
 
 /// An album someone else has shared with the user.
 
@@ -70,7 +61,9 @@ class SharedAlbum {
 
   final String ownerWebId;
 
-  /// The URLs of the photos and videos the album holds.
+  /// The URLs of the photos and videos the album holds, except for any of
+  /// the user's own, which are given by their Pod-relative path, the
+  /// [MediaItem.path] they have in the user's own Library.
 
   final Set<String> itemUrls;
 
@@ -170,198 +163,6 @@ Map<String, String> sharedAlbumTitles(
   return titles;
 }
 
-/// Whether [url] is a PhotoPod album file inside the PhotoPod data folder
-/// [dataDir] of some Pod: one of the files in the albums folder, or the list
-/// of favourites.
-
-bool isAlbumUrl(String url, String dataDir) {
-  final albums = '/$dataDir/$albumsFolderName/';
-  final at = url.indexOf(albums);
-  if (at >= 0) {
-    final rest = url.substring(at + albums.length);
-    return !rest.contains('/') && albumNameOfFile(rest) != null;
-  }
-  return url.endsWith('/$dataDir/$favouritesFileName') ||
-      url.endsWith('/$dataDir/${storedNameOf(favouritesFileName)}');
-}
-
-/// The name of the album whose file is at [url].
-
-String albumNameOf(String url) {
-  final raw = url.substring(url.lastIndexOf('/') + 1);
-  if (displayNameOf(PodMediaService.decodeName(raw)) == favouritesFileName) {
-    return favouritesAlbumName;
-  }
-  return albumNameOfFile(raw) ?? PodMediaService.decodeName(raw);
-}
-
-/// The URL of the root of the Pod that holds [url], found from where the
-/// PhotoPod data folder [dataDir] starts, or null when [url] is not inside
-/// one.
-
-String? podRootOf(String url, String dataDir) {
-  final at = url.indexOf('/$dataDir/');
-  return at < 0 ? null : url.substring(0, at + 1);
-}
-
-/// One line of a permission log: who gave whom what access to which
-/// resource, and when.
-
-typedef PermissionLogLine = ({
-  String time,
-  String url,
-  String owner,
-  String type,
-  String granter,
-  String recipient,
-  String permissions,
-});
-
-/// A shared resource that has survived the permission log: its URL and its
-/// owner.
-
-typedef SharedGrant = ({String url, String owner});
-
-// A log line as solidpod writes it: a time stamp such as `20260930T101010`
-// followed by the other fields, separated by semicolons, held in a string
-// literal and usually wrapped in angle brackets.
-
-final RegExp _logLine = RegExp(r'"<?(\d{8}T\d{6}[^"]*?)>?"');
-
-/// Every line of the permission log [content], latest first for each
-/// resource: the latest line for a resource is the one that decides whether
-/// it is still shared.
-///
-/// The log is read directly rather than through solidpod's own reader, which
-/// keeps only the lines naming the user's WebID exactly as the login spells
-/// it — a WebID typed by the sharer with or without its `#me`, or in a
-/// different case, would silently drop out — and which gives up on the
-/// whole log over a single damaged line.
-
-Map<String, PermissionLogLine> latestLogLines(String content) {
-  final latest = <String, PermissionLogLine>{};
-  for (final match in _logLine.allMatches(content)) {
-    final fields = match.group(1)!.split(';');
-    if (fields.length < 6) continue;
-    final line = (
-      time: fields[0],
-      url: fields[1],
-      owner: fields[2],
-      type: fields[3].toLowerCase(),
-      granter: fields[4],
-      recipient: fields[5],
-      permissions: fields.length > 6 ? fields[6] : '',
-    );
-    final before = latest[line.url];
-    if (before == null || line.time.compareTo(before.time) >= 0) {
-      latest[line.url] = line;
-    }
-  }
-  return latest;
-}
-
-/// [webId] in a form in which two spellings of the same WebID agree: without
-/// its fragment or a trailing slash, and with the host in lower case.
-
-String sameWebId(String webId) {
-  var plain = webId.trim();
-  final hash = plain.indexOf('#');
-  if (hash >= 0) plain = plain.substring(0, hash);
-  while (plain.endsWith('/')) {
-    plain = plain.substring(0, plain.length - 1);
-  }
-  final uri = Uri.tryParse(plain);
-  return uri == null || uri.host.isEmpty
-      ? plain
-      : uri.replace(host: uri.host.toLowerCase()).toString();
-}
-
-/// The photos, videos and albums still shared with [me] according to the
-/// latest [lines] of the permission log, sorted into the two kinds, and
-/// leaving out anything that is not PhotoPod's.
-///
-/// solidpod appends a line to the recipient's permission log for every grant
-/// and every revocation, so a resource whose latest line is a revocation is
-/// no longer shared. Lines in which the user is the owner or the one who
-/// granted the access record the user's own sharing, not sharing with them.
-
-({List<SharedGrant> media, List<SharedGrant> albums}) sortSharedLog(
-  Map<String, PermissionLogLine> lines, {
-  required String me,
-  required String dataDir,
-}) {
-  final media = <SharedGrant>[];
-  final albums = <SharedGrant>[];
-  final self = sameWebId(me);
-
-  for (final line in lines.values) {
-    if (line.type != 'grant') continue;
-    if (sameWebId(line.owner) == self || sameWebId(line.granter) == self) {
-      continue;
-    }
-    final url = line.url;
-    if (!url.contains('/$dataDir/')) continue;
-
-    if (isAlbumUrl(url, dataDir)) {
-      albums.add((url: url, owner: line.owner));
-      continue;
-    }
-    final raw = url.substring(url.lastIndexOf('/') + 1);
-    final name = displayNameOf(PodMediaService.decodeName(raw));
-    if (raw.isNotEmpty && kindOf(name) != null) {
-      media.add((url: url, owner: line.owner));
-    }
-  }
-  return (media: media, albums: albums);
-}
-
-/// The SPARQL update that adds to the user's permission log the line
-/// recording that [me] has declined the photo at [url], owned by [owner],
-/// shared with [me] as [recipient] with [permissions].
-///
-/// The line is written just as solidpod writes a revocation, local time and
-/// all. Its time is now,
-/// or, should this device's clock be behind the one the grant was written
-/// with, a second after the grant's time [after], so that it is always the
-/// latest line for the photo.
-
-String declineLogQuery({
-  required String url,
-  required String owner,
-  required String me,
-  required String recipient,
-  required String permissions,
-  String? after,
-  DateTime? now,
-}) {
-  var at = now ?? DateTime.now();
-  final grantedAt = after == null ? null : _parseLogTime(after);
-  if (grantedAt != null && !at.isAfter(grantedAt)) {
-    at = grantedAt.add(const Duration(seconds: 1));
-  }
-  final time = _logTime(at);
-  final id = '$time${at.millisecond.toString().padLeft(3, '0')}';
-  final record = '$time;$url;$owner;revoke;$me;$recipient;$permissions';
-  return 'PREFIX logId: <https://solidcommunity.au/predicates/logid#> '
-      'PREFIX data: <https://solidcommunity.au/predicates/data#> '
-      'INSERT DATA {logId:$id data:log "<$record>"};';
-}
-
-String _two(int n) => n.toString().padLeft(2, '0');
-
-String _logTime(DateTime at) =>
-    '${at.year.toString().padLeft(4, '0')}${_two(at.month)}${_two(at.day)}'
-    'T${_two(at.hour)}${_two(at.minute)}${_two(at.second)}';
-
-DateTime? _parseLogTime(String time) {
-  final match = RegExp(
-    r'^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})',
-  ).firstMatch(time);
-  if (match == null) return null;
-  final parts = [for (var i = 1; i <= 6; i++) int.parse(match.group(i)!)];
-  return DateTime(parts[0], parts[1], parts[2], parts[3], parts[4], parts[5]);
-}
-
 /// How long what is shared with the user is trusted before it is read again.
 /// Someone may share something at any moment, so every visit to a section
 /// that shows shared items reads the log afresh once this has passed.
@@ -421,10 +222,8 @@ class SharedWithMe extends ChangeNotifier {
       if (me == null) return;
       final dataDir = await getDataDirPath();
 
-      // The log sits beside the data folder, in the app's own logs folder.
-
       final app = dataDir.split('/').first;
-      final logUrl = await getFileUrl('$app/logs/permissions-log.ttl');
+      final logUrl = await permissionLogUrl();
 
       final String content;
       try {
@@ -442,17 +241,28 @@ class SharedWithMe extends ChangeNotifier {
         return;
       }
 
+      // The root of the user's own Pod, which is where the log is.
+
+      final ownRoot = logUrl.substring(0, logUrl.indexOf('/$app/') + 1);
+
       final lines = latestLogLines(content);
       final sorted = sortSharedLog(lines, me: me, dataDir: dataDir);
 
       final items = <String, MediaItem>{
         for (final grant in sorted.media)
-          grant.url: _itemFor(grant.url, grant.owner),
+          if (ownPathOf(grant.url, ownRoot) == null)
+            grant.url: _itemFor(grant.url, grant.owner),
       };
 
       final albums = <SharedAlbum>[];
       for (final grant in sorted.albums) {
-        final album = await _readAlbum(grant.url, grant.owner, dataDir);
+        if (ownPathOf(grant.url, ownRoot) != null) continue;
+        final album = await _readAlbum(
+          grant.url,
+          grant.owner,
+          dataDir,
+          ownRoot,
+        );
         if (album == null) continue;
         albums.add(album);
 
@@ -461,7 +271,11 @@ class SharedWithMe extends ChangeNotifier {
         // whose own line is a revocation, which is also how a photo the user
         // has declined stays away while the album still lists it.
 
+        // The user's own photos in it are held as Pod-relative paths, so
+        // that the album shows them from the user's own Library instead.
+
         for (final url in album.itemUrls) {
+          if (!url.contains('://')) continue;
           if (lines[url]?.type == 'revoke') continue;
           items.putIfAbsent(url, () => _itemFor(url, grant.owner));
         }
@@ -512,12 +326,11 @@ class SharedWithMe extends ChangeNotifier {
       }
       return failed;
     }
-    final logUrl = await _logUrl();
 
     for (final item in items) {
       if (!item.isShared) continue;
       try {
-        await _declineUrl(item.url, item.sharedBy!, me, logUrl);
+        await _declineUrl(item.url, item.sharedBy!, me);
         declined.add(item.url);
       } on Object catch (e) {
         failed[item] = '$e';
@@ -545,11 +358,10 @@ class SharedWithMe extends ChangeNotifier {
     if (me == null) {
       return (gone: <String>[], failed: ['You are not logged in.']);
     }
-    final logUrl = await _logUrl();
 
     final failed = <String>[];
     try {
-      await _declineUrl(album.url, album.ownerWebId, me, logUrl);
+      await _declineUrl(album.url, album.ownerWebId, me);
     } on Object catch (e) {
       // Should the album itself stay, its photos stay with it.
 
@@ -566,12 +378,7 @@ class SharedWithMe extends ChangeNotifier {
         continue;
       }
       try {
-        await _declineUrl(
-          item.url,
-          item.sharedBy ?? album.ownerWebId,
-          me,
-          logUrl,
-        );
+        await _declineUrl(item.url, item.sharedBy ?? album.ownerWebId, me);
         declined.add(item.url);
       } on Object catch (e) {
         failed.add('${item.name}: $e');
@@ -587,43 +394,8 @@ class SharedWithMe extends ChangeNotifier {
     return (gone: declined.toList(), failed: failed);
   }
 
-  static Future<String> _logUrl() async {
-    final app = (await getDataDirPath()).split('/').first;
-    return getFileUrl('$app/logs/permissions-log.ttl');
-  }
-
-  // Decline the resource at [url], owned by [owner], for the user [me]:
-  // remove the key its owner shared with it and add a revocation to the
-  // user's permission log at [logUrl].
-
-  Future<void> _declineUrl(
-    String url,
-    String owner,
-    String me,
-    String logUrl,
-  ) async {
-    final line = _lines[url];
-
-    // The key is filed under the WebID as the owner typed it, which the log
-    // line records, and may differ from the login's own spelling.
-
-    final spellings = {if (line != null) line.recipient, me};
-    for (final spelling in spellings) {
-      await removeSharedKey(me, getUniqueIdResUrl(url, spelling));
-    }
-
-    await updateFileByQuery(
-      logUrl,
-      declineLogQuery(
-        url: url,
-        owner: owner,
-        me: me,
-        recipient: line?.recipient ?? me,
-        permissions: line?.permissions ?? 'read',
-        after: line?.time,
-      ),
-    );
-  }
+  Future<void> _declineUrl(String url, String owner, String me) =>
+      declineShare(url: url, owner: owner, me: me, line: _lines[url]);
 
   // Stop showing the photos and videos at [urls], which have just been
   // declined.
@@ -642,7 +414,9 @@ class SharedWithMe extends ChangeNotifier {
   }
 
   // An album file is plain JSON listing Pod-relative paths in its owner's
-  // Pod, so each path is turned into a URL against that Pod's root. An album
+  // Pod, so each path is turned into a URL against that Pod's root — except
+  // for a photo that lies in the user's own Pod at [ownRoot], which is kept
+  // as the Pod-relative path the user's own items carry. An album
   // that cannot be read — its owner may have deleted it without the log
   // catching up — is passed over rather than failing the rest.
 
@@ -650,6 +424,7 @@ class SharedWithMe extends ChangeNotifier {
     String url,
     String owner,
     String dataDir,
+    String ownRoot,
   ) async {
     final root = podRootOf(url, dataDir);
     if (root == null) return null;
@@ -661,7 +436,7 @@ class SharedWithMe extends ChangeNotifier {
         ownerWebId: owner,
         itemUrls: {
           for (final path in decodeAlbum(content))
-            path.contains('://') ? path : '$root$path',
+            _albumItem(path.contains('://') ? path : '$root$path', ownRoot),
         },
       );
     } on Object catch (e) {
@@ -669,6 +444,9 @@ class SharedWithMe extends ChangeNotifier {
       return null;
     }
   }
+
+  static String _albumItem(String url, String ownRoot) =>
+      ownPathOf(url, ownRoot) ?? url;
 
   static MediaItem _itemFor(String url, String owner) {
     final raw = url.substring(url.lastIndexOf('/') + 1);

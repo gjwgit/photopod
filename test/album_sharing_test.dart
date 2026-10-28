@@ -27,6 +27,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:solidpod/solidpod.dart' show RecipientType;
 
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/share_decline.dart';
 import 'package:photopod/services/shared_with_me.dart';
 
 const _bob = 'https://pod.example/bob/profile/card#me';
@@ -322,6 +323,20 @@ logId:broken data:log "<not a log line>".
         ).media,
         hasLength(1),
       );
+    });
+
+    test('tells the user\'s own photos from ones shared with them', () {
+      const own = 'https://pod.example/me/';
+      expect(
+        ownPathOf('https://pod.example/me/photopod/data/a.jpg.enc.ttl', own),
+        'photopod/data/a.jpg.enc.ttl',
+      );
+      expect(
+        ownPathOf('https://POD.example/me/photopod/data/a.jpg.enc.ttl', own),
+        'photopod/data/a.jpg.enc.ttl',
+      );
+      expect(ownPathOf('$root/a.jpg.enc.ttl', own), isNull);
+      expect(ownPathOf('https://pod.example/meg/photopod/a.jpg', own), isNull);
     });
 
     test('names the owner from their WebID', () {
