@@ -38,7 +38,7 @@ extension MediaBrowserActions on MediaBrowserState {
     onDelete: () => _delete(context),
     onDuplicate: () => _duplicate(context),
     onRename: () => _rename(context),
-    onShare: () => showShareDialog(context, _selectedItems),
+    onShare: () => _share(context),
     onView: () => showViewOptionsDialog(context),
     onPreview: () => _previewFirst(context),
     onGetInfo: () => _getInfo(context),
@@ -48,21 +48,45 @@ extension MediaBrowserActions on MediaBrowserState {
     onCreateAlbum: () => _createAlbum(context, _selectedFiles),
     onRemoveFromAlbum: () => _removeFromAlbum(context),
     onRefresh: () => reload(force: true),
+    onToggleMultiSelect: _toggleMultiSelect,
     onSort: (option) {
       context.read<ViewPrefs>().setSortOption(option);
       updateState(() => _page = 0);
     },
   );
 
+  /// Share the selected items, then read the permission log again so that
+  /// what was just shared carries the two-people mark straight away.
+
+  Future<void> _share(BuildContext context) async {
+    final shared = context.read<SharedWithMe>();
+    await showShareDialog(context, _selectedItems);
+    await shared.load(force: true);
+  }
+
   /// Handle a tap on [item], one of the items in [visible].
   ///
-  /// A plain tap adds the item to the selection or takes it out again, which
-  /// makes multiple selection work the same way with a mouse as with a
-  /// finger. Holding shift selects everything between the last tap and this
-  /// one. Tapping the background clears the selection.
+  /// Normally a tap selects that one item in place of whatever was selected,
+  /// and tapping it again lets it go. With **Select several** on, a tap adds
+  /// the item to the selection or takes it out again, which makes multiple
+  /// selection work the same way with a mouse as with a finger, and holding
+  /// shift selects everything between the last tap and this one. Tapping the
+  /// background clears the selection either way.
 
   void _handleTap(MediaItem item, List<MediaItem> visible) {
     final index = visible.indexOf(item);
+    _lastTapped = item.id;
+
+    if (!_multiSelect) {
+      updateState(() {
+        final only = _selected.length == 1 && _selected.contains(item.id);
+        _selected.clear();
+        if (!only) _selected.add(item.id);
+        if (index >= 0) _anchor = index;
+      });
+      return;
+    }
+
     final extend = HardwareKeyboard.instance.logicalKeysPressed.any(
       (key) =>
           key == LogicalKeyboardKey.shiftLeft ||
@@ -79,6 +103,20 @@ extension MediaBrowserActions on MediaBrowserState {
         if (!_selected.add(item.id)) _selected.remove(item.id);
         if (index >= 0) _anchor = index;
       }
+    });
+  }
+
+  /// Turn **Select several** on or off. Turning it off keeps only the item
+  /// tapped last, so that the selection again holds a single item.
+
+  void _toggleMultiSelect() {
+    updateState(() {
+      _multiSelect = !_multiSelect;
+      if (_multiSelect || _selected.length < 2) return;
+      final last = _lastTapped;
+      final keep = last != null && _selected.contains(last);
+      _selected.clear();
+      if (keep) _selected.add(last);
     });
   }
 
@@ -270,7 +308,11 @@ extension MediaBrowserActions on MediaBrowserState {
           // random one.
 
           await MediaNames.set(path, name);
-          await PodMediaService.writeMedia(path: path, bytes: bytes);
+          await PodMediaService.writeMedia(
+            path: path,
+            bytes: bytes,
+            name: name,
+          );
           taken.add(name);
           await _addRenditions(path, name, bytes);
           if (name != file.name) renamed[file.name] = name;

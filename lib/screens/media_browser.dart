@@ -23,6 +23,8 @@
 
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -56,6 +58,7 @@ import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart';
+import 'package:photopod/services/storage_upgrade.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/services/video_frame.dart';
 import 'package:photopod/utils/formatting.dart';
@@ -118,6 +121,16 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   String? _selectedAlbum;
 
+  /// Whether several items can be selected at once, which the toolbar turns
+  /// on and off. Otherwise a tap selects one item in place of the last.
+
+  bool _multiSelect = false;
+
+  /// The item tapped last, which is the one kept when **Select several** is
+  /// turned off.
+
+  String? _lastTapped;
+
   /// Where a shift-tap range starts from.
 
   int _anchor = 0;
@@ -175,6 +188,16 @@ class MediaBrowserState extends State<MediaBrowser> {
         _path = root;
       });
       await reload();
+
+      // Anything an earlier build stored under the name the user gave it is
+      // moved to a random name, once, as soon as the security key is to
+      // hand.
+
+      unawaited(
+        PodKeys.unlocked().then((_) async {
+          if (mounted) await _upgradeStorage(context);
+        }),
+      );
     } on Object catch (e) {
       if (mounted) {
         setState(() {
@@ -321,11 +344,19 @@ class MediaBrowserState extends State<MediaBrowser> {
     return _path.substring(prefix.length).split('/');
   }
 
-  /// The same folder names, decoded so the breadcrumb trail reads as the user
-  /// named the folders rather than as the server spells them.
+  /// The names the user gave the same folders, so the breadcrumb trail reads
+  /// as the user named them rather than as the server spells them: a folder
+  /// is stored under a random name, and one from before that under its own
+  /// name, escaped.
 
-  List<String> get _segmentLabels =>
-      _segments.map(PodMediaService.decodeName).toList();
+  List<String> get _segmentLabels {
+    final segments = _segments;
+    return [
+      for (var i = 0; i < segments.length; i++)
+        MediaNames.nameOf('$_root/${segments.take(i + 1).join('/')}') ??
+            PodMediaService.decodeName(segments[i]),
+    ];
+  }
 
   /// Everything this section shows, before sorting.
   ///
@@ -336,7 +367,16 @@ class MediaBrowserState extends State<MediaBrowser> {
   List<MediaItem> get _source {
     switch (widget.section) {
       case LibrarySection.library:
-        return _items;
+        // A shared file's name may have been learnt since the folder was
+        // listed, so each is shown as the shared list now has it.
+
+        final shared = {
+          for (final item in context.read<SharedWithMe>().items) item.url: item,
+        };
+        return [
+          for (final item in _items)
+            item.isShared ? shared[item.url] ?? item : item,
+        ];
       case LibrarySection.favourites:
         final favourites = context.read<Favourites>();
         return context

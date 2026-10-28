@@ -97,6 +97,10 @@ class MediaActions {
 
   final ValueChanged<MediaSortOption> onSort;
 
+  /// Turn selecting several items at once on or off.
+
+  final VoidCallback onToggleMultiSelect;
+
   const MediaActions({
     required this.onAddFiles,
     required this.onDelete,
@@ -113,6 +117,7 @@ class MediaActions {
     required this.onRemoveFromAlbum,
     required this.onRefresh,
     required this.onSort,
+    required this.onToggleMultiSelect,
   });
 }
 
@@ -128,7 +133,9 @@ class MediaActions {
 /// line on a narrow window rather than overflowing. Which buttons appear at
 /// all also depends on the section: only the Library browses folders, so only
 /// the Library offers to add files to one, and only the Albums section offers
-/// to make a new album on its own or to take files out of one.
+/// to make a new album on its own or to take files out of one. Several items
+/// can be selected only once **Select several** is on, and while they are,
+/// only what makes sense for all of them together is offered.
 
 class MediaToolbar extends StatelessWidget {
   const MediaToolbar({
@@ -142,6 +149,7 @@ class MediaToolbar extends StatelessWidget {
     this.albumNames = const [],
     this.canRemoveFromAlbum = false,
     this.hasShared = false,
+    this.multiSelect = false,
   });
 
   /// Which section of the app this toolbar sits in.
@@ -186,6 +194,11 @@ class MediaToolbar extends StatelessWidget {
 
   final bool hasShared;
 
+  /// Whether several items can be selected at once. Otherwise a tap selects
+  /// one item in place of whatever was selected before.
+
+  final bool multiSelect;
+
   @override
   Widget build(BuildContext context) {
     final hasSelection = selectionCount > 0;
@@ -193,6 +206,14 @@ class MediaToolbar extends StatelessWidget {
     final hasFiles = fileCount > 0;
     final many = selectionCount > 1;
     final manyFiles = fileCount > 1;
+
+    // What acts on one item at a time — previewing, describing, renaming —
+    // stays away while several are selected, rather than quietly acting on
+    // the first. Files and folders are shared separately on a Solid Pod, so
+    // a selection of both cannot be shared in one go.
+
+    final single = hasSelection && !many;
+    final mixed = hasFiles && fileCount < selectionCount;
 
     return Wrap(
       alignment: WrapAlignment.end,
@@ -243,21 +264,20 @@ class MediaToolbar extends StatelessWidget {
             onAdd: actions.onAddToAlbum,
             onCreate: actions.onCreateAlbum,
           ),
-          _button(
-            icon: Icons.visibility_outlined,
-            label: 'Preview',
-            onPressed: actions.onPreview,
-            tooltip:
-                '''
+          if (single)
+            _button(
+              icon: Icons.visibility_outlined,
+              label: 'Preview',
+              onPressed: actions.onPreview,
+              tooltip: '''
 
           **Preview**
 
           Open the selected photo or video full size. Double tapping its tile
           does the same thing.
-          ${many ? 'With several selected, the first one is shown.' : ''}
 
           ''',
-          ),
+            ),
           _button(
             icon: Icons.download_outlined,
             label: 'Download',
@@ -276,11 +296,12 @@ class MediaToolbar extends StatelessWidget {
           ),
         ],
         if (canChange) ...[
-          _button(
-            icon: Icons.share_outlined,
-            label: 'Share',
-            onPressed: actions.onShare,
-            tooltip: '''
+          if (!mixed)
+            _button(
+              icon: Icons.share_outlined,
+              label: 'Share',
+              onPressed: actions.onShare,
+              tooltip: '''
 
           **Share**
 
@@ -289,7 +310,7 @@ class MediaToolbar extends StatelessWidget {
           share button on the album itself.
 
           ''',
-          ),
+            ),
           _button(
             icon: Icons.delete_outline,
             label: 'Delete',
@@ -320,6 +341,32 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
+        _button(
+          icon: multiSelect
+              ? Icons.library_add_check
+              : Icons.library_add_check_outlined,
+          label: multiSelect ? 'Stop selecting several' : 'Select several',
+          onPressed: actions.onToggleMultiSelect,
+          colour: multiSelect ? Theme.of(context).colorScheme.primary : null,
+          tooltip: multiSelect
+              ? '''
+
+          **Stop selecting several**
+
+          Go back to selecting one item at a time. Only the last item you
+          tapped stays selected.
+
+          '''
+              : '''
+
+          **Select several**
+
+          Select several items at once, each ticked as you tap it, to delete,
+          download, share, duplicate, heart or put them into an album
+          together. Hold shift to select everything between two taps.
+
+          ''',
+        ),
         _SortButton(sortOption: sortOption, onSort: actions.onSort),
         _button(
           icon: Icons.tune,
@@ -352,40 +399,37 @@ class MediaToolbar extends StatelessWidget {
 
                 ''',
               ),
-            if (canChange)
+            if (canChange && single)
               _menuItem(
                 icon: Icons.drive_file_rename_outline,
                 label: 'Rename',
                 onPressed: actions.onRename,
-                tooltip:
-                    '''
+                tooltip: '''
 
                 **Rename**
 
                 Give the selected item a new name. It keeps its heart and its
                 place in every album.
-                ${many ? 'With several selected, the first one is renamed.' : ''}
 
                 ''',
               ),
-            if (hasFiles)
+            if (hasFiles && single)
               _menuItem(
                 icon: Icons.info_outline,
                 label: 'Get Info',
                 onPressed: actions.onGetInfo,
-                tooltip:
-                    '''
+                tooltip: '''
 
                 **Get Info**
 
                 Show everything known about the selected item: its size, when
                 it was added, how big the picture is, which camera took it and
                 where.
-                ${many ? 'With several selected, the first one is described.' : ''}
 
                 ''',
               ),
-            if (hasFiles || canChange) const Divider(height: 1),
+            if ((hasFiles && !hasShared) || (single && (hasFiles || canChange)))
+              const Divider(height: 1),
             _menuItem(
               icon: Icons.refresh,
               label: 'Refresh',

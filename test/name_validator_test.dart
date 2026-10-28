@@ -129,16 +129,22 @@ void main() {
       expect(validateName('Holiday_2026', isFolder: true), isNull);
     });
 
-    test('rejects a space, which would have to be escaped in the URL', () {
-      // solidpod files a resource's encryption key under a URL it rebuilds
-      // from the resource's own URL, decoding the escapes on the way and not
-      // putting them back, so an escaped name loses its key.
-
-      expect(validateName('Holiday 2026', isFolder: true), isNotNull);
+    test('accepts spaces, any script and punctuation, since a folder is '
+        'stored under a random name', () {
+      for (final name in [
+        'Holiday 2026',
+        '假期',
+        '東京 #1 (50%)',
+        'Fred & Simon',
+      ]) {
+        expect(validateName(name, isFolder: true), isNull, reason: name);
+      }
     });
 
-    test('rejects a name outside the Latin alphabet for the same reason', () {
-      expect(validateName('假期', isFolder: true), isNotNull);
+    test('rejects what a file system will not take', () {
+      for (final name in ['a:b', 'a*b', 'a?b', 'a|b', 'a<b>']) {
+        expect(validateName(name, isFolder: true), isNotNull, reason: name);
+      }
     });
 
     test('rejects the special directory names', () {

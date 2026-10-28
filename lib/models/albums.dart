@@ -33,6 +33,8 @@ import 'package:solidpod/solidpod.dart' show getDataDirPath, isUserLoggedIn;
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
+import 'package:photopod/services/media_names.dart'
+    show isRandomFolderName, randomFolderName;
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/utils/name_validator.dart';
@@ -45,15 +47,18 @@ import 'package:photopod/utils/name_validator.dart';
 const String albumsFolderName = 'albums';
 
 /// The extension every album file carries, before the encryption suffix.
-/// The file name without either is the album's name, so the album Holiday is
-/// stored as `Holiday.json.enc.ttl`; see [EncryptedJsonFile].
+/// An album is stored under a random name, `3f9c…e1.json.enc.ttl`, with its
+/// own name inside the file; see [encodeAlbum]. An album from before that is
+/// stored under its own name, `Holiday.json.enc.ttl`, until [StorageUpgrade]
+/// moves it.
 
 const String albumFileExtension = '.json';
 
-/// The name of the album file is stored under, the encryption suffix
-/// included, or null when [rawName] — as a container listing spells it — is
-/// not an album file. An album written by an earlier build is plain JSON and
-/// has no suffix.
+/// The name of the album file [rawName] — as a container listing spells it,
+/// the encryption suffix included — is stored under, or null when it is not
+/// an album file. An album written by an earlier build is plain JSON and has
+/// no suffix. For an album with a random name, this is the random part, and
+/// its real name is the one inside the file.
 
 String? albumNameOfFile(String rawName) {
   final file = displayNameOf(PodMediaService.decodeName(rawName));
@@ -67,16 +72,33 @@ String? albumNameOfFile(String rawName) {
 
 const String favouritesAlbumName = 'Favourites';
 
-/// Render [paths] as the JSON an album file holds.
+/// Render [paths] as the JSON an album file holds, with the album's [name]
+/// when it has one: Favourites, whose file is named for what it is, does not
+/// need it.
 ///
 /// The same shape as the list of favourites, and for the same reason sorted,
-/// so that the same album always produces the same bytes.
+/// so that the same album always produces the same bytes. The name is inside
+/// the file, encrypted, rather than in its URL, which is also what lets
+/// someone the album is shared with see it.
 
-String encodeAlbum(Iterable<String> paths) {
+String encodeAlbum(Iterable<String> paths, {String? name}) {
   final sorted = paths.toList()..sort();
   return const JsonEncoder.withIndent(
     '  ',
-  ).convert({'version': 1, 'items': sorted});
+  ).convert({'version': 1, 'name': ?name, 'items': sorted});
+}
+
+/// The album name [encodeAlbum] wrote into [text], or null when there is
+/// none, as in an album written before names were kept inside the file.
+
+String? decodeAlbumName(String text) {
+  try {
+    final decoded = jsonDecode(text);
+    final name = decoded is Map<String, dynamic> ? decoded['name'] : null;
+    return name is String && name.trim().isNotEmpty ? name : null;
+  } on FormatException {
+    return null;
+  }
 }
 
 /// Read back what [encodeAlbum] wrote.
@@ -101,8 +123,7 @@ Set<String> decodeAlbum(String text) {
 /// Check [name] as the name of a new album, returning why it cannot be used,
 /// or null when it is fine.
 ///
-/// The name becomes the name of the album's file, so it follows the same
-/// rules as a folder name. It must also differ, ignoring case, from every
+/// The name follows the same rules as a folder name. It must also differ, ignoring case, from every
 /// album already there — [existing] — and from Favourites. [current] is the
 /// album being renamed, which may keep its own name in a different case.
 
@@ -131,13 +152,19 @@ String? validateAlbumName(
 /// Every album the user has made, each a set of Pod-relative paths, held in
 /// the Pod so that the albums follow the user from one device to the next.
 ///
-/// Each album is a file of its own in [albumsFolderName], named after the
-/// album. Items are identified exactly as favourites are, by their
+/// Each album is a file of its own in [albumsFolderName], under a random
+/// name, with the album's name inside it. Items are identified exactly as favourites are, by their
 /// Pod-relative path, and a path that no longer resolves to anything is simply
 /// never matched.
 
 class Albums extends ChangeNotifier {
   final Map<String, Set<String>> _albums = <String, Set<String>>{};
+
+  // The file each album is kept in, by the album's name: its path within the
+  // data folder, without the encryption suffix, as [EncryptedJsonFile] takes
+  // it.
+
+  final Map<String, String> _files = <String, String>{};
 
   bool _loaded = false;
   String? _error;
@@ -193,28 +220,37 @@ class Albums extends ChangeNotifier {
         await PodMediaService.folderUrl(folder),
       );
 
-      final names = <String>{};
+      // An album may be there both as the plain file an earlier build wrote
+      // and as its encrypted copy, and is read once.
+
+      final files = <String>{};
       for (final entry in await PodMediaService.listFolder(folder)) {
         if (entry.isFolder) continue;
-        final name = albumNameOfFile(entry.rawName);
+        final stem = albumNameOfFile(entry.rawName);
+        if (stem != null) files.add(stem);
+      }
+
+      final found = <String, Set<String>>{};
+      final where = <String, String>{};
+      for (final stem in files) {
+        final file = '$albumsFolderName/$stem$albumFileExtension';
+        final content = await _fileAt(file).read();
+        final name =
+            (content == null ? null : decodeAlbumName(content)) ??
+            PodMediaService.decodeName(stem);
 
         // Favourites has a file of its own elsewhere, so a stray album file
         // of the same name, made outside PhotoPod, is passed over rather
         // than shown as a second Favourites.
 
-        if (name == null ||
-            name.toLowerCase() == favouritesAlbumName.toLowerCase()) {
-          continue;
-        }
-        names.add(name);
-      }
-
-      final found = <String, Set<String>>{};
-      for (final name in names) {
-        final content = await _fileOf(name).read();
+        if (name.toLowerCase() == favouritesAlbumName.toLowerCase()) continue;
         found[name] = content == null ? <String>{} : decodeAlbum(content);
+        where[name] = file;
       }
 
+      _files
+        ..clear()
+        ..addAll(where);
       _albums
         ..clear()
         ..addAll(found);
@@ -237,11 +273,13 @@ class Albums extends ChangeNotifier {
   Future<bool> create(String name) async {
     if (_albums.containsKey(name)) return true;
     _albums[name] = <String>{};
+    _files[name] = _newFile();
     notifyListeners();
 
     final ok = await _chain(() => _write(name, const <String>{}));
     if (!ok) {
       _albums.remove(name);
+      _files.remove(name);
       notifyListeners();
     }
     return ok;
@@ -249,24 +287,59 @@ class Albums extends ChangeNotifier {
 
   /// Give the album called [from] the name [to].
   ///
-  /// The album is written under its new name before the old file is removed,
-  /// so a failure part way leaves the album where it was.
+  /// The name is inside the album's file, so the file is written again in
+  /// place and keeps its URL, its key and everyone it is shared with.
 
   Future<bool> rename(String from, String to) async {
     final paths = _albums[from];
-    if (paths == null || from == to) return true;
+    final file = _files[from];
+    if (paths == null || file == null || from == to) return true;
 
-    final ok = await _chain(() async {
-      await _write(to, paths);
-      await _remove(from);
-    });
+    final ok = await _chain(
+      () => _fileAt(file).write(encodeAlbum(paths, name: to)),
+    );
     if (ok) {
       _albums
         ..remove(from)
         ..[to] = paths;
+      _files
+        ..remove(from)
+        ..[to] = file;
       notifyListeners();
     }
     return ok;
+  }
+
+  /// Move every album still stored under its own name to a random one,
+  /// returning what went wrong, album by album.
+  ///
+  /// The new file is written first, then [carry] is called with the album's
+  /// name and the new file's URL, to share it with everyone the old one was
+  /// shared with, and only then is the old file removed, which tells its
+  /// recipients it has gone.
+
+  Future<List<String>> moveToRandomNames(
+    Future<List<String>> Function(String name, String url) carry,
+  ) async {
+    final failed = <String>[];
+    for (final name in names) {
+      final old = _files[name];
+      if (old == null || _isRandomFile(old)) continue;
+
+      final moved = _newFile();
+      final ok = await _chain(() async {
+        await _fileAt(moved).write(encodeAlbum(_albums[name]!, name: name));
+        failed.addAll(await carry(name, await _fileAt(moved).url()));
+        await _fileAt(old).delete();
+      });
+      if (ok) {
+        _files[name] = moved;
+      } else {
+        failed.add('$name: ${_error ?? 'could not be moved'}');
+      }
+    }
+    if (failed.isEmpty) notifyListeners();
+    return failed;
   }
 
   /// Remove the album called [name]. The photos and videos in it stay where
@@ -274,11 +347,13 @@ class Albums extends ChangeNotifier {
 
   Future<bool> delete(String name) async {
     final paths = _albums[name];
-    if (paths == null) return true;
+    final file = _files[name];
+    if (paths == null || file == null) return true;
 
-    final ok = await _chain(() => _remove(name));
+    final ok = await _chain(() => _fileAt(file).delete());
     if (ok) {
       _albums.remove(name);
+      _files.remove(name);
       notifyListeners();
     }
     return ok;
@@ -417,24 +492,38 @@ class Albums extends ChangeNotifier {
   // Each album is encrypted with a key of its own, and has an access list of
   // its own, so that sharing one album shares nothing of the others.
 
-  static EncryptedJsonFile _fileOf(String name) => EncryptedJsonFile(
-    '$albumsFolderName/$name$albumFileExtension',
-    createAcl: true,
+  static EncryptedJsonFile _fileAt(String file) =>
+      EncryptedJsonFile(file, createAcl: true);
+
+  static String _newFile() =>
+      '$albumsFolderName/${randomFolderName()}$albumFileExtension';
+
+  static bool _isRandomFile(String file) => isRandomFolderName(
+    file.substring(
+      albumsFolderName.length + 1,
+      file.length - albumFileExtension.length,
+    ),
   );
 
-  static Future<void> _write(String name, Set<String> paths) async {
+  Future<void> _write(String name, Set<String> paths) async {
     await PodMediaService.ensureFolder(
       await PodMediaService.folderUrl(await _folderPath()),
     );
-    await _fileOf(name).write(encodeAlbum(paths));
+    await _fileAt(
+      _files[name] ??= _newFile(),
+    ).write(encodeAlbum(paths, name: name));
   }
-
-  static Future<void> _remove(String name) => _fileOf(name).delete();
 
   /// The URL of the file that holds the album called [name], which is what
   /// is shared when the album is.
 
-  static Future<String> fileUrlOf(String name) => _fileOf(name).url();
+  Future<String> fileUrlOf(String name) async {
+    final file = _files[name];
+    if (file == null) {
+      throw PodMediaException('There is no album called "$name".');
+    }
+    return _fileAt(file).url();
+  }
 
   static Future<String> _folderPath() async =>
       '${await getDataDirPath()}/$albumsFolderName';

@@ -60,13 +60,48 @@ final Random _random = Random.secure();
 /// stored name, such as someone the file is shared with.
 
 String randomStoredName(String displayName) {
-  final hex = [
-    for (var i = 0; i < _randomBytes; i++)
-      _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
-  ].join();
   final extension = extensionOf(displayName);
-  return '$hex${extension.isEmpty ? '' : '.$extension'}$encryptedSuffix';
+  return '${_randomHex()}${extension.isEmpty ? '' : '.$extension'}'
+      '$encryptedSuffix';
 }
+
+/// A fresh random name for a folder, which is nothing but the hexadecimal
+/// digits: a folder has no extension to keep, and the name the user gave it
+/// lives in [MediaNames] like a file's.
+
+String randomFolderName() => _randomHex();
+
+String _randomHex() => [
+  for (var i = 0; i < _randomBytes; i++)
+    _random.nextInt(256).toRadixString(16).padLeft(2, '0'),
+].join();
+
+// The shape of every name [randomStoredName] hands out.
+
+final RegExp _randomStoredName = RegExp(
+  r'^[0-9a-f]{32}(\.[a-z0-9]+)?\.enc\.ttl$',
+);
+
+/// Whether [storedName] is one [randomStoredName] handed out, rather than a
+/// name from before random names, which was the name the file arrived with
+/// and so tells the server what the photo is.
+
+bool isRandomStoredName(String storedName) =>
+    _randomStoredName.hasMatch(storedName);
+
+/// The random part of a name [randomStoredName] handed out, or null for any
+/// other name. It is what the renditions of the file are filed under.
+
+String? randomKeyOf(String storedName) =>
+    isRandomStoredName(storedName) ? storedName.substring(0, 32) : null;
+
+final RegExp _randomFolderName = RegExp(r'^[0-9a-f]{32}$');
+
+/// Whether [folderName] is one [randomFolderName] handed out, rather than
+/// the name the user typed, which the server would see.
+
+bool isRandomFolderName(String folderName) =>
+    _randomFolderName.hasMatch(folderName);
 
 /// Render [names] as the JSON the Pod holds, sorted so that the same names
 /// always produce the same bytes.
@@ -99,17 +134,19 @@ Map<String, String> decodeNames(String text) {
   }
 }
 
-/// The name the user knows each photo and video by, keyed by the Pod-relative
-/// path of the file that holds it.
+/// The name the user knows each photo, video and folder by, keyed by its
+/// Pod-relative path.
 ///
-/// Every file PhotoPod adds is stored under a random name of its own, from
-/// [randomStoredName], so a name in any script, with spaces or anything else
-/// in it, never has to pass through a URL. The name the user chose lives
-/// only here, and renaming a file changes nothing but this table.
+/// Every file and folder PhotoPod makes is stored under a random name of its
+/// own, from [randomStoredName] and [randomFolderName], so a name in any
+/// script, with spaces or anything else in it, never has to pass through a
+/// URL and never reaches the server. A file also carries its name inside
+/// itself, encrypted, which is what someone it is shared with sees; this
+/// table is what lets a folder be listed without reading every file in it.
 ///
-/// A file with no entry is shown under its stored name, less the encryption
-/// suffix, which is how the files added before random names keep the names
-/// they had.
+/// An item with no entry is shown under its stored name, less the encryption
+/// suffix, which is how anything added before random names keeps the name
+/// it had until [StorageUpgrade] moves it.
 
 class MediaNames {
   const MediaNames._();
@@ -174,6 +211,14 @@ class MediaNames {
 
   static Future<void> set(String path, String name) =>
       _change((names) => names[path] = name);
+
+  /// Record every name in [names], keyed by path, in a single write, for a
+  /// whole folder of files that have just been given new paths.
+
+  static Future<void> setAll(Map<String, String> names) async {
+    if (names.isEmpty) return;
+    await _change((table) => table.addAll(names));
+  }
 
   /// Copy the names of everything at or beneath each old path in [moves] to
   /// the matching new path, for files and folders that have been copied.

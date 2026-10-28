@@ -285,6 +285,7 @@ extension MediaBrowserAlbums on MediaBrowserState {
     if (!await _ensureSecurityKey(context)) return;
     if (!context.mounted) return;
 
+    final shared = context.read<SharedWithMe>();
     final failed = await showWorking(
       context,
       'Updating sharing...',
@@ -293,6 +294,11 @@ extension MediaBrowserAlbums on MediaBrowserState {
         ...await sharing.apply(changes),
       ],
     );
+
+    // The photos just shared or unshared through their albums gain or lose
+    // the two-people mark.
+
+    await shared.load(force: true);
     if (failed.isEmpty || !context.mounted) return;
 
     await showErrorDialog(
@@ -306,7 +312,7 @@ extension MediaBrowserAlbums on MediaBrowserState {
 
   Future<String> _albumFileUrl(String album) => album == favouritesAlbumName
       ? Favourites.fileUrl()
-      : Albums.fileUrlOf(album);
+      : context.read<Albums>().fileUrlOf(album);
 
   /// Give the album called [album] a new name.
 
@@ -319,36 +325,14 @@ extension MediaBrowserAlbums on MediaBrowserState {
     );
     if (name == null || !context.mounted) return;
 
-    // The renamed album is a new file, with no access list of its own. So a
-    // shared album is unshared under its old name, which tells its
-    // recipients it has gone, and shared again with the same people under
-    // the new one. Its photos stay shared throughout.
+    // The album keeps its file, which holds its name, so it stays shared
+    // with everyone it was; only the record of who that is follows the new
+    // name.
 
     final sharing = context.read<AlbumSharing>();
-    await sharing.load();
-    final recipients = sharing.recipientsOf(album);
-    if (!context.mounted) return;
-    if (recipients.isNotEmpty && !await _ensureSecurityKey(context)) return;
-    if (!context.mounted) return;
-
-    final failed = <String>[];
     final renamed = await showWorking(context, 'Renaming...', () async {
-      if (recipients.isNotEmpty) {
-        failed.addAll(
-          await sharing.unshareAlbum(album, await Albums.fileUrlOf(album)),
-        );
-      }
       final ok = await albums.rename(album, name);
-      if (recipients.isNotEmpty) {
-        final target = ok ? name : album;
-        failed.addAll(
-          await sharing.shareAlbumFile(
-            target,
-            await Albums.fileUrlOf(target),
-            recipients,
-          ),
-        );
-      }
+      if (ok) await sharing.renameAlbum(album, name);
       return ok;
     });
     if (!context.mounted) return;
@@ -357,7 +341,6 @@ extension MediaBrowserAlbums on MediaBrowserState {
       return;
     }
     if (_selectedAlbum == album) updateState(() => _selectedAlbum = name);
-    if (failed.isNotEmpty) await _sharingFailed(context, failed);
   }
 
   /// Delete the album called [album], after checking that is really wanted.
@@ -381,7 +364,7 @@ extension MediaBrowserAlbums on MediaBrowserState {
 
       if (sharing.isShared(album)) {
         failed.addAll(
-          await sharing.unshareAlbum(album, await Albums.fileUrlOf(album)),
+          await sharing.unshareAlbum(album, await albums.fileUrlOf(album)),
         );
       }
       return albums.delete(album);

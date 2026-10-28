@@ -83,10 +83,15 @@ void main() {
       );
     });
 
-    test('follows the rules for a resource name', () {
+    test('follows the rules for a name', () {
       expect(validateAlbumName(''), isNotNull);
-      expect(validateAlbumName('Summer holiday'), isNotNull);
       expect(validateAlbumName('.hidden'), isNotNull);
+      expect(validateAlbumName('a/b'), isNotNull);
+    });
+
+    test('takes any script, since the name is inside the album file', () {
+      expect(validateAlbumName('Summer holiday'), isNull);
+      expect(validateAlbumName('夏天 #1'), isNull);
     });
   });
 
@@ -102,6 +107,26 @@ void main() {
     test('passes over anything that is not an album file', () {
       expect(albumNameOfFile('notes.txt'), isNull);
       expect(albumNameOfFile('.json.enc.ttl'), isNull);
+    });
+  });
+
+  group('encodeAlbum with a name', () {
+    test('keeps the name inside the file, in any script', () {
+      final text = encodeAlbum(['b', 'a'], name: '海滩 & Fred');
+      expect(decodeAlbumName(text), '海滩 & Fred');
+      expect(decodeAlbum(text), {'a', 'b'});
+    });
+
+    test('reads no name from an album written before names were kept', () {
+      expect(decodeAlbumName(encodeAlbum(['a'])), isNull);
+      expect(decodeAlbumName('not json'), isNull);
+    });
+
+    test('names a random album file by its random part', () {
+      expect(
+        albumNameOfFile('3f9c0000000000000000000000000000.json.enc.ttl'),
+        '3f9c0000000000000000000000000000',
+      );
     });
   });
 }

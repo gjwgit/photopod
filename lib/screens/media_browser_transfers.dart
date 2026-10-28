@@ -62,11 +62,12 @@ extension MediaBrowserTransfers on MediaBrowserState {
   /// Rename the first selected item.
   ///
   /// With several items selected only the first is renamed, since a single
-  /// new name cannot sensibly be given to more than one thing. A file keeps
-  /// the random name it is stored under, so renaming it only changes the name
-  /// PhotoPod records for it. A folder's name is its name on the server, and
-  /// Solid has no rename, so a folder is rewritten under its new name and the
-  /// old one removed.
+  /// new name cannot sensibly be given to more than one thing. A file or
+  /// folder keeps the random name it is stored under, so renaming it changes
+  /// only the name PhotoPod records for it, inside the file and in its table
+  /// of names. One still stored under its own name is moved to a random name
+  /// on the way, which changes its path, and everything that refers to it
+  /// follows.
 
   Future<void> _rename(BuildContext context) async {
     final items = _selectedItems;
@@ -86,7 +87,7 @@ extension MediaBrowserTransfers on MediaBrowserState {
     final albums = context.read<Albums>();
     final index = context.read<MediaIndex>();
     final sharing = context.read<AlbumSharing>();
-    String? renamed;
+    var moves = const <String, String>{};
 
     await _guard(
       context,
@@ -94,23 +95,71 @@ extension MediaBrowserTransfers on MediaBrowserState {
       () => showWorking(
         context,
         'Renaming...',
-        () async => renamed = await PodMediaOps.rename(item, name),
+        () async => moves = await PodMediaOps.rename(item, name),
       ),
     );
 
-    final moved = renamed != null && renamed != item.path;
-    if (moved) {
+    if (moves.isNotEmpty) {
       ThumbnailCache.instance.evict(item.url);
-      await favourites.retarget({item.path: renamed!});
-      await albums.retarget({item.path: renamed!});
+      await favourites.retarget(moves);
+      await albums.retarget(moves);
 
-      // The moved items are new files, which have to be shared again with
-      // everyone their albums are shared with.
+      // The moved files were shared again with everyone the old ones were
+      // shared with, so album sharing only has to know where they went.
 
-      await sharing.forget([item.path]);
+      await sharing.retarget(moves);
     }
     index.invalidate();
     await reload();
-    if (moved && context.mounted) await _syncSharing(context);
+  }
+
+  /// Move everything an earlier build stored under the name the user gave
+  /// it to a random name; see [StorageUpgrade]. The album is held still
+  /// behind a progress dialogue meanwhile, since an item moved while it is
+  /// being changed could be lost.
+
+  Future<void> _upgradeStorage(BuildContext context) async {
+    if (!await StorageUpgrade.isNeeded() || !context.mounted) return;
+
+    final favourites = context.read<Favourites>();
+    final albums = context.read<Albums>();
+    final sharing = context.read<AlbumSharing>();
+    final index = context.read<MediaIndex>();
+
+    final List<String> failed;
+    try {
+      failed = await showWorking(
+        context,
+        'Moving your photos, videos, folders and albums to random names on '
+        'the server, so that their names stay private. This happens once, '
+        'and may take a while...',
+        () => StorageUpgrade.run(
+          favourites: favourites,
+          albums: albums,
+          sharing: sharing,
+        ),
+        title: 'Updating your Pod',
+        maxWidth: 420,
+      );
+    } on Object catch (e) {
+      if (context.mounted) {
+        await showErrorDialog(context, 'Could not update your Pod', '$e');
+      }
+      return;
+    }
+
+    index.invalidate();
+    ThumbnailCache.instance.clear();
+    if (!context.mounted) return;
+    await reload(force: true);
+    if (context.mounted) await _syncSharing(context);
+    if (failed.isEmpty || !context.mounted) return;
+
+    await showErrorDialog(
+      context,
+      'Some items still carry their own names',
+      'They are as they were, and PhotoPod will try again the next time it '
+          'starts.\n\n${failed.join('\n\n')}',
+    );
   }
 }
