@@ -137,8 +137,8 @@ String? validateAlbumName(
 
   final lower = name.toLowerCase();
   if (lower == favouritesAlbumName.toLowerCase()) {
-    return 'Favourites is the album your hearts go into, so no other album '
-        'can be called that.';
+    return 'Favourites is the album your favourites go into, so no other '
+        'album can be called that.';
   }
   for (final other in existing) {
     if (other == current) continue;

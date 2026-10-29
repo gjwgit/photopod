@@ -62,7 +62,7 @@ class PodMediaMoves {
     final display = name ?? item.name;
     final media = await PodMediaService.readMedia(item);
     final path = await PodMediaService.newStoredPath(item.parentPath, display);
-    await MediaNames.set(path, display);
+    await MediaNames.set(path, display, taken: item.taken);
     await PodMediaService.writeMedia(
       path: path,
       bytes: media.bytes,
@@ -104,9 +104,9 @@ class PodMediaMoves {
     await _copyInto(item, dest, moves, names, renamedFiles, failures ?? []);
 
     // The names go in before the original goes, so that nothing is ever on
-    // the Pod without one.
+    // the Pod without one, and each file takes its date along.
 
-    await MediaNames.setAll(names);
+    await MediaNames.setAll(names, moves: moves);
 
     final result = await deleteItems(
       parentPath: item.parentPath,

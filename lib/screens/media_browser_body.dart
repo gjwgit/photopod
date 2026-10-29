@@ -43,10 +43,15 @@ extension MediaBrowserBody on MediaBrowserState {
     context.watch<SharedWithMe>();
     context.watch<AlbumSharing>();
 
+    // The timeline scrolls through everything at once, the way a camera
+    // roll does, so it has no pages, and nor does the Albums section, where
+    // each album scrolls on its own.
+
+    final paged = widget.section != LibrarySection.albums && !_isTimeline;
     final sorted = _sorted;
-    final pageCount = _pageCount(sorted.length, prefs.itemsPerPage);
+    final pageCount = paged ? _pageCount(sorted.length, prefs.itemsPerPage) : 1;
     final page = _page.clamp(0, pageCount - 1);
-    final visible = _pageOf(sorted, page, prefs.itemsPerPage);
+    final visible = paged ? _pageOf(sorted, page, prefs.itemsPerPage) : sorted;
 
     return Column(
       children: [
@@ -62,8 +67,7 @@ extension MediaBrowserBody on MediaBrowserState {
           ),
         ),
 
-        // Each album scrolls on its own, so the Albums section has no pages.
-        if (widget.section != LibrarySection.albums) ...[
+        if (paged) ...[
           const Divider(height: 1),
           PaginationBar(
             page: page,
@@ -158,6 +162,7 @@ extension MediaBrowserBody on MediaBrowserState {
       fileCount: files.length,
       allFavourite: context.read<Favourites>().containsAll(files),
       sortOption: context.read<ViewPrefs>().sortOption,
+      canSort: !_isTimeline,
       actions: _actions(context),
       albumNames: context.read<Albums>().names,
       canRemoveFromAlbum: _inOwnAlbum && files.isNotEmpty,
@@ -313,7 +318,9 @@ extension MediaBrowserBody on MediaBrowserState {
       onTap: () {
         if (_selected.isNotEmpty) updateState(_selected.clear);
       },
-      child: prefs.viewMode == MediaViewMode.grid
+      child: _isTimeline
+          ? _buildTimeline(context, prefs, favourites, all)
+          : prefs.viewMode == MediaViewMode.grid
           ? MediaGrid(
               items: visible,
               tileExtent: prefs.tileSize.extent,
@@ -335,6 +342,44 @@ extension MediaBrowserBody on MediaBrowserState {
               onActivate: _handleActivate,
               onToggleFavourite: (item) => _toggleFavourite(context, [item]),
             ),
+    );
+  }
+
+  // The folders come first, as one group of their own, and the photos and
+  // videos follow under the day they are dated, the latest day first. The
+  // memories along the top look across the whole album once it has been
+  // walked, and at this folder until then.
+
+  Widget _buildTimeline(
+    BuildContext context,
+    ViewPrefs prefs,
+    Favourites favourites,
+    List<MediaItem> all,
+  ) {
+    final folders = all.where((item) => item.isFolder).toList();
+    final files = all.where((item) => !item.isFolder).toList();
+    final index = context.read<MediaIndex>();
+
+    return MediaTimeline(
+      groups: [
+        if (folders.isNotEmpty) TimelineGroup(label: 'Folders', items: folders),
+        ...groupByDay(files),
+      ],
+      memories: memoriesOf(
+        index.scannedAt == null
+            ? files
+            : index.items.where((item) => !item.isFolder),
+      ),
+      tileExtent: prefs.tileSize.extent,
+      isSelected: (item) => _selected.contains(item.id),
+      isFavourite: favourites.contains,
+      isSharedOut: (item) => context.read<SharedWithMe>().isSharedOut(item.url),
+      multiSelect: _multiSelect,
+      onTap: (item) => _handleTap(item, all),
+      onActivate: _handleActivate,
+      onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+      onOpenMemory: (memory) =>
+          _handleActivate(memory.items.first, memory.items),
     );
   }
 
@@ -372,6 +417,7 @@ extension MediaBrowserBody on MediaBrowserState {
           _removeItemsFromAlbum(context, album, [item]),
       onRename: (album) => _renameAlbum(context, album),
       onDelete: (album) => _deleteAlbum(context, album),
+      onDecline: (album) => _declineSharedAlbum(context, album),
     );
   }
 

@@ -387,6 +387,62 @@ extension MediaBrowserAlbums on MediaBrowserState {
     if (context.mounted) await _syncSharing(context);
   }
 
+  /// Decline the album someone else shared with the user whose file is at
+  /// [url], after checking that is really wanted. See
+  /// [SharedWithMe.declineAlbum].
+
+  Future<void> _declineSharedAlbum(BuildContext context, String url) async {
+    final shared = context.read<SharedWithMe>();
+    final album = shared.albums.where((each) => each.url == url).firstOrNull;
+    if (album == null) return;
+
+    final title = sharedAlbumTitles(
+      shared.albums,
+      context.read<Albums>().names,
+    )[url];
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Delete this album?',
+      message:
+          '"${title ?? album.name}" was shared with you by '
+          '${webIdLabel(album.ownerWebId)}. It will no longer be shared with '
+          'you, and nor will the photos and videos in it, unless another '
+          'album shared with you holds them, and they are removed from your '
+          'Library, your favourites and your albums. The owner keeps the '
+          'album and can share it with you again.',
+    );
+    if (!confirmed || !context.mounted) return;
+
+    final favourites = context.read<Favourites>();
+    final albums = context.read<Albums>();
+    final result = await showWorking(
+      context,
+      'Deleting...',
+      () => shared.declineAlbum(album),
+    );
+
+    for (final url in result.gone) {
+      ThumbnailCache.instance.evict(url);
+    }
+    await favourites.forget(result.gone);
+    await albums.forget(result.gone);
+    if (!context.mounted) return;
+
+    if (_selectedAlbum == url) {
+      updateState(() {
+        _selected.clear();
+        _selectedAlbum = null;
+      });
+    }
+    if (result.failed.isNotEmpty) {
+      await showErrorDialog(
+        context,
+        'Some items could not be deleted',
+        result.failed.join('\n\n'),
+      );
+    }
+  }
+
   Future<void> _sharingFailed(BuildContext context, List<String> failed) =>
       showErrorDialog(
         context,

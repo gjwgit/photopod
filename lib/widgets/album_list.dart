@@ -78,7 +78,8 @@ class AlbumEntry {
   }) : id = id ?? name;
 
   /// Whether someone else shared this album with the user, which makes it
-  /// theirs to rename, delete or share, not the user's.
+  /// theirs to rename, delete or share, not the user's. The user can only
+  /// decline it.
 
   bool get isFromOthers => sharedBy != null;
 
@@ -110,6 +111,7 @@ class AlbumList extends StatelessWidget {
     required this.onRemoveFromAlbum,
     required this.onRename,
     required this.onDelete,
+    required this.onDecline,
     this.isSharedOut,
     this.multiSelect = false,
   });
@@ -172,6 +174,12 @@ class AlbumList extends StatelessWidget {
   /// Called by the delete button in an album's title bar.
 
   final void Function(String album) onDelete;
+
+  /// Called by the delete button in the title bar of an album someone else
+  /// shared with the user, with the album's [AlbumEntry.id], which tells two
+  /// shared albums of the same name apart.
+
+  final void Function(String album) onDecline;
 
   @override
   Widget build(BuildContext context) => ListView(
@@ -238,7 +246,7 @@ class _AlbumTile extends StatelessWidget {
         '${album.isFromOthers ? ' · shared by ${webIdLabel(album.sharedBy!)}' : ''}'
         '${album.isSharedOut ? ' · shared' : ''}',
       ),
-      trailing: album.isFromOthers ? null : _buildActions(),
+      trailing: album.isFromOthers ? _buildDecline() : _buildActions(),
       childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
       children: [
         if (album.items.isEmpty)
@@ -286,6 +294,30 @@ class _AlbumTile extends StatelessWidget {
       ],
     );
   }
+
+  // An album shared with the user is its owner's to change, so all it offers
+  // is to be declined.
+
+  Widget _buildDecline() => MarkdownTooltip(
+    message:
+        '''
+
+    **Delete album**
+
+    Stop "${album.displayName}" being shared with you. The photos and videos
+    in it go too, unless another album shared with you holds them. The owner
+    keeps the album, and can share it with you again.
+
+    ''',
+    child: Semantics(
+      label: 'Delete album',
+      button: true,
+      child: IconButton(
+        icon: const Icon(Icons.delete_outline),
+        onPressed: () => list.onDecline(album.id),
+      ),
+    ),
+  );
 
   // Favourites can be shared like any other album, but it is a system album,
   // so it has no rename or delete buttons.

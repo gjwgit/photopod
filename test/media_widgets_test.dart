@@ -335,7 +335,8 @@ void main() {
       );
 
       // Looking at it, giving it a heart and putting it in an album are all
-      // still the user's to do; changing it is for its owner alone.
+      // still the user's to do, and so is deleting it, which declines the
+      // share; changing it is for its owner alone.
 
       expect(rowLabels(tester), [
         'Add photos and videos',
@@ -343,6 +344,7 @@ void main() {
         'Add to album',
         'Preview',
         'Download',
+        'Delete',
         'Select several',
         'Sort',
         'View',
@@ -655,6 +657,7 @@ void main() {
       void Function(String)? onShare,
       void Function(String)? onRename,
       void Function(String)? onDelete,
+      void Function(String)? onDecline,
     }) => _wrap(
       AlbumList(
         albums: albums,
@@ -668,14 +671,19 @@ void main() {
         onRemoveFromAlbum: (_, _) {},
         onRename: onRename ?? (_) {},
         onDelete: onDelete ?? (_) {},
+        onDecline: onDecline ?? (_) {},
       ),
     );
 
-    testWidgets('marks an album shared with the user, with no buttons', (
-      tester,
-    ) async {
+    testWidgets('marks an album shared with the user, which can only be '
+        'declined', (tester) async {
+      String? declined;
+      String? deleted;
+
       await tester.pumpWidget(
         albumList(
+          onDelete: (album) => deleted = album,
+          onDecline: (album) => declined = album,
           albums: const [
             AlbumEntry(
               id: 'https://pod.example/alice/photopod/data/albums/Holiday.json',
@@ -691,7 +699,14 @@ void main() {
       expect(find.text('0 items · shared by alice'), findsOneWidget);
       expect(find.byIcon(Icons.share_outlined), findsNothing);
       expect(find.byIcon(Icons.edit_outlined), findsNothing);
-      expect(find.byIcon(Icons.delete_outline), findsNothing);
+
+      await tester.tap(find.byIcon(Icons.delete_outline));
+      await tester.pump();
+      expect(
+        declined,
+        'https://pod.example/alice/photopod/data/albums/Holiday.json',
+      );
+      expect(deleted, isNull);
     });
 
     testWidgets('marks an album the user has shared', (tester) async {

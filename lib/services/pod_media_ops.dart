@@ -270,7 +270,7 @@ class PodMediaOps {
   ) async {
     final bytes = await PodMediaService.readBytes(item);
     final path = await PodMediaService.newStoredPath(destPodPath, name);
-    await MediaNames.set(path, name);
+    await MediaNames.set(path, name, taken: item.taken);
     await PodMediaService.writeMedia(path: path, bytes: bytes, name: name);
     await MediaRenditions.copy(item.path, path);
     return path;

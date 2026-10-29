@@ -64,4 +64,23 @@ void main() {
       expect(formatDateTime(null), '—');
     });
   });
+
+  group('formatDayHeading', () {
+    final now = DateTime(2026, 10, 28);
+
+    test('leaves the year off a day in the current year', () {
+      expect(formatDayHeading(DateTime(2026, 4, 4), now: now), 'Sat, 4 April');
+    });
+
+    test('adds the year to a day in any other year', () {
+      expect(
+        formatDayHeading(DateTime(2025, 4, 5), now: now),
+        'Sat, 5 April 2025',
+      );
+    });
+  });
+
+  test('formatMonthYear names the month in full', () {
+    expect(formatMonthYear(DateTime(2025, 9, 14)), 'September 2025');
+  });
 }

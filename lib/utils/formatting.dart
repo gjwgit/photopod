@@ -53,3 +53,37 @@ String formatDateTime(DateTime? when) {
 }
 
 String _two(int value) => value.toString().padLeft(2, '0');
+
+const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+const _months = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+/// The heading over one day of photos, such as `Sat, 5 April`. The year is
+/// added, as in `Sat, 5 April 2025`, for any day outside the year [now] falls
+/// in, which defaults to today.
+
+String formatDayHeading(DateTime day, {DateTime? now}) {
+  final heading =
+      '${_weekdays[day.weekday - 1]}, ${day.day} ${_months[day.month - 1]}';
+  return day.year == (now ?? DateTime.now()).year
+      ? heading
+      : '$heading ${day.year}';
+}
+
+/// A month and its year, such as `April 2025`.
+
+String formatMonthYear(DateTime when) =>
+    '${_months[when.month - 1]} ${when.year}';

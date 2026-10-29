@@ -27,6 +27,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:solidpod/solidpod.dart' show RecipientType;
 
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/share_decline.dart';
 import 'package:photopod/services/shared_with_me.dart';
 
 const _bob = 'https://pod.example/bob/profile/card#me';
@@ -285,6 +286,57 @@ logId:broken data:log "<not a log line>".
         isAlbumUrl('$root/albums/sub/Holiday.json', 'photopod/data'),
         isFalse,
       );
+    });
+
+    test('a declined photo stays declined, until it is shared again', () {
+      final url = '$root/beach.jpg.enc.ttl';
+      final grant = line('20260930T100000', url, 'grant');
+
+      // The device's clock is behind the one the grant was written with, so
+      // the decline is dated a second after the grant instead.
+
+      final query = declineLogQuery(
+        url: url,
+        owner: alice,
+        me: me,
+        recipient: me,
+        permissions: 'read',
+        after: '20260930T100000',
+        now: DateTime(2026, 9, 30, 9),
+      );
+      final declined = RegExp(r'\{(.*)\}').firstMatch(query)!.group(1)!;
+      expect(declined, contains('"<20260930T100001;$url;$alice;revoke;'));
+
+      final lines = latestLogLines('$grant\n$declined.');
+      expect(lines[url]!.type, 'revoke');
+      expect(
+        sortSharedLog(lines, me: me, dataDir: 'photopod/data').media,
+        isEmpty,
+      );
+
+      final again = line('20260930T120000', url, 'grant');
+      expect(
+        sortSharedLog(
+          latestLogLines('$grant\n$declined.\n$again'),
+          me: me,
+          dataDir: 'photopod/data',
+        ).media,
+        hasLength(1),
+      );
+    });
+
+    test('tells the user\'s own photos from ones shared with them', () {
+      const own = 'https://pod.example/me/';
+      expect(
+        ownPathOf('https://pod.example/me/photopod/data/a.jpg.enc.ttl', own),
+        'photopod/data/a.jpg.enc.ttl',
+      );
+      expect(
+        ownPathOf('https://POD.example/me/photopod/data/a.jpg.enc.ttl', own),
+        'photopod/data/a.jpg.enc.ttl',
+      );
+      expect(ownPathOf('$root/a.jpg.enc.ttl', own), isNull);
+      expect(ownPathOf('https://pod.example/meg/photopod/a.jpg', own), isNull);
     });
 
     test('names the owner from their WebID', () {

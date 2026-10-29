@@ -25,10 +25,20 @@ part of 'media_browser.dart';
 
 /// Selecting items, and everything the toolbar does to them.
 
-/// A file on its way into the Pod: the name it arrived with, and how to read
-/// its bytes, which is all the picker and a desktop drop have in common.
+/// A file on its way into the Pod: the name it arrived with, how to read its
+/// bytes, and how to learn when it was last changed, which is all the picker
+/// and a desktop drop have in common.
 
-typedef _Upload = ({String name, Future<Uint8List> Function() read});
+typedef _Upload = ({
+  String name,
+  Future<Uint8List> Function() read,
+  Future<DateTime> Function() modified,
+});
+
+/// The renditions made of a file before it goes up: a photo's, or the
+/// opening frame of a video.
+
+typedef _Renditions = ({PhotoRenditions? photo, Uint8List? frame});
 
 extension MediaBrowserActions on MediaBrowserState {
   /// The callbacks handed to the toolbar.
@@ -211,7 +221,12 @@ extension MediaBrowserActions on MediaBrowserState {
     if (picked.isEmpty || !context.mounted) return;
 
     await _upload(context, [
-      for (final file in picked) (name: file.name, read: file.readAsBytes),
+      for (final file in picked)
+        (
+          name: file.name,
+          read: file.readAsBytes,
+          modified: file.xFile.lastModified,
+        ),
     ]);
   }
 
@@ -232,7 +247,11 @@ extension MediaBrowserActions on MediaBrowserState {
     if (files.isNotEmpty) {
       await _upload(context, [
         for (final file in files)
-          (name: file.name, read: () => _readDropped(file)),
+          (
+            name: file.name,
+            read: () => _inDropScope(file, file.readAsBytes),
+            modified: () => _inDropScope(file, file.lastModified),
+          ),
       ]);
     }
 
@@ -254,15 +273,18 @@ extension MediaBrowserActions on MediaBrowserState {
   // scope the drop handed over with it. Elsewhere there is no bookmark, and
   // the file is simply read.
 
-  static Future<Uint8List> _readDropped(DropItem file) async {
+  static Future<T> _inDropScope<T>(
+    DropItem file,
+    Future<T> Function() read,
+  ) async {
     final bookmark = file.extraAppleBookmark;
-    if (bookmark == null || bookmark.isEmpty) return file.readAsBytes();
+    if (bookmark == null || bookmark.isEmpty) return read();
 
     await DesktopDrop.instance.startAccessingSecurityScopedResource(
       bookmark: bookmark,
     );
     try {
-      return await file.readAsBytes();
+      return await read();
     } finally {
       await DesktopDrop.instance.stopAccessingSecurityScopedResource(
         bookmark: bookmark,
@@ -301,20 +323,30 @@ extension MediaBrowserActions on MediaBrowserState {
           taken ??= await PodMediaOps.namesIn(_path);
           final name = PodMediaOps.freeName(safeFileName(file.name), taken);
           final bytes = await file.read();
+
+          // The renditions are made before the file goes up, since making a
+          // photo's is also when its EXIF block is read, and that says when
+          // it was taken. Without one, the time the file was last changed
+          // on this device is the next best thing: the Pod would otherwise
+          // only know when it was uploaded.
+
+          final renditions = await _makeRenditions(name, bytes);
+          final when =
+              renditions.photo?.metadata?.taken ?? await _modifiedOf(file);
           final path = await PodMediaService.newStoredPath(_path, name);
 
           // The name goes first: one whose file never arrives is never
           // matched, while a file without its name would show under the
           // random one.
 
-          await MediaNames.set(path, name);
+          await MediaNames.set(path, name, taken: when);
           await PodMediaService.writeMedia(
             path: path,
             bytes: bytes,
             name: name,
           );
           taken.add(name);
-          await _addRenditions(path, name, bytes);
+          await _saveRenditions(path, name, renditions);
           if (name != file.name) renamed[file.name] = name;
           added++;
         } on Object catch (e) {
@@ -353,31 +385,58 @@ extension MediaBrowserActions on MediaBrowserState {
     }
   }
 
-  // Make the renditions of the photo or video just added at [path] as [name],
-  // while its [bytes] are still in hand, and store them beside it: the grid
-  // and the preview then never need the original. For a video that is its
-  // opening frame. The file is already safely on the Pod, so renditions that
-  // cannot be made or stored are not counted as a failure; a photo has them
-  // made the first time it is looked at instead, and a video keeps the film
-  // glyph.
+  // When [file] was last changed on this device, or null where that cannot
+  // be learnt. A browser that does not know reports the epoch, which is
+  // treated as not knowing.
 
-  Future<void> _addRenditions(String path, String name, Uint8List bytes) async {
+  static Future<DateTime?> _modifiedOf(_Upload file) async {
+    try {
+      final modified = await file.modified();
+      return modified.millisecondsSinceEpoch <= 0 ? null : modified.toUtc();
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not tell when ${file.name} was changed: $e');
+      return null;
+    }
+  }
+
+  // Make the renditions of the photo or video [name] while its [bytes] are
+  // still in hand, so that the grid and the preview never need the original.
+  // For a video that is its opening frame. Renditions that cannot be made
+  // are not counted as a failure; a photo has them made the first time it is
+  // looked at instead, and a video keeps the film glyph.
+
+  static Future<_Renditions> _makeRenditions(
+    String name,
+    Uint8List bytes,
+  ) async {
     try {
       if (kindOf(name) == MediaKind.video) {
-        final thumbnail = await firstFrameThumbnail(bytes, name);
-        if (thumbnail != null) {
-          await MediaRenditions.saveVideo(path, thumbnail);
-        }
-        return;
+        return (photo: null, frame: await firstFrameThumbnail(bytes, name));
       }
-
-      final renditions = await compute(renderPhoto, (
+      final photo = await compute(renderPhoto, (
         bytes: bytes,
         keepOriginal: isGif(name),
       ));
-      if (renditions != null) {
-        await MediaRenditions.savePhoto(path, renditions);
-      }
+      return (photo: photo, frame: null);
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not make renditions of $name: $e');
+      return (photo: null, frame: null);
+    }
+  }
+
+  // Store [renditions] beside the file just added at [path]. The file is
+  // already safely on the Pod, so a failure here is only logged.
+
+  static Future<void> _saveRenditions(
+    String path,
+    String name,
+    _Renditions renditions,
+  ) async {
+    try {
+      final photo = renditions.photo;
+      final frame = renditions.frame;
+      if (photo != null) await MediaRenditions.savePhoto(path, photo);
+      if (frame != null) await MediaRenditions.saveVideo(path, frame);
     } on Object catch (e) {
       debugPrint('PhotoPod: could not store renditions of $name: $e');
     }
@@ -414,7 +473,13 @@ extension MediaBrowserActions on MediaBrowserState {
     final items = _selectedItems;
     if (items.isEmpty) return;
 
-    final folders = items.where((item) => item.isFolder).length;
+    // What someone else shared with the user is theirs, not the user's, so
+    // it is declined rather than deleted. See [SharedWithMe.decline].
+
+    final own = items.where((item) => !item.isShared).toList();
+    final shared = items.where((item) => item.isShared).toList();
+
+    final folders = own.where((item) => item.isFolder).length;
     final single = items.length == 1;
     final subject = single ? '"${items.first.name}"' : '${items.length} items';
     final nested = folders == 0
@@ -423,32 +488,54 @@ extension MediaBrowserActions on MediaBrowserState {
         ? ' Everything inside it goes too.'
         : ' Everything inside the $folders selected '
               '${folders == 1 ? 'folder' : 'folders'} goes too.';
+    final String message;
+    if (shared.isEmpty) {
+      message =
+          '$subject will be removed from your Pod.$nested '
+          'This cannot be undone.';
+    } else if (own.isEmpty) {
+      message =
+          '$subject ${single ? 'was' : 'were'} shared with you. '
+          '${single ? 'It' : 'They'} will no longer be shared with you, and '
+          'will be removed from your Library, your favourites and your '
+          'albums. The owner keeps the original${single ? '' : 's'} and can '
+          'share ${single ? 'it' : 'them'} with you again.';
+    } else {
+      message =
+          '${own.length} of them will be removed from your Pod.$nested '
+          'This cannot be undone.\n\n'
+          '${shared.length == 1 ? 'One was' : '${shared.length} were'} '
+          'shared with you by someone else, and will no longer be shared '
+          'with you instead. The owner keeps the original.';
+    }
 
     final confirmed = await showConfirmDialog(
       context,
       title: single ? 'Delete this item?' : 'Delete ${items.length} items?',
-      message:
-          '$subject will be removed from your Pod.$nested '
-          'This cannot be undone.',
+      message: message,
     );
     if (!confirmed || !context.mounted) return;
 
     final favourites = context.read<Favourites>();
     final albums = context.read<Albums>();
     final index = context.read<MediaIndex>();
+    final sharedWithMe = context.read<SharedWithMe>();
 
-    final failed = await showWorking(
-      context,
-      'Deleting...',
-      () => _deleteByFolder(items),
-    );
+    final failed = await showWorking(context, 'Deleting...', () async {
+      return {
+        if (own.isNotEmpty) ...await _deleteByFolder(own),
+        if (shared.isNotEmpty) ...await sharedWithMe.decline(shared),
+      };
+    });
 
     for (final item in items) {
       ThumbnailCache.instance.evict(item.url);
     }
 
     // Only what actually went is forgotten, so an item the server refused to
-    // remove keeps its heart and its place in every album.
+    // remove keeps its heart and its place in every album. A shared item's
+    // path is its URL in its owner's Pod, which is what the hearts and the
+    // albums hold for it.
 
     final gone = [
       for (final item in items)
@@ -460,7 +547,12 @@ extension MediaBrowserActions on MediaBrowserState {
     // Deleting a file already took away everyone's access to it, so album
     // sharing only has to stop remembering it.
 
-    if (context.mounted) await context.read<AlbumSharing>().forget(gone);
+    if (context.mounted) {
+      await context.read<AlbumSharing>().forget([
+        for (final item in own)
+          if (!failed.containsKey(item)) item.path,
+      ]);
+    }
     index.invalidate();
     await reload();
 
