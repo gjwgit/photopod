@@ -431,7 +431,13 @@ extension MediaBrowserActions on MediaBrowserState {
     final items = _selectedItems;
     if (items.isEmpty) return;
 
-    final folders = items.where((item) => item.isFolder).length;
+    // What someone else shared with the user is theirs, not the user's, so
+    // it is declined rather than deleted. See [SharedWithMe.decline].
+
+    final own = items.where((item) => !item.isShared).toList();
+    final shared = items.where((item) => item.isShared).toList();
+
+    final folders = own.where((item) => item.isFolder).length;
     final single = items.length == 1;
     final subject = single ? '"${items.first.name}"' : '${items.length} items';
     final nested = folders == 0
@@ -440,32 +446,54 @@ extension MediaBrowserActions on MediaBrowserState {
         ? ' Everything inside it goes too.'
         : ' Everything inside the $folders selected '
               '${folders == 1 ? 'folder' : 'folders'} goes too.';
+    final String message;
+    if (shared.isEmpty) {
+      message =
+          '$subject will be removed from your Pod.$nested '
+          'This cannot be undone.';
+    } else if (own.isEmpty) {
+      message =
+          '$subject ${single ? 'was' : 'were'} shared with you. '
+          '${single ? 'It' : 'They'} will no longer be shared with you, and '
+          'will be removed from your Library, your favourites and your '
+          'albums. The owner keeps the original${single ? '' : 's'} and can '
+          'share ${single ? 'it' : 'them'} with you again.';
+    } else {
+      message =
+          '${own.length} of them will be removed from your Pod.$nested '
+          'This cannot be undone.\n\n'
+          '${shared.length == 1 ? 'One was' : '${shared.length} were'} '
+          'shared with you by someone else, and will no longer be shared '
+          'with you instead. The owner keeps the original.';
+    }
 
     final confirmed = await showConfirmDialog(
       context,
       title: single ? 'Delete this item?' : 'Delete ${items.length} items?',
-      message:
-          '$subject will be removed from your Pod.$nested '
-          'This cannot be undone.',
+      message: message,
     );
     if (!confirmed || !context.mounted) return;
 
     final favourites = context.read<Favourites>();
     final albums = context.read<Albums>();
     final index = context.read<MediaIndex>();
+    final sharedWithMe = context.read<SharedWithMe>();
 
-    final failed = await showWorking(
-      context,
-      'Deleting...',
-      () => _deleteByFolder(items),
-    );
+    final failed = await showWorking(context, 'Deleting...', () async {
+      return {
+        if (own.isNotEmpty) ...await _deleteByFolder(own),
+        if (shared.isNotEmpty) ...await sharedWithMe.decline(shared),
+      };
+    });
 
     for (final item in items) {
       ThumbnailCache.instance.evict(item.url);
     }
 
     // Only what actually went is forgotten, so an item the server refused to
-    // remove keeps its heart and its place in every album.
+    // remove keeps its heart and its place in every album. A shared item's
+    // path is its URL in its owner's Pod, which is what the hearts and the
+    // albums hold for it.
 
     final gone = [
       for (final item in items)
@@ -477,7 +505,12 @@ extension MediaBrowserActions on MediaBrowserState {
     // Deleting a file already took away everyone's access to it, so album
     // sharing only has to stop remembering it.
 
-    if (context.mounted) await context.read<AlbumSharing>().forget(gone);
+    if (context.mounted) {
+      await context.read<AlbumSharing>().forget([
+        for (final item in own)
+          if (!failed.containsKey(item)) item.path,
+      ]);
+    }
     index.invalidate();
     await reload();
 

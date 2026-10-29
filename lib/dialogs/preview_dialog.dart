@@ -23,7 +23,11 @@
 
 library;
 
+import 'dart:math';
+import 'dart:ui' show lerpDouble;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:gap/gap.dart';
@@ -32,7 +36,6 @@ import 'package:provider/provider.dart';
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/download_media.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
-import 'package:photopod/dialogs/preview_route.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_media_service.dart';
@@ -40,6 +43,8 @@ import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 import 'package:photopod/widgets/video_preview.dart';
+
+part 'preview_route.dart';
 
 /// Preview [item] in a modal dialogue.
 ///
@@ -79,7 +84,7 @@ Future<void> showPreviewDialog(
   final navigator = Navigator.of(context, rootNavigator: true);
   final contentKey = GlobalKey();
   return navigator.push(
-    PreviewRoute(
+    _PreviewRoute(
       context: context,
       themes: InheritedTheme.capture(from: context, to: navigator.context),
       barrierColor:

@@ -1,4 +1,4 @@
-/// The route the preview opens in, growing out of the tile that was opened.
+/// The preview's opening transition, which grows it out of the tile opened.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -21,20 +21,14 @@
 ///
 /// Authors: Tony Chen
 
-library;
-
-import 'dart:math';
-import 'dart:ui' show lerpDouble;
-
-import 'package:flutter/material.dart';
-import 'package:flutter/rendering.dart';
+part of 'preview_dialog.dart';
 
 /// The preview's route: an ordinary dialogue route whose opening transition
 /// grows the dialogue from [origin], the rectangle of the tile that was
 /// opened, to its full size. Without an origin it opens as any dialogue does.
 
-class PreviewRoute extends DialogRoute<void> {
-  PreviewRoute({
+class _PreviewRoute extends DialogRoute<void> {
+  _PreviewRoute({
     required super.context,
     required super.builder,
     required this.origin,

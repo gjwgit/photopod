@@ -405,6 +405,7 @@ extension MediaBrowserBody on MediaBrowserState {
           _removeItemsFromAlbum(context, album, [item]),
       onRename: (album) => _renameAlbum(context, album),
       onDelete: (album) => _deleteAlbum(context, album),
+      onDecline: (album) => _declineSharedAlbum(context, album),
     );
   }
 

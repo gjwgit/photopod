@@ -18,6 +18,10 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # SHA-256, which names the entry for each shared key in the user's Pod, so
+  # that declining a share can find and remove the key that came with it.
+  crypto: ^3.0.6
+
   # Accept photos and videos dragged from the desktop onto the Library, as
   # an alternative to picking them with the Add button.
   desktop_drop: ^0.8.4

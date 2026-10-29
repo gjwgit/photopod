@@ -122,7 +122,8 @@ class MediaActions {
 /// selection appears once something is selected, one that needs a file
 /// appears once a file is among the selection, and one that changes the item
 /// itself stays away while the selection includes something shared with the
-/// user, which only its owner can change. The everyday actions sit in the
+/// user, which only its owner can change. Delete is the exception: for a
+/// shared item it declines the share instead. The everyday actions sit in the
 /// row; the occasional ones (Duplicate, Rename, Get Info and Refresh) wait in
 /// the **More** menu at the end, keeping the row short. It wraps onto a second
 /// line on a narrow window rather than overflowing. Which buttons appear at
@@ -187,8 +188,8 @@ class MediaToolbar extends StatelessWidget {
   final bool canRemoveFromAlbum;
 
   /// Whether the selection holds anything someone else shared with the user.
-  /// Those files belong to their owner, so they cannot be renamed, deleted,
-  /// duplicated or shared on from here.
+  /// Those files belong to their owner, so they cannot be renamed, duplicated
+  /// or shared on from here; deleting one declines the share.
 
   final bool hasShared;
 
@@ -296,6 +297,8 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
+        ],
+        if (hasSelection)
           _button(
             icon: Icons.delete_outline,
             label: 'Delete',
@@ -306,11 +309,12 @@ class MediaToolbar extends StatelessWidget {
 
           Remove the selected items from your Pod, and from every album they
           are in. Folders are removed with everything inside them, and nothing
-          can be undone.
+          can be undone. A photo or video someone else shared with you is not
+          theirs to lose: you decline it instead, and it is gone from your
+          Library and your albums until they share it again.
 
           ''',
           ),
-        ],
         if (section == LibrarySection.albums && canRemoveFromAlbum)
           _button(
             icon: Icons.remove_circle_outline,
@@ -401,7 +405,8 @@ class MediaToolbar extends StatelessWidget {
 
               **Refresh**
 
-              Read the album, your hearts and your albums from your Pod again.
+              Read the album, your favourites and your albums from your Pod
+              again.
 
               ''',
             ),
