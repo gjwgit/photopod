@@ -99,6 +99,7 @@ $(APP):
   apk	     Upload the installer to $(REPO)
   snapstore  Publish the $(VER) snap to the Snap Store stable channel
   upload_android  Build the $(VER) bundle and send it to Play internal testing
+  winget     Write the $(VER) winget manifests to installers/winget/
   flatpak    Build installers/$(APP)-$(VER).flatpak and install it for this user
 
 endef
@@ -182,9 +183,12 @@ FLATPAK_BUILDER = flatpak run org.flatpak.Builder
 FLATPAK_DIR = $(HOME)/.cache/$(APP)-flatpak
 
 .PHONY: flatpak
+#
+# 20261029 gjw DART_DEFINES (support/flutter.mk) passes dart_defines.json
+# only when it exists, so an app with no keys, such as innerpod, builds too.
+
 flatpak:
-	flutter build linux --release --dart-define-from-file=dart_defines.json \
-	  $(OBFUSCATE)
+	flutter build linux --release $(DART_DEFINES) $(OBFUSCATE)
 	$(FLATPAK_BUILDER) --user --install --force-clean --disable-rofiles-fuse \
 	  --state-dir=$(FLATPAK_DIR)/state --repo=$(FLATPAK_DIR)/repo \
 	  $(FLATPAK_DIR)/build flatpak/$(FLATPAK_ID).yml
@@ -245,6 +249,16 @@ AAB_FILE = installers/ARCHIVE/$(APP)-$(VER).aab
 upload_android:
 	@if [ ! -f $(AAB_FILE) ]; then $(MAKE) appbundle || exit 1; fi
 	python3 support/play_upload.py $(AAB_FILE)
+	@echo ''
+
+# 20261030 gjw The winget manifests for the Inno Setup installer that
+# `make ginstall` archived and uploaded under its versioned name. The
+# output is a folder to submit as a pull request to
+# microsoft/winget-pkgs.
+
+.PHONY: winget
+winget:
+	bash support/winget.sh
 	@echo ''
 
 # 20250110 gjw A ginstall of the github built bundles, installed to the

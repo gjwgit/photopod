@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.0 Initial Functional Release
 
++ Video thumbnails fixes [1.0.4 20261028 tonypioneer]
 + Thumbnail to zoom updates [1.0.3 20261022 tonypioneer]
 + Bug fix video playback on Linux [1.0.2 20261009 tonypioneer]
 + Hide unused buttons [1.0.1 20261008 tonypioneer]
