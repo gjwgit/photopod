@@ -23,6 +23,7 @@
 
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -39,9 +40,12 @@ import 'package:solidpod/solidpod.dart'
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/media_names.dart' show isRandomStoredName;
+import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/share_decline.dart';
 import 'package:photopod/services/shared_log.dart';
+import 'package:photopod/services/shared_names.dart';
 
 export 'package:photopod/services/shared_log.dart';
 
@@ -175,10 +179,20 @@ const Duration sharedRefreshAfter = Duration(seconds: 20);
 /// Nothing is copied: a shared photo stays in its owner's Pod and is read from
 /// there, decrypted with the key its owner shared along with it. Revoked
 /// access simply drops out the next time the log is read.
+///
+/// Each file is shown under the name its owner gave it, which is inside the
+/// file rather than in its URL; see [SharedNames]. Names not yet known are
+/// read quietly in the background, one file at a time, and every item is
+/// renamed as its name arrives.
 
 class SharedWithMe extends ChangeNotifier {
+  SharedWithMe() {
+    SharedNames.instance.addListener(_applyNames);
+  }
+
   List<MediaItem> _items = const [];
   List<SharedAlbum> _albums = const [];
+  Set<String> _sharedOut = const {};
   Map<String, PermissionLogLine> _lines = const {};
   DateTime? _readAt;
   Future<void>? _loading;
@@ -191,6 +205,11 @@ class SharedWithMe extends ChangeNotifier {
   /// Every album shared with the user, in alphabetical order.
 
   List<SharedAlbum> get albums => _albums;
+
+  /// Whether the user's own file at [url] is shared with anyone, which the
+  /// tiles mark as they mark what is shared with the user.
+
+  bool isSharedOut(String url) => _sharedOut.contains(url);
 
   /// What went wrong the last time the log was read, if anything.
 
@@ -215,12 +234,75 @@ class SharedWithMe extends ChangeNotifier {
     return load;
   }
 
+  @override
+  void dispose() {
+    SharedNames.instance.removeListener(_applyNames);
+    super.dispose();
+  }
+
+  // Show every item under the latest name known for it.
+
+  void _applyNames() {
+    final names = SharedNames.instance;
+    final stale = _items.any(
+      (item) => (names.nameOf(item.url) ?? item.name) != item.name,
+    );
+    if (!stale) return;
+    _items = List.unmodifiable([
+      for (final item in _items) _itemFor(item.url, item.sharedBy!),
+    ]);
+    notifyListeners();
+  }
+
+  // Read, one at a time, the shared files whose names are not known yet,
+  // which is how a video, which has no thumbnail to be read for, or a photo
+  // on a page not yet looked at, comes to show its name. The visible
+  // thumbnails are given a head start, since they read their files anyway,
+  // and whatever they learn meanwhile is not read again.
+  //
+  // Only a file stored under a random name has a name to learn: one still
+  // stored under its own name shows that, and has none inside it. Each file
+  // is tried once a session, whatever comes of it, since the list is read
+  // again every [sharedRefreshAfter] and a file that cannot be read, or
+  // holds no name, would otherwise be downloaded every time.
+
+  bool _resolving = false;
+  final Set<String> _tried = {};
+
+  Future<void> _resolveNames() async {
+    if (_resolving) return;
+    _resolving = true;
+    try {
+      await Future<void>.delayed(const Duration(seconds: 5));
+      await PodKeys.unlocked();
+
+      final unnamed = [
+        ..._items.where((item) => item.isVideo),
+        ..._items.where((item) => !item.isVideo),
+      ];
+      for (final item in unnamed) {
+        if (!isRandomStoredName(item.rawName)) continue;
+        if (SharedNames.instance.nameOf(item.url) != null) continue;
+        if (!_items.any((each) => each.url == item.url)) continue;
+        if (!_tried.add(item.url)) continue;
+        try {
+          await PodMediaService.readMedia(item);
+        } on Object catch (e) {
+          debugPrint('PhotoPod: could not read the name of ${item.url}: $e');
+        }
+      }
+    } finally {
+      _resolving = false;
+    }
+  }
+
   Future<void> _load() async {
     try {
       if (!await isUserLoggedIn()) return;
       final me = await getWebId();
       if (me == null) return;
       final dataDir = await getDataDirPath();
+      await SharedNames.instance.ensureLoaded();
 
       final app = dataDir.split('/').first;
       final logUrl = await permissionLogUrl();
@@ -235,6 +317,7 @@ class SharedWithMe extends ChangeNotifier {
         debugPrint('PhotoPod: no permission log at $logUrl: $e');
         _items = const [];
         _albums = const [];
+        _sharedOut = const {};
         _lines = const {};
         _error = null;
         _readAt = DateTime.now();
@@ -246,6 +329,7 @@ class SharedWithMe extends ChangeNotifier {
       final ownRoot = logUrl.substring(0, logUrl.indexOf('/$app/') + 1);
 
       final lines = latestLogLines(content);
+      _sharedOut = Set.unmodifiable(sharedOutUrls(content, me));
       final sorted = sortSharedLog(lines, me: me, dataDir: dataDir);
 
       final items = <String, MediaItem>{
@@ -295,6 +379,7 @@ class SharedWithMe extends ChangeNotifier {
       _lines = lines;
       _error = null;
       _readAt = DateTime.now();
+      unawaited(_resolveNames());
     } on Object catch (e) {
       _error = '$e';
       debugPrint('PhotoPod: could not read what is shared with you: $e');
@@ -413,7 +498,7 @@ class SharedWithMe extends ChangeNotifier {
     notifyListeners();
   }
 
-  // An album file is plain JSON listing Pod-relative paths in its owner's
+  // An album file is JSON listing Pod-relative paths in its owner's
   // Pod, so each path is turned into a URL against that Pod's root — except
   // for a photo that lies in the user's own Pod at [ownRoot], which is kept
   // as the Pod-relative path the user's own items carry. An album
@@ -431,7 +516,10 @@ class SharedWithMe extends ChangeNotifier {
     try {
       final content = await readPod(url, pathType: PathType.absoluteUrl);
       return SharedAlbum(
-        name: albumNameOf(url),
+        // The album's name is inside its file; only an album from before
+        // that is named by its URL.
+
+        name: decodeAlbumName(content) ?? albumNameOf(url),
         url: url,
         ownerWebId: owner,
         itemUrls: {
@@ -452,7 +540,7 @@ class SharedWithMe extends ChangeNotifier {
     final raw = url.substring(url.lastIndexOf('/') + 1);
     final stored = PodMediaService.decodeName(raw);
     return MediaItem(
-      name: displayNameOf(stored),
+      name: SharedNames.instance.nameOf(url) ?? displayNameOf(stored),
       rawName: raw,
       path: url,
       url: url,

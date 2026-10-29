@@ -31,6 +31,7 @@ import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/utils/formatting.dart';
+import 'package:photopod/widgets/media_grid.dart' show sharedLabel;
 import 'package:photopod/widgets/media_thumbnail.dart';
 
 /// Lay [items] out one per row, with size and date alongside the name.
@@ -49,6 +50,8 @@ class MediaList extends StatelessWidget {
     required this.onTap,
     required this.onActivate,
     required this.onToggleFavourite,
+    this.isSharedOut = _never,
+    this.multiSelect = false,
   });
 
   /// The folders and files on the current page.
@@ -75,6 +78,15 @@ class MediaList extends StatelessWidget {
 
   final void Function(MediaItem) onToggleFavourite;
 
+  /// Whether one of the user's own items is shared with someone else.
+
+  final bool Function(MediaItem) isSharedOut;
+
+  /// Whether several items can be selected at once, in which case each
+  /// selected row is ticked as well as highlighted.
+
+  final bool multiSelect;
+
   @override
   Widget build(BuildContext context) {
     final wide = MediaQuery.of(context).size.width >= 640;
@@ -95,12 +107,26 @@ class MediaList extends StatelessWidget {
           leading: SizedBox(
             width: 48,
             height: 48,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(6),
-              child: Container(
-                color: scheme.surfaceContainerHighest,
-                child: MediaThumbnail(item: item),
-              ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    color: scheme.surfaceContainerHighest,
+                    child: MediaThumbnail(item: item),
+                  ),
+                ),
+                if (multiSelect && selected)
+                  Align(
+                    alignment: Alignment.topLeft,
+                    child: Icon(
+                      Icons.check_circle,
+                      size: 18,
+                      color: scheme.primary,
+                    ),
+                  ),
+              ],
             ),
           ),
           title: GestureDetector(
@@ -142,13 +168,14 @@ class MediaList extends StatelessWidget {
                     ),
                   ),
                 ],
-                if (item.isShared)
+                if (item.isShared || isSharedOut(item))
                   Tooltip(
-                    message:
-                        'Shared with you by ${webIdLabel(item.sharedBy!)}\n'
-                        '${item.sharedBy}',
+                    message: item.isShared
+                        ? 'Shared with you by ${webIdLabel(item.sharedBy!)}\n'
+                              '${item.sharedBy}'
+                        : sharedLabel(null),
                     child: Semantics(
-                      label: 'Shared with you by ${webIdLabel(item.sharedBy!)}',
+                      label: sharedLabel(item.sharedBy),
                       child: Icon(
                         Icons.people,
                         size: 18,
@@ -191,3 +218,5 @@ class MediaList extends StatelessWidget {
     formatDateTime(item.modified),
   ].join('  ·  ');
 }
+
+bool _never(MediaItem item) => false;

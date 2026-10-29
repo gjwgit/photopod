@@ -25,12 +25,11 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:photopod/constants/media.dart';
 import 'package:photopod/utils/resource_name.dart';
 
 void main() {
-  group('safeResourceName', () {
-    test('leaves a name that needs no escaping alone', () {
+  group('isSafeResourceName', () {
+    test('accepts a name that needs no escaping', () {
       for (final name in [
         'DSC03274_colcorrected_NB.jpg',
         'beach.jpg',
@@ -39,59 +38,20 @@ void main() {
         'clip(2).mov',
         'a~b!c.jpg',
       ]) {
-        expect(safeResourceName(name), name, reason: name);
+        expect(isSafeResourceName(name), isTrue, reason: name);
       }
     });
 
-    test('replaces a space, which would otherwise be escaped', () {
-      expect(safeResourceName('my photo.jpg'), 'my_photo.jpg');
-    });
-
-    test('replaces a run of awkward characters with one underscore', () {
-      expect(safeResourceName('holiday #1 (50%).jpg'), 'holiday_1_(50_).jpg');
-    });
-
-    test('replaces characters no file system would take', () {
-      expect(safeResourceName('a/b.jpg'), 'a_b.jpg');
-      expect(safeResourceName(r'a\b.jpg'), 'a_b.jpg');
-      expect(safeResourceName('a:b*c?.jpg'), 'a_b_c_.jpg');
-    });
-
-    test('keeps the extension, so the file stays a photo or a video', () {
-      for (final name in ['我的照片.jpg', 'ünïcödé.png', 'ролик.mp4']) {
-        expect(kindOf(safeResourceName(name)), kindOf(name), reason: name);
-      }
-    });
-
-    test('gives a stem to a name that is left with only its extension', () {
-      expect(safeResourceName('我的照片.jpg'), 'file.jpg');
-      expect(safeResourceName('   .png'), 'file.png');
-    });
-
-    test('leaves a name that deliberately begins with a full stop', () {
-      expect(safeResourceName('...odd.jpg'), '...odd.jpg');
-    });
-
-    test('never returns an empty name', () {
-      expect(safeResourceName('///'), 'file');
-      expect(safeResourceName(''), 'file');
-    });
-  });
-
-  group('isSafeResourceName', () {
-    test('agrees with what safeResourceName leaves alone', () {
+    test('rejects a name that would be escaped or refused', () {
       for (final name in [
-        'beach.jpg',
         'my photo.jpg',
         '我的照片.jpg',
         'a*b.jpg',
         'a%20b.jpg',
+        'a/b.jpg',
+        'a+b&c=d.png',
       ]) {
-        expect(
-          isSafeResourceName(name),
-          safeResourceName(name) == name,
-          reason: name,
-        );
+        expect(isSafeResourceName(name), isFalse, reason: name);
       }
     });
 
@@ -131,19 +91,5 @@ void main() {
         expect(roundTrip(url), isNot(url));
       },
     );
-
-    test('every sanitised name survives it', () {
-      for (final original in [
-        'my photo.jpg',
-        'holiday #1 (50%).jpg',
-        '我的照片.jpg',
-        'a+b&c=d.png',
-        'photo@home,2026.jpg',
-      ]) {
-        final name = safeResourceName(original);
-        final url = 'https://pod.example/me/photopod/data/$name.enc.ttl';
-        expect(roundTrip(url), url, reason: original);
-      }
-    });
   });
 }

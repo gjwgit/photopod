@@ -97,15 +97,35 @@ Future<bool> showConfirmDialog(
 /// bar would be more noise than help. SolidUI's controller is used because it
 /// pops the dialog through the dialog's own context, so the spinner cannot be
 /// stranded when the calling widget is disposed mid-operation.
+///
+/// A long [message] stretches the dialogue across the whole window, so
+/// [maxWidth] can hold it to a comfortable width, with an optional [title]
+/// above it.
 
 Future<T> showWorking<T>(
   BuildContext context,
   String message,
-  Future<T> Function() action,
-) async {
+  Future<T> Function() action, {
+  String? title,
+  double? maxWidth,
+}) async {
   final loading = LoadingDialogController.show(
     context: context,
     message: message,
+    title: title,
+    child: maxWidth == null
+        ? null
+        : ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 16),
+                Flexible(child: Text(message)),
+              ],
+            ),
+          ),
   );
   try {
     return await action();

@@ -122,4 +122,42 @@ void main() {
       expect(mediaTooltipText(shared), 'beach.jpg\nShared by alice\n$_alice');
     });
   });
+
+  group('sharedOutUrls', () {
+    const me = 'https://pod.example/me/profile/card#me';
+    const bob = 'https://pod.example/bob/profile/card#me';
+    const carol = 'https://pod.example/carol/profile/card#me';
+    const photo = 'https://pod.example/me/photopod/data/a.jpg.enc.ttl';
+
+    String line(String time, String type, String recipient) =>
+        '"<$time;$photo;$me;$type;$me;$recipient;read>"';
+
+    test('finds a file the user shared and has not taken back', () {
+      final log = line('20261028T100000', 'grant', bob);
+      expect(sharedOutUrls(log, me), {photo});
+    });
+
+    test('drops a file once every recipient has lost it', () {
+      final log = [
+        line('20261028T100000', 'grant', bob),
+        line('20261028T110000', 'revoke', bob),
+      ].join('\n');
+      expect(sharedOutUrls(log, me), isEmpty);
+    });
+
+    test('keeps a file still shared with someone else', () {
+      final log = [
+        line('20261028T100000', 'grant', bob),
+        line('20261028T100500', 'grant', carol),
+        line('20261028T110000', 'revoke', bob),
+      ].join('\n');
+      expect(sharedOutUrls(log, me), {photo});
+    });
+
+    test('ignores what others shared with the user', () {
+      const other = 'https://pod.example/bob/photopod/data/b.jpg.enc.ttl';
+      final log = '"<20261028T100000;$other;$bob;grant;$bob;$me;read>"';
+      expect(sharedOutUrls(log, me), isEmpty);
+    });
+  });
 }

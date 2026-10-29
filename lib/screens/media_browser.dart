@@ -23,6 +23,8 @@
 
 library;
 
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -49,6 +51,7 @@ import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/media_dates_backfill.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
@@ -56,6 +59,7 @@ import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart';
+import 'package:photopod/services/storage_upgrade.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/services/video_frame.dart';
 import 'package:photopod/utils/formatting.dart';
@@ -64,6 +68,7 @@ import 'package:photopod/widgets/album_list.dart';
 import 'package:photopod/widgets/breadcrumb_bar.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
+import 'package:photopod/widgets/media_timeline.dart';
 import 'package:photopod/widgets/media_toolbar.dart';
 import 'package:photopod/widgets/pagination_bar.dart';
 
@@ -117,6 +122,16 @@ class MediaBrowserState extends State<MediaBrowser> {
   /// it out of.
 
   String? _selectedAlbum;
+
+  /// Whether several items can be selected at once, which the toolbar turns
+  /// on and off. Otherwise a tap selects one item in place of the last.
+
+  bool _multiSelect = false;
+
+  /// The item tapped last, which is the one kept when **Select several** is
+  /// turned off.
+
+  String? _lastTapped;
 
   /// Where a shift-tap range starts from.
 
@@ -175,6 +190,16 @@ class MediaBrowserState extends State<MediaBrowser> {
         _path = root;
       });
       await reload();
+
+      // Anything an earlier build stored under the name the user gave it is
+      // moved to a random name, once, as soon as the security key is to
+      // hand.
+
+      unawaited(
+        PodKeys.unlocked().then((_) async {
+          if (mounted) await _upgradeStorage(context);
+        }),
+      );
     } on Object catch (e) {
       if (mounted) {
         setState(() {
@@ -279,6 +304,7 @@ class MediaBrowserState extends State<MediaBrowser> {
         _loading = false;
         _selected.removeWhere((id) => !items.any((item) => item.id == id));
       });
+      unawaited(_readWholeAlbum());
     } on Object catch (e) {
       if (!mounted) return;
       setState(() {
@@ -286,6 +312,30 @@ class MediaBrowserState extends State<MediaBrowser> {
         _error = e.toString();
       });
     }
+  }
+
+  // The memories along the top of the Library look across the whole album,
+  // so the Library walks it too, in the background once its own folder is
+  // showing; the walk is shared with the other sections and only repeated
+  // when something has changed. Any photo added before PhotoPod kept dates
+  // then has its date filled in, and the timeline is rearranged once that is
+  // done.
+
+  Future<void> _readWholeAlbum() async {
+    final index = context.read<MediaIndex>();
+    await index.refresh();
+    if (!mounted || index.error != null) return;
+
+    final recorded = await MediaDatesBackfill.run(index.items);
+    if (!mounted || recorded == 0) return;
+
+    index.applyDates();
+    setState(
+      () => _items = [
+        for (final item in _items)
+          item.withTaken(MediaNames.takenOf(item.path)),
+      ],
+    );
   }
 
   // Every thumbnail of an encrypted photo has to be decrypted before it can
@@ -321,11 +371,19 @@ class MediaBrowserState extends State<MediaBrowser> {
     return _path.substring(prefix.length).split('/');
   }
 
-  /// The same folder names, decoded so the breadcrumb trail reads as the user
-  /// named the folders rather than as the server spells them.
+  /// The names the user gave the same folders, so the breadcrumb trail reads
+  /// as the user named them rather than as the server spells them: a folder
+  /// is stored under a random name, and one from before that under its own
+  /// name, escaped.
 
-  List<String> get _segmentLabels =>
-      _segments.map(PodMediaService.decodeName).toList();
+  List<String> get _segmentLabels {
+    final segments = _segments;
+    return [
+      for (var i = 0; i < segments.length; i++)
+        MediaNames.nameOf('$_root/${segments.take(i + 1).join('/')}') ??
+            PodMediaService.decodeName(segments[i]),
+    ];
+  }
 
   /// Everything this section shows, before sorting.
   ///
@@ -336,7 +394,16 @@ class MediaBrowserState extends State<MediaBrowser> {
   List<MediaItem> get _source {
     switch (widget.section) {
       case LibrarySection.library:
-        return _items;
+        // A shared file's name may have been learnt since the folder was
+        // listed, so each is shown as the shared list now has it.
+
+        final shared = {
+          for (final item in context.read<SharedWithMe>().items) item.url: item,
+        };
+        return [
+          for (final item in _items)
+            item.isShared ? shared[item.url] ?? item : item,
+        ];
       case LibrarySection.favourites:
         final favourites = context.read<Favourites>();
         return context
@@ -377,6 +444,13 @@ class MediaBrowserState extends State<MediaBrowser> {
       ? _error
       : _error ?? context.read<MediaIndex>().error;
 
+  /// Whether the Library is showing its tiles as a timeline, one day under
+  /// each heading. The Details view keeps its sortable, paged list.
+
+  bool get _isTimeline =>
+      widget.section == LibrarySection.library &&
+      context.read<ViewPrefs>().viewMode == MediaViewMode.grid;
+
   /// Everything this section shows, folders first and then files, each group
   /// in the order the user has chosen.
 
@@ -385,6 +459,17 @@ class MediaBrowserState extends State<MediaBrowser> {
     final all = _source;
     final folders = all.where((item) => item.isFolder).toList();
     final files = all.where((item) => !item.isFolder).toList();
+
+    // The timeline sets its own order, the latest day first, and the
+    // selection and the preview follow the tiles as they are laid out.
+
+    if (_isTimeline) {
+      _sortInPlace(folders, MediaSortOption.nameAscending);
+      return [
+        ...folders,
+        for (final group in groupByDay(files)) ...group.items,
+      ];
+    }
     _sortInPlace(folders, option);
     _sortInPlace(files, option);
     return [...folders, ...files];
@@ -406,12 +491,13 @@ class MediaBrowserState extends State<MediaBrowser> {
   static int _byName(MediaItem a, MediaItem b) =>
       a.name.toLowerCase().compareTo(b.name.toLowerCase());
 
-  // Items the server gave no date for sort to the end of an ascending list,
-  // rather than jumping to the front as the epoch would.
+  // Items sort by when they were taken, where that is known. Those with no
+  // date at all sort to the end of an ascending list, rather than jumping to
+  // the front as the epoch would.
 
   static int _byDate(MediaItem a, MediaItem b) {
-    final left = a.modified;
-    final right = b.modified;
+    final left = a.date;
+    final right = b.date;
     if (left == null && right == null) return _byName(a, b);
     if (left == null) return 1;
     if (right == null) return -1;

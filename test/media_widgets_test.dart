@@ -77,6 +77,7 @@ MediaActions _actions({
   onRemoveFromAlbum: () {},
   onRefresh: onRefresh ?? () {},
   onSort: (_) {},
+  onToggleMultiSelect: () {},
 );
 
 Widget _grid(
@@ -265,6 +266,7 @@ void main() {
       MediaActions? actions,
       bool canRemoveFromAlbum = false,
       bool hasShared = false,
+      bool multiSelect = false,
     }) => _wrap(
       MediaToolbar(
         section: section,
@@ -276,6 +278,7 @@ void main() {
         albumNames: albumNames,
         canRemoveFromAlbum: canRemoveFromAlbum,
         hasShared: hasShared,
+        multiSelect: multiSelect,
       ),
     );
 
@@ -306,6 +309,7 @@ void main() {
 
       expect(rowLabels(tester), [
         'Add photos and videos',
+        'Select several',
         'Sort',
         'View',
         'More',
@@ -341,6 +345,7 @@ void main() {
         'Preview',
         'Download',
         'Delete',
+        'Select several',
         'Sort',
         'View',
         'More',
@@ -363,6 +368,7 @@ void main() {
         'Add photos and videos',
         'Share',
         'Delete',
+        'Select several',
         'Sort',
         'View',
         'More',
@@ -511,6 +517,51 @@ void main() {
       expect(created, isTrue);
     });
 
+    testWidgets('offers only what suits several items together', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.library,
+          selectionCount: 3,
+          fileCount: 3,
+          multiSelect: true,
+        ),
+      );
+
+      expect(rowLabels(tester), [
+        'Add photos and videos',
+        'Add to Favourites',
+        'Add to album',
+        'Download',
+        'Share',
+        'Delete',
+        'Stop selecting several',
+        'Sort',
+        'View',
+        'More',
+      ]);
+
+      await openMore(tester);
+      expect(find.text('Duplicate'), findsOneWidget);
+      expect(find.text('Rename'), findsNothing);
+      expect(find.text('Get Info'), findsNothing);
+    });
+
+    testWidgets('will not share files and folders together', (tester) async {
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.library,
+          selectionCount: 2,
+          fileCount: 1,
+          multiSelect: true,
+        ),
+      );
+
+      expect(rowLabels(tester), isNot(contains('Share')));
+      expect(rowLabels(tester), contains('Delete'));
+    });
+
     testWidgets('keeps to the agreed order, Create new album first', (
       tester,
     ) async {
@@ -532,6 +583,7 @@ void main() {
         'Share',
         'Delete',
         'Remove from album',
+        'Select several',
         'Sort',
         'View',
         'More',
@@ -845,6 +897,56 @@ void main() {
       await tester.tap(find.text('Library'));
       await tester.pump();
       expect(kept, 0);
+    });
+  });
+
+  group('MediaTile selection', () {
+    Widget tile({required bool selected, bool showCheck = false}) => _wrap(
+      SizedBox(
+        width: 140,
+        height: 140,
+        child: MediaTile(
+          item: _item('beach.jpg'),
+          selected: selected,
+          showCheck: showCheck,
+          favourite: false,
+          onTap: () {},
+          onActivate: () {},
+          onToggleFavourite: () {},
+        ),
+      ),
+    );
+
+    testWidgets('outlines a single selection without a tick', (tester) async {
+      await tester.pumpWidget(tile(selected: true));
+      expect(find.byIcon(Icons.check), findsNothing);
+    });
+
+    testWidgets('ticks a selection while selecting several', (tester) async {
+      await tester.pumpWidget(tile(selected: true, showCheck: true));
+      expect(find.byIcon(Icons.check), findsOneWidget);
+    });
+
+    testWidgets('marks an item the user has shared', (tester) async {
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 140,
+            height: 140,
+            child: MediaTile(
+              item: _item('beach.jpg'),
+              selected: false,
+              sharedOut: true,
+              favourite: false,
+              onTap: () {},
+              onActivate: () {},
+              onToggleFavourite: () {},
+            ),
+          ),
+        ),
+      );
+      expect(find.byIcon(Icons.people), findsOneWidget);
+      expect(find.bySemanticsLabel('Shared by you'), findsOneWidget);
     });
   });
 }

@@ -35,6 +35,7 @@ import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/utils/resource_name.dart' show safeFileName;
 
 /// Download the original of each of [items], asking where to save each one.
 ///
@@ -60,16 +61,26 @@ Future<void> downloadMedia(BuildContext context, List<MediaItem> items) async {
   for (final item in files) {
     if (!context.mounted) return;
     try {
-      final bytes = await showWorking(
+      final media = await showWorking(
         context,
         'Downloading "${item.name}"...',
-        () => PodMediaService.readBytes(item),
+        () => PodMediaService.readMedia(item),
       );
+
+      // The file is saved under the name the user knows it by, never the
+      // random one it is stored under. A shared file carries its owner's
+      // name inside it, which may not have been learnt when the list was
+      // drawn, and it is made safe for this device's file system since it
+      // was written somewhere else.
+
+      final name = item.isShared && media.name != null
+          ? safeFileName(media.name!)
+          : item.name;
       final saved = await FilePicker.saveFile(
-        fileName: item.name,
-        bytes: bytes,
-        mimeType: contentTypeOf(item.name),
-        dialogTitle: 'Save "${item.name}"',
+        fileName: name,
+        bytes: media.bytes,
+        mimeType: contentTypeOf(name),
+        dialogTitle: 'Save "$name"',
       );
 
       // The browser saves a download without saying where, so on the web

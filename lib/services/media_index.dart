@@ -29,6 +29,7 @@ import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart';
 
@@ -108,6 +109,16 @@ class MediaIndex extends ChangeNotifier {
 
   List<MediaItem> get photos =>
       items.where((item) => item.isPhoto).toList(growable: false);
+
+  /// Take up the dates [MediaNames] now holds for items that had none when
+  /// the album was walked, without walking it again.
+
+  void applyDates() {
+    _items = List.unmodifiable(
+      _items.map((item) => item.withTaken(MediaNames.takenOf(item.path))),
+    );
+    notifyListeners();
+  }
 
   /// Note that the album on the Pod has changed, so that the next section to
   /// ask for it walks the folders again.

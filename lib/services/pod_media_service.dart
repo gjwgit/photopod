@@ -23,8 +23,10 @@
 
 library;
 
-import 'dart:convert';
+import 'dart:async';
 import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show debugPrint;
 
 import 'package:http/http.dart' as http;
 import 'package:solidpod/solidpod.dart';
@@ -33,7 +35,9 @@ import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/albums.dart' show albumsFolderName;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/container_listing.dart';
+import 'package:photopod/services/media_envelope.dart';
 import 'package:photopod/services/media_names.dart';
+import 'package:photopod/services/shared_names.dart';
 
 /// Raised when the Solid server refuses or fails a request. The message is
 /// written for the user, since it is what the error dialogues display.
@@ -55,9 +59,11 @@ class PodMediaException implements Exception {
 /// through solidpod's [writePod], which encrypts the content, wraps it in
 /// Turtle and writes an accompanying `.acl`. Each file is stored under a
 /// random name of its own, such as `3f9c…e1.jpg.enc.ttl`, and the name the
-/// user gave it is kept in [MediaNames]. Files added before that keep the
-/// name they were stored under, `beach.jpg.enc.ttl`, and PhotoPod shows it
-/// without the suffix.
+/// user gave it is kept inside the file, encrypted with the photo (see
+/// [encodeMedia]), and in [MediaNames], which lets a folder be listed without
+/// reading every file in it. Files added before that keep the name they were
+/// stored under, `beach.jpg.enc.ttl`, and PhotoPod shows it without the
+/// suffix.
 ///
 /// The alternative — writing the raw bytes under their own name — leaves the
 /// files invisible to the shared file browsers, which list only `.ttl`
@@ -110,16 +116,17 @@ class PodMediaService {
       if (raw.isEmpty || raw.startsWith('.')) continue;
       if (atRoot && isFolder && raw == albumsFolderName) continue;
 
-      // A file is shown under the name the user gave it. One added before
-      // names were kept apart is shown under its stored name, less the
-      // encryption suffix the user never sees. Either way, the extension that
-      // decides which section a file belongs to is the one in that name.
+      // A file or folder is shown under the name the user gave it. One added
+      // before names were kept apart is shown under its stored name, less
+      // the encryption suffix the user never sees. Either way, the extension
+      // that decides which section a file belongs to is the one in that
+      // name.
 
       final path = '$podPath/$raw';
       final storedName = decodeName(raw);
-      final name = isFolder
-          ? storedName
-          : MediaNames.nameOf(path) ?? displayNameOf(storedName);
+      final name =
+          MediaNames.nameOf(path) ??
+          (isFolder ? storedName : displayNameOf(storedName));
       if (!isFolder && kinds != null && !kinds.contains(kindOf(name))) {
         continue;
       }
@@ -133,6 +140,7 @@ class PodMediaService {
           isFolder: isFolder,
           isEncrypted: !isFolder && storedName.endsWith(encryptedSuffix),
           modified: entry.modified,
+          taken: isFolder ? null : MediaNames.takenOf(path),
           size: isFolder ? null : entry.size,
         ),
       );
@@ -141,42 +149,84 @@ class PodMediaService {
   }
 
   /// The bytes of the photo or video [item] holds.
+
+  static Future<Uint8List> readBytes(MediaItem item) async =>
+      (await readMedia(item)).bytes;
+
+  /// The bytes of the photo or video [item] holds, and the name stored
+  /// inside the file with them, if any.
   ///
   /// An encrypted resource is read and decrypted through solidpod, which
-  /// needs the security key to be available first, and its content is base64
-  /// so that binary survives the Turtle envelope. A plain resource is fetched
-  /// directly. A file shared from someone else's Pod is read by its URL, and
-  /// solidpod decrypts it with the key its owner shared along with it.
+  /// needs the security key to be available first; see [encodeMedia] for
+  /// what it holds. A plain resource is fetched directly. A file shared from
+  /// someone else's Pod is read by its URL, and solidpod decrypts it with the
+  /// key its owner shared along with it.
+  ///
+  /// Whatever name is found is remembered: for a shared file in
+  /// [SharedNames], which is how the user comes to see the name its owner
+  /// gave it, and for one of the user's own that [MediaNames] has lost, in
+  /// [MediaNames].
 
-  static Future<Uint8List> readBytes(MediaItem item) async {
-    if (!item.isEncrypted) return _readRaw(item.url);
+  static Future<MediaContent> readMedia(MediaItem item) async {
+    if (!item.isEncrypted) {
+      return (bytes: await _readRaw(item.url), name: null);
+    }
 
     final content = item.isShared
         ? await readPod(item.url, pathType: PathType.absoluteUrl)
         : await readPod(item.path, pathType: PathType.relativeToPod);
 
+    final MediaContent media;
     try {
-      return base64Decode(content.trim());
+      media = decodeMedia(content);
     } on FormatException {
       throw PodMediaException(
         'The contents of "${item.name}" are not in the format PhotoPod '
         'stores media in.',
       );
     }
+
+    final name = media.name;
+    if (name != null) _remember(item, name);
+    return media;
   }
 
-  /// Store [bytes] at Pod-relative [path], as found by [newStoredPath].
+  static void _remember(MediaItem item, String name) {
+    if (item.isShared) {
+      SharedNames.instance.learn(item.url, name);
+      return;
+    }
+    if (MediaNames.nameOf(item.path) == null) {
+      unawaited(
+        MediaNames.set(item.path, name).catchError(
+          (Object e) => debugPrint('PhotoPod: could not restore a name: $e'),
+        ),
+      );
+    }
+  }
+
+  /// Store [bytes] at Pod-relative [path], as found by [newStoredPath], with
+  /// the name the user knows the file by, [name], inside it.
   ///
   /// The file is encrypted and given an access control list, so it shows up
-  /// in the shared file browsers and can be shared with another WebID. The
-  /// caller must have secured the security key first, with SolidUI's
-  /// `getKeyFromUserIfRequired`.
+  /// in the shared file browsers and can be shared with another WebID. Pass
+  /// [overwrite] to replace a file that is already there, as a rename does:
+  /// solidpod then encrypts with the key the file already has, so everyone it
+  /// is shared with can still read it. The caller must have secured the
+  /// security key first, with SolidUI's `getKeyFromUserIfRequired`.
 
   static Future<void> writeMedia({
     required String path,
     required Uint8List bytes,
+    required String name,
+    bool overwrite = false,
   }) async {
-    await writePod(path, base64Encode(bytes), pathType: PathType.relativeToPod);
+    await writePod(
+      path,
+      encodeMedia(name, bytes),
+      overwrite: overwrite,
+      pathType: PathType.relativeToPod,
+    );
   }
 
   /// A Pod-relative path inside [podPath], under a random name, for a new

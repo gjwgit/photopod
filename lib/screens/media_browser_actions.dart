@@ -25,10 +25,20 @@ part of 'media_browser.dart';
 
 /// Selecting items, and everything the toolbar does to them.
 
-/// A file on its way into the Pod: the name it arrived with, and how to read
-/// its bytes, which is all the picker and a desktop drop have in common.
+/// A file on its way into the Pod: the name it arrived with, how to read its
+/// bytes, and how to learn when it was last changed, which is all the picker
+/// and a desktop drop have in common.
 
-typedef _Upload = ({String name, Future<Uint8List> Function() read});
+typedef _Upload = ({
+  String name,
+  Future<Uint8List> Function() read,
+  Future<DateTime> Function() modified,
+});
+
+/// The renditions made of a file before it goes up: a photo's, or the
+/// opening frame of a video.
+
+typedef _Renditions = ({PhotoRenditions? photo, Uint8List? frame});
 
 extension MediaBrowserActions on MediaBrowserState {
   /// The callbacks handed to the toolbar.
@@ -38,7 +48,7 @@ extension MediaBrowserActions on MediaBrowserState {
     onDelete: () => _delete(context),
     onDuplicate: () => _duplicate(context),
     onRename: () => _rename(context),
-    onShare: () => showShareDialog(context, _selectedItems),
+    onShare: () => _share(context),
     onView: () => showViewOptionsDialog(context),
     onPreview: () => _previewFirst(context),
     onGetInfo: () => _getInfo(context),
@@ -48,21 +58,45 @@ extension MediaBrowserActions on MediaBrowserState {
     onCreateAlbum: () => _createAlbum(context, _selectedFiles),
     onRemoveFromAlbum: () => _removeFromAlbum(context),
     onRefresh: () => reload(force: true),
+    onToggleMultiSelect: _toggleMultiSelect,
     onSort: (option) {
       context.read<ViewPrefs>().setSortOption(option);
       updateState(() => _page = 0);
     },
   );
 
+  /// Share the selected items, then read the permission log again so that
+  /// what was just shared carries the two-people mark straight away.
+
+  Future<void> _share(BuildContext context) async {
+    final shared = context.read<SharedWithMe>();
+    await showShareDialog(context, _selectedItems);
+    await shared.load(force: true);
+  }
+
   /// Handle a tap on [item], one of the items in [visible].
   ///
-  /// A plain tap adds the item to the selection or takes it out again, which
-  /// makes multiple selection work the same way with a mouse as with a
-  /// finger. Holding shift selects everything between the last tap and this
-  /// one. Tapping the background clears the selection.
+  /// Normally a tap selects that one item in place of whatever was selected,
+  /// and tapping it again lets it go. With **Select several** on, a tap adds
+  /// the item to the selection or takes it out again, which makes multiple
+  /// selection work the same way with a mouse as with a finger, and holding
+  /// shift selects everything between the last tap and this one. Tapping the
+  /// background clears the selection either way.
 
   void _handleTap(MediaItem item, List<MediaItem> visible) {
     final index = visible.indexOf(item);
+    _lastTapped = item.id;
+
+    if (!_multiSelect) {
+      updateState(() {
+        final only = _selected.length == 1 && _selected.contains(item.id);
+        _selected.clear();
+        if (!only) _selected.add(item.id);
+        if (index >= 0) _anchor = index;
+      });
+      return;
+    }
+
     final extend = HardwareKeyboard.instance.logicalKeysPressed.any(
       (key) =>
           key == LogicalKeyboardKey.shiftLeft ||
@@ -79,6 +113,20 @@ extension MediaBrowserActions on MediaBrowserState {
         if (!_selected.add(item.id)) _selected.remove(item.id);
         if (index >= 0) _anchor = index;
       }
+    });
+  }
+
+  /// Turn **Select several** on or off. Turning it off keeps only the item
+  /// tapped last, so that the selection again holds a single item.
+
+  void _toggleMultiSelect() {
+    updateState(() {
+      _multiSelect = !_multiSelect;
+      if (_multiSelect || _selected.length < 2) return;
+      final last = _lastTapped;
+      final keep = last != null && _selected.contains(last);
+      _selected.clear();
+      if (keep) _selected.add(last);
     });
   }
 
@@ -173,7 +221,12 @@ extension MediaBrowserActions on MediaBrowserState {
     if (picked.isEmpty || !context.mounted) return;
 
     await _upload(context, [
-      for (final file in picked) (name: file.name, read: file.readAsBytes),
+      for (final file in picked)
+        (
+          name: file.name,
+          read: file.readAsBytes,
+          modified: file.xFile.lastModified,
+        ),
     ]);
   }
 
@@ -194,7 +247,11 @@ extension MediaBrowserActions on MediaBrowserState {
     if (files.isNotEmpty) {
       await _upload(context, [
         for (final file in files)
-          (name: file.name, read: () => _readDropped(file)),
+          (
+            name: file.name,
+            read: () => _inDropScope(file, file.readAsBytes),
+            modified: () => _inDropScope(file, file.lastModified),
+          ),
       ]);
     }
 
@@ -216,15 +273,18 @@ extension MediaBrowserActions on MediaBrowserState {
   // scope the drop handed over with it. Elsewhere there is no bookmark, and
   // the file is simply read.
 
-  static Future<Uint8List> _readDropped(DropItem file) async {
+  static Future<T> _inDropScope<T>(
+    DropItem file,
+    Future<T> Function() read,
+  ) async {
     final bookmark = file.extraAppleBookmark;
-    if (bookmark == null || bookmark.isEmpty) return file.readAsBytes();
+    if (bookmark == null || bookmark.isEmpty) return read();
 
     await DesktopDrop.instance.startAccessingSecurityScopedResource(
       bookmark: bookmark,
     );
     try {
-      return await file.readAsBytes();
+      return await read();
     } finally {
       await DesktopDrop.instance.stopAccessingSecurityScopedResource(
         bookmark: bookmark,
@@ -263,16 +323,30 @@ extension MediaBrowserActions on MediaBrowserState {
           taken ??= await PodMediaOps.namesIn(_path);
           final name = PodMediaOps.freeName(safeFileName(file.name), taken);
           final bytes = await file.read();
+
+          // The renditions are made before the file goes up, since making a
+          // photo's is also when its EXIF block is read, and that says when
+          // it was taken. Without one, the time the file was last changed
+          // on this device is the next best thing: the Pod would otherwise
+          // only know when it was uploaded.
+
+          final renditions = await _makeRenditions(name, bytes);
+          final when =
+              renditions.photo?.metadata?.taken ?? await _modifiedOf(file);
           final path = await PodMediaService.newStoredPath(_path, name);
 
           // The name goes first: one whose file never arrives is never
           // matched, while a file without its name would show under the
           // random one.
 
-          await MediaNames.set(path, name);
-          await PodMediaService.writeMedia(path: path, bytes: bytes);
+          await MediaNames.set(path, name, taken: when);
+          await PodMediaService.writeMedia(
+            path: path,
+            bytes: bytes,
+            name: name,
+          );
           taken.add(name);
-          await _addRenditions(path, name, bytes);
+          await _saveRenditions(path, name, renditions);
           if (name != file.name) renamed[file.name] = name;
           added++;
         } on Object catch (e) {
@@ -311,31 +385,58 @@ extension MediaBrowserActions on MediaBrowserState {
     }
   }
 
-  // Make the renditions of the photo or video just added at [path] as [name],
-  // while its [bytes] are still in hand, and store them beside it: the grid
-  // and the preview then never need the original. For a video that is its
-  // opening frame. The file is already safely on the Pod, so renditions that
-  // cannot be made or stored are not counted as a failure; a photo has them
-  // made the first time it is looked at instead, and a video keeps the film
-  // glyph.
+  // When [file] was last changed on this device, or null where that cannot
+  // be learnt. A browser that does not know reports the epoch, which is
+  // treated as not knowing.
 
-  Future<void> _addRenditions(String path, String name, Uint8List bytes) async {
+  static Future<DateTime?> _modifiedOf(_Upload file) async {
+    try {
+      final modified = await file.modified();
+      return modified.millisecondsSinceEpoch <= 0 ? null : modified.toUtc();
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not tell when ${file.name} was changed: $e');
+      return null;
+    }
+  }
+
+  // Make the renditions of the photo or video [name] while its [bytes] are
+  // still in hand, so that the grid and the preview never need the original.
+  // For a video that is its opening frame. Renditions that cannot be made
+  // are not counted as a failure; a photo has them made the first time it is
+  // looked at instead, and a video keeps the film glyph.
+
+  static Future<_Renditions> _makeRenditions(
+    String name,
+    Uint8List bytes,
+  ) async {
     try {
       if (kindOf(name) == MediaKind.video) {
-        final thumbnail = await firstFrameThumbnail(bytes, name);
-        if (thumbnail != null) {
-          await MediaRenditions.saveVideo(path, thumbnail);
-        }
-        return;
+        return (photo: null, frame: await firstFrameThumbnail(bytes, name));
       }
-
-      final renditions = await compute(renderPhoto, (
+      final photo = await compute(renderPhoto, (
         bytes: bytes,
         keepOriginal: isGif(name),
       ));
-      if (renditions != null) {
-        await MediaRenditions.savePhoto(path, renditions);
-      }
+      return (photo: photo, frame: null);
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not make renditions of $name: $e');
+      return (photo: null, frame: null);
+    }
+  }
+
+  // Store [renditions] beside the file just added at [path]. The file is
+  // already safely on the Pod, so a failure here is only logged.
+
+  static Future<void> _saveRenditions(
+    String path,
+    String name,
+    _Renditions renditions,
+  ) async {
+    try {
+      final photo = renditions.photo;
+      final frame = renditions.frame;
+      if (photo != null) await MediaRenditions.savePhoto(path, photo);
+      if (frame != null) await MediaRenditions.saveVideo(path, frame);
     } on Object catch (e) {
       debugPrint('PhotoPod: could not store renditions of $name: $e');
     }

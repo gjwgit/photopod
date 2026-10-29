@@ -53,41 +53,6 @@ final RegExp _unsafeCharacters = RegExp(r"[^A-Za-z0-9\-_.!~'()]");
 bool isSafeResourceName(String name) =>
     name.isNotEmpty && !_unsafeCharacters.hasMatch(name);
 
-/// [name] with every character that would have to be escaped replaced by an
-/// underscore, so that the name survives a trip through a URL unchanged.
-///
-/// A run of such characters becomes a single underscore rather than one each,
-/// so `holiday #1 (50%).jpg` reads as `holiday_1_(50_).jpg` rather than as a
-/// row of underscores. The full stops that separate the extension are in the
-/// safe set, so the extension always survives and the file stays recognisable
-/// as a photo or a video.
-
-String safeResourceName(String name) {
-  final replaced = name
-      .replaceAll(_unsafeCharacters, '_')
-      .replaceAll(RegExp('_+'), '_');
-
-  // Leading and trailing underscores carry no information.
-
-  final trimmed = replaced.replaceAll(RegExp(r'^_+|_+$'), '');
-
-  // A name written entirely in a non-Latin script is left with nothing in
-  // front of its extension, and a resource whose name begins with a full stop
-  // is hidden. Such a name is given a stem, while a name that began with a
-  // full stop of its own accord is left alone.
-
-  if (trimmed.isEmpty) return 'file';
-  return trimmed.startsWith('.') && !name.startsWith('.')
-      ? 'file$trimmed'
-      : trimmed;
-}
-
-/// The single character in [name] that keeps it from being used as it stands,
-/// or null when there is none.
-
-String? firstUnsafeCharacter(String name) =>
-    _unsafeCharacters.firstMatch(name)?.group(0);
-
 /// The first part of [podPath] that PhotoPod could not write into, or null
 /// when the whole path is usable.
 ///

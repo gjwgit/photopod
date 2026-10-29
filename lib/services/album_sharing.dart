@@ -48,9 +48,12 @@ import 'package:solidpod/solidpod.dart'
         turtleToTripleMap;
 
 import 'package:photopod/services/encrypted_json_file.dart';
+import 'package:photopod/services/media_names.dart' show isRandomStoredName;
 import 'package:photopod/services/pod_keys.dart';
+import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 
+part 'album_sharing_access.dart';
 part 'album_sharing_plan.dart';
 
 /// The file, in the PhotoPod data folder, that records what album sharing
@@ -96,6 +99,10 @@ class AlbumSharing extends ChangeNotifier {
 
   Map<String, ShareRecipient> recipientsOf(String album) =>
       Map.unmodifiable(_recipients[album] ?? const {});
+
+  /// The Pod-relative paths of every file album sharing has given access to.
+
+  Iterable<String> get grantedPaths => _grants.keys;
 
   /// Read the record of album sharing from the Pod, once.
 
@@ -204,8 +211,9 @@ class AlbumSharing extends ChangeNotifier {
             _grants.remove(change.path);
           }
         } else {
+          if (change.current == null) await _ensureNamedInside(change.path);
           final prior =
-              change.current?.prior ?? await _modesInAcl(url, change.key);
+              change.current?.prior ?? await _modesInAclOf(url, change.key);
           final target = {...prior, ...change.modes};
           if (change.current != null || !prior.containsAll(change.modes)) {
             await _grant(url, change.key, change.type, target, me);
@@ -358,6 +366,39 @@ class AlbumSharing extends ChangeNotifier {
     await _save();
   }
 
+  /// Follow files that have moved, so that what album sharing gave them is
+  /// still known, and taken back, at their new paths. [moves] maps each old
+  /// Pod-relative path to its new one; access itself is carried across by
+  /// [carryAccess].
+
+  Future<void> retarget(Map<String, String> moves) async {
+    if (moves.isEmpty) return;
+    await load();
+    final moved = <String, Map<String, AlbumGrant>>{};
+    for (final path in _grants.keys.toList()) {
+      final target = moves[path];
+      if (target != null) moved[target] = _grants.remove(path)!;
+    }
+    if (moved.isEmpty) return;
+    _grants.addAll(moved);
+    await _save();
+  }
+
+  /// Move what is recorded about the album called [from] to the name [to],
+  /// for an album that has been renamed. Its file does not move, so it stays
+  /// shared with everyone it was.
+
+  Future<void> renameAlbum(String from, String to) async {
+    await load();
+    final recipients = _recipients.remove(from);
+    final file = _files.remove(from);
+    if (recipients == null && file == null) return;
+    if (recipients != null) _recipients[to] = recipients;
+    if (file != null) _files[to] = file;
+    await _save();
+    notifyListeners();
+  }
+
   // Take away what album sharing gave, leaving the recipient with whatever
   // they had before it.
 
@@ -384,7 +425,7 @@ class AlbumSharing extends ChangeNotifier {
       fileName: url,
       permissionList: modes.toList(),
       recipientType: type,
-      recipientWebIdList: isGroup ? await _groupMembers(key) : [key],
+      recipientWebIdList: isGroup ? await _groupMembersOf(key) : [key],
       ownerWebId: me,
       granterWebId: me,
       groupName: isGroup ? _groupName(key) : null,
@@ -416,45 +457,6 @@ class AlbumSharing extends ChangeNotifier {
     if (status != SolidFunctionCallStatus.success) {
       throw Exception('the Pod did not accept the change ($status)');
     }
-  }
-
-  // The access [key] already has to the file at [url], which is nothing
-  // when the file has no access list of its own yet.
-
-  static Future<Set<String>> _modesInAcl(String url, String key) async {
-    try {
-      final permissions = await readPermission(fileName: url, isFile: true);
-      final detail = permissions[key];
-      return detail is Map ? _modes(detail[permStr]) : <String>{};
-    } on Object {
-      return <String>{};
-    }
-  }
-
-  // A group's members are listed in the group's own file in the data folder,
-  // which is where solidpod put it when the group was first shared with.
-
-  static Future<List<String>> _groupMembers(String key) async {
-    final path = key.contains('://') ? key : '${await getDataDirPath()}/$key';
-    final content = await readPod(
-      path,
-      pathType: key.contains('://')
-          ? PathType.absoluteUrl
-          : PathType.relativeToPod,
-    );
-    final members = <String>{};
-    for (final predicates in turtleToTripleMap(content).values) {
-      for (final entry in predicates.entries) {
-        if (!entry.key.endsWith('hasMember')) continue;
-        final value = entry.value;
-        if (value is Iterable) {
-          members.addAll(value.map((each) => '$each'));
-        } else if (value != null) {
-          members.add('$value');
-        }
-      }
-    }
-    return members.toList();
   }
 
   static String _groupName(String key) {

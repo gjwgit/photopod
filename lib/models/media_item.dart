@@ -80,6 +80,13 @@ class MediaItem {
 
   final DateTime? modified;
 
+  /// When the photo or video was taken, from its EXIF block, or failing that
+  /// when the file itself was last changed before it was added to the Pod.
+  /// Absent for folders, for files added before PhotoPod kept this, and for
+  /// files shared by someone else.
+
+  final DateTime? taken;
+
   /// Size in bytes, absent for folders and for servers that do not publish it.
 
   final int? size;
@@ -102,6 +109,7 @@ class MediaItem {
     required this.isFolder,
     this.isEncrypted = false,
     this.modified,
+    this.taken,
     this.size,
     this.sharedBy,
   });
@@ -123,6 +131,29 @@ class MediaItem {
   /// Whether this file is a video PhotoPod can play.
 
   bool get isVideo => kind == MediaKind.video;
+
+  /// The date the item belongs under: when it was [taken] where that is
+  /// known, and otherwise when the server says it was [modified].
+
+  DateTime? get date => taken ?? modified;
+
+  /// This item with [taken] recorded, or the item itself when there is
+  /// nothing new to record.
+
+  MediaItem withTaken(DateTime? taken) => taken == null || taken == this.taken
+      ? this
+      : MediaItem(
+          name: name,
+          rawName: rawName,
+          path: path,
+          url: url,
+          isFolder: isFolder,
+          isEncrypted: isEncrypted,
+          modified: modified,
+          taken: taken,
+          size: size,
+          sharedBy: sharedBy,
+        );
 
   /// A stable identity for selection tracking. The URL is unique within a Pod
   /// and survives re-sorting and re-listing.
