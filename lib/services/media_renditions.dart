@@ -33,6 +33,7 @@ import 'package:solidpod/solidpod.dart';
 
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
+import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/pod_media_service.dart';
 
 /// The folder, at the top of the album, that holds every rendition.
@@ -120,9 +121,12 @@ class PhotoRenditions {
 /// downloading fetches the original. A video keeps just the small one, the
 /// opening frame, since playing it needs the whole file anyway.
 ///
-/// Every rendition lives in [thumbnailsFolderName], named after the item's
-/// path within the album, so that a whole folder's renditions can be found
-/// and removed with a single listing when the folder is deleted. They are
+/// Every rendition lives in [thumbnailsFolderName], named after the random
+/// part of the name its item is stored under, `3f9c…e1.small.enc.ttl`, so
+/// that the name says nothing about the photo and stays the same wherever the
+/// photo's folder goes. An item from before random names has its renditions
+/// named after its path within the album instead, until [StorageUpgrade]
+/// moves it. They are
 /// encrypted, since a thumbnail of a private photo is every bit as private,
 /// but under the one key of the folder they sit in rather than a key each:
 /// solidpod rewrites its whole key file whenever a key is added, and doing
@@ -211,12 +215,17 @@ class MediaRenditions {
   }
 
   /// Give the item copied from [fromPath] to [toPath] the same renditions, so
-  /// that a duplicated or renamed photo or video does not lose them.
+  /// that a duplicated or renamed photo or video does not lose them. An item
+  /// that kept its stored name, inside a folder that moved, keeps its
+  /// renditions as they are.
   ///
   /// The renditions are only a convenience, so nothing that goes wrong here
   /// is allowed to fail the copy itself.
 
   static Future<void> copy(String fromPath, String toPath) async {
+    final suffix = RenditionLevel.small.suffix;
+    final from = await _pathFor(fromPath, suffix);
+    if (from != null && from == await _pathFor(toPath, suffix)) return;
     try {
       final small =
           await _readPath(fromPath, RenditionLevel.small) ??
@@ -232,14 +241,19 @@ class MediaRenditions {
 
   /// Remove the renditions belonging to [items], which are being deleted:
   /// those of each photo and video, and those of everything inside each
-  /// folder.
+  /// folder. The renditions of a file stored under a random name are filed
+  /// under that name rather than its folder, so the files inside the folders
+  /// have to be named in [inside], found before the folders went.
   ///
   /// The renditions folder is listed once and matched against the items, so
   /// a file that never had renditions costs nothing. Like [copy], this never
   /// fails the operation it tidies up after.
 
-  static Future<void> forget(Iterable<MediaItem> items) async {
-    final files = <String>{};
+  static Future<void> forget(
+    Iterable<MediaItem> items, {
+    Iterable<String> inside = const [],
+  }) async {
+    final files = <String>{...inside};
     final folders = <String>[];
     for (final item in items) {
       if (item.isShared) continue;
@@ -250,6 +264,10 @@ class MediaRenditions {
       }
     }
     if (files.isEmpty && folders.isEmpty) return;
+    final keys = {
+      for (final path in files)
+        ?randomKeyOf(path.substring(path.lastIndexOf('/') + 1)),
+    };
 
     try {
       final root = await PodMediaService.rootPath();
@@ -263,27 +281,86 @@ class MediaRenditions {
       for (final rendition in await PodMediaService.listFolder(folderPath)) {
         if (rendition.isFolder) continue;
         final owner = _itemPathOf(root, rendition.rawName);
-        if (owner == null) continue;
-        if (!files.contains(owner) &&
-            !folders.any((folder) => owner.startsWith(folder))) {
-          continue;
-        }
-
-        try {
-          // Only the first video thumbnails had a key of their own to remove
-          // along with them; the rest share the folder's.
-
-          if (rendition.rawName.endsWith(_legacySuffix)) {
-            await deleteFile(fileUrl: rendition.url);
-          } else {
-            await deleteResource(rendition.url, ResourceContentType.any);
-          }
-        } on Object catch (e) {
-          debugPrint('PhotoPod: could not remove a rendition of $owner: $e');
-        }
+        final ours =
+            keys.contains(_keyOf(rendition.rawName)) ||
+            owner != null &&
+                (files.contains(owner) ||
+                    folders.any((folder) => owner.startsWith(folder)));
+        if (!ours) continue;
+        await _remove(rendition);
       }
     } on Object catch (e) {
       debugPrint('PhotoPod: could not tidy up renditions: $e');
+    }
+  }
+
+  /// Refile every rendition still named after its item's path under the
+  /// random name its item now has, returning how many could not be dealt
+  /// with. A path names the folders and, for an older file, the photo
+  /// itself.
+  ///
+  /// [StorageUpgrade] calls this twice: before moving anything, with
+  /// [removeOthers] false, so that the renditions of files that keep their
+  /// names follow them when their folder moves; and once every item has a
+  /// random name, to remove whatever is left, which belongs to nothing.
+
+  static Future<int> refileByPath({bool removeOthers = true}) async {
+    final root = await PodMediaService.rootPath();
+    final folderPath = '$root/$thumbnailsFolderName';
+    if (!await PodMediaService.folderExists(
+      await PodMediaService.folderUrl(folderPath),
+    )) {
+      return 0;
+    }
+
+    var failed = 0;
+    for (final rendition in await PodMediaService.listFolder(folderPath)) {
+      if (rendition.isFolder) continue;
+      final owner = _itemPathOf(root, rendition.rawName);
+      if (owner == null) continue;
+      final key = randomKeyOf(owner.substring(owner.lastIndexOf('/') + 1));
+      if (key == null && !removeOthers) continue;
+      try {
+        if (key != null) {
+          final suffix = rendition.rawName.substring(
+            rendition.rawName.indexOf('.'),
+          );
+          final level = RenditionLevel.values
+              .where((each) => each.suffix == suffix)
+              .firstOrNull;
+          final content = await readPod(
+            rendition.path,
+            pathType: PathType.relativeToPod,
+          );
+          await _write(owner, level ?? RenditionLevel.small, content);
+        }
+        await _remove(rendition);
+      } on Object catch (e) {
+        failed++;
+        debugPrint('PhotoPod: could not refile ${rendition.rawName}: $e');
+      }
+    }
+    return failed;
+  }
+
+  /// Whether every rendition is known to be filed under a random name, so
+  /// that a rendition missing under one need not be looked for under the
+  /// path of its item as well.
+
+  static bool refiled = false;
+
+  // Only the first video thumbnails had a key of their own to remove along
+  // with them; the rest share the folder's.
+
+  static Future<void> _remove(MediaItem rendition) async {
+    try {
+      if (rendition.rawName.endsWith(_legacySuffix)) {
+        await deleteFile(fileUrl: rendition.url);
+      } else {
+        await deleteResource(rendition.url, ResourceContentType.any);
+      }
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not remove ${rendition.rawName}: $e');
     }
   }
 
@@ -329,14 +406,22 @@ class MediaRenditions {
     String itemPath,
     RenditionLevel? level,
   ) async {
-    final path = await _pathFor(itemPath, level?.suffix ?? _legacySuffix);
+    final suffix = level?.suffix ?? _legacySuffix;
+    final path = await _pathFor(itemPath, suffix);
     if (path == null) return null;
 
-    try {
-      return await readPod(path, pathType: PathType.relativeToPod);
-    } on ResourceNotExistException {
-      return null;
+    // A rendition made before renditions were filed under random names is
+    // still under its item's path until [refileByPath] has run.
+
+    final fallback = refiled ? null : await _pathByItemPath(itemPath, suffix);
+    for (final each in {path, ?fallback}) {
+      try {
+        return await readPod(each, pathType: PathType.relativeToPod);
+      } on ResourceNotExistException {
+        continue;
+      }
     }
+    return null;
   }
 
   static Future<void> _write(
@@ -390,14 +475,28 @@ class MediaRenditions {
   }
 
   // The Pod-relative path of the rendition ending in [suffix] for the item at
-  // [itemPath], or null when the item sits outside the album or too deep
-  // within it.
+  // [itemPath], or null when the item sits outside the album, or, for an item
+  // from before random names, too deep within it.
   //
-  // The key is the item's path within the album in URL-safe base64, which
-  // uses only characters a resource name can carry unescaped, holds no full
-  // stop, and can be decoded again to find the item a rendition belongs to.
+  // An item stored under a random name has its renditions filed under the
+  // random part of that name, which is unique across the whole album and
+  // says nothing about where the item is or what it shows.
 
   static Future<String?> _pathFor(String itemPath, String suffix) async {
+    final key = randomKeyOf(itemPath.substring(itemPath.lastIndexOf('/') + 1));
+    if (key == null) return _pathByItemPath(itemPath, suffix);
+
+    final root = await PodMediaService.rootPath();
+    if (!itemPath.startsWith('$root/')) return null;
+    return '$root/$thumbnailsFolderName/$key$suffix';
+  }
+
+  // The way renditions were named before: the item's path within the album
+  // in URL-safe base64, which uses only characters a resource name can carry
+  // unescaped, holds no full stop, and can be decoded again to find the item
+  // a rendition belongs to.
+
+  static Future<String?> _pathByItemPath(String itemPath, String suffix) async {
     final root = await PodMediaService.rootPath();
     if (!itemPath.startsWith('$root/')) return null;
 
@@ -408,8 +507,15 @@ class MediaRenditions {
     return '$root/$thumbnailsFolderName/$key$suffix';
   }
 
-  // The Pod-relative path of the item whose rendition is stored as [name],
-  // or null when [name] is not one of ours.
+  // The part of the rendition name [name] before its suffix.
+
+  static String _keyOf(String name) {
+    final dot = name.indexOf('.');
+    return dot <= 0 ? name : name.substring(0, dot);
+  }
+
+  // The Pod-relative path of the item whose rendition is stored as [name]
+  // under the item's path, or null when [name] is not one of those.
 
   static String? _itemPathOf(String root, String name) {
     final dot = name.indexOf('.');
@@ -421,6 +527,7 @@ class MediaRenditions {
     }
 
     final key = name.substring(0, dot);
+    if (isRandomFolderName(key)) return null;
     try {
       return '$root/${utf8.decode(base64Url.decode(base64Url.normalize(key)))}';
     } on FormatException {

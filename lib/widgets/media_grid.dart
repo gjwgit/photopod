@@ -48,6 +48,8 @@ class MediaGrid extends StatelessWidget {
     required this.onTap,
     required this.onActivate,
     required this.onToggleFavourite,
+    this.isSharedOut = _never,
+    this.multiSelect = false,
     this.tileExtent = 140,
   });
 
@@ -75,6 +77,15 @@ class MediaGrid extends StatelessWidget {
 
   final void Function(MediaItem) onToggleFavourite;
 
+  /// Whether one of the user's own items is shared with someone else.
+
+  final bool Function(MediaItem) isSharedOut;
+
+  /// Whether several items can be selected at once, in which case each
+  /// selected tile is ticked as well as outlined.
+
+  final bool multiSelect;
+
   /// The widest a tile may be, from the user's View preferences.
 
   final double tileExtent;
@@ -90,9 +101,12 @@ class MediaGrid extends StatelessWidget {
     itemCount: items.length,
     itemBuilder: (context, index) {
       final item = items[index];
+      final selected = isSelected(item);
       return MediaTile(
         item: item,
-        selected: isSelected(item),
+        selected: selected,
+        sharedOut: isSharedOut(item),
+        showCheck: multiSelect && selected,
         favourite: isFavourite(item),
         onTap: () => onTap(item),
         onActivate: () => onActivate(item),
@@ -106,10 +120,12 @@ class MediaGrid extends StatelessWidget {
 ///
 /// The picture fills the tile edge to edge and is cropped to the square, as
 /// every photo application does, so the grid reads as a grid rather than as a
-/// row of differently shaped pictures. Selection is shown by an outline and a
-/// tick, and the heart appears on hover, when the item is already a
-/// favourite, or when the tile is selected. Anything shared with the user
-/// carries a two-people mark beside the heart. A tile shown inside one of the
+/// row of differently shaped pictures. Selection is shown by an outline, and
+/// by a tick as well when several items can be selected at once. The heart
+/// appears on hover, when the item is already a favourite, or when the tile
+/// is selected. Anything shared with the user, and anything of the user's own
+/// they have shared with someone, carries a two-people mark beside the
+/// heart. A tile shown inside one of the
 /// user's own albums also offers, on hover or when selected, to take the item
 /// out of that album.
 
@@ -123,6 +139,8 @@ class MediaTile extends StatefulWidget {
     required this.onActivate,
     required this.onToggleFavourite,
     this.onRemoveFromAlbum,
+    this.sharedOut = false,
+    this.showCheck = false,
   });
 
   /// The folder or file this tile stands for.
@@ -153,6 +171,16 @@ class MediaTile extends StatefulWidget {
   /// album has one, so the button appears only when this is set.
 
   final VoidCallback? onRemoveFromAlbum;
+
+  /// Whether the item is one of the user's own that they have shared with
+  /// someone.
+
+  final bool sharedOut;
+
+  /// Whether the tile carries a tick, which it does only while several items
+  /// can be selected at once.
+
+  final bool showCheck;
 
   @override
   State<MediaTile> createState() => _MediaTileState();
@@ -205,7 +233,7 @@ class _MediaTileState extends State<MediaTile> {
               if (item.isVideo)
                 const Positioned(left: 4, bottom: 4, child: _VideoBadge()),
 
-              if (widget.selected)
+              if (widget.showCheck)
                 Positioned(
                   top: 4,
                   left: 4,
@@ -218,9 +246,10 @@ class _MediaTileState extends State<MediaTile> {
 
               // Something shared with the user always says so, beside the
               // heart, so that it is never mistaken for one of the user's own
-              // photos.
+              // photos, and so does a photo the user has shared.
               if (!item.isFolder &&
                   (item.isShared ||
+                      widget.sharedOut ||
                       widget.favourite ||
                       _hovering ||
                       widget.selected))
@@ -230,7 +259,10 @@ class _MediaTileState extends State<MediaTile> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      if (item.isShared) SharedBadge(owner: item.sharedBy!),
+                      if (item.isShared)
+                        SharedBadge(owner: item.sharedBy!)
+                      else if (widget.sharedOut)
+                        const SharedBadge(),
                       if (widget.favourite || _hovering || widget.selected)
                         _HeartButton(
                           favourite: widget.favourite,
@@ -316,15 +348,17 @@ class _HeartButton extends StatelessWidget {
   );
 }
 
-/// The mark on anything someone else has shared with the user: two people,
-/// with the owner's name a hover away.
+/// The mark on anything someone else has shared with the user, and on
+/// anything of the user's own they have shared: two people, with who shared
+/// it a hover away.
 
 class SharedBadge extends StatelessWidget {
-  const SharedBadge({super.key, required this.owner, this.size = 18});
+  const SharedBadge({super.key, this.owner, this.size = 18});
 
-  /// The WebID of the person who shared it.
+  /// The WebID of the person who shared it with the user, or null for one of
+  /// the user's own items that they have shared.
 
-  final String owner;
+  final String? owner;
 
   /// How big the icon is drawn.
 
@@ -332,9 +366,11 @@ class SharedBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: 'Shared with you by ${webIdLabel(owner)}',
+    label: sharedLabel(owner),
     child: Tooltip(
-      message: 'Shared with you by ${webIdLabel(owner)}\n$owner',
+      message: owner == null
+          ? 'Shared by you'
+          : 'Shared with you by ${webIdLabel(owner!)}\n$owner',
       child: Padding(
         padding: const EdgeInsets.all(4),
         child: Icon(
@@ -448,3 +484,11 @@ class _Badge extends StatelessWidget {
     ),
   );
 }
+
+/// What the two-people mark says: who shared an item with the user, or, for
+/// [owner] null, that the user shared it.
+
+String sharedLabel(String? owner) =>
+    owner == null ? 'Shared by you' : 'Shared with you by ${webIdLabel(owner)}';
+
+bool _never(MediaItem item) => false;

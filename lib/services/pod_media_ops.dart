@@ -27,19 +27,19 @@ import 'package:solidpod/solidpod.dart';
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/media_envelope.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
+import 'package:photopod/services/pod_media_moves.dart';
 import 'package:photopod/services/pod_media_service.dart';
-import 'package:photopod/utils/resource_name.dart';
 
 /// The operations the toolbar performs on whole items rather than on bytes.
 ///
 /// Solid has no server-side copy or rename. A file is stored under a random
-/// name and known to the user by the name [MediaNames] keeps for it, so
-/// renaming a file only changes that table. A copy is a read and a write, and
-/// a folder, whose name is its name on the server, is renamed by copying
-/// everything inside it and removing the original, which is why renaming a
-/// folder can take a little while.
+/// name and known to the user by the name kept inside it and in
+/// [MediaNames], so renaming a file rewrites it in place. A folder is stored
+/// under a random name too, and renaming it changes only [MediaNames]. A copy
+/// is a read and a write.
 
 class PodMediaOps {
   const PodMediaOps._();
@@ -87,34 +87,69 @@ class PodMediaOps {
     }
   }
 
-  /// Rename [item] to [newName] within its own folder, returning the
-  /// Pod-relative path it now has.
+  /// Rename [item] to [newName] within its own folder, returning every move
+  /// that made, keyed by the old Pod-relative path: nothing, when the item
+  /// kept its path.
   ///
-  /// A file keeps its path, since only its entry in [MediaNames] changes. A
-  /// folder is moved to a path of its new name.
+  /// A file or folder stored under a random name keeps it: the new name is
+  /// written into [MediaNames], and for a file into the file itself, which is
+  /// what lets everyone it is shared with see it. One still stored under the
+  /// name it was added with is moved to a random name instead; see
+  /// [PodMediaMoves].
 
-  static Future<String> rename(MediaItem item, String newName) async {
+  static Future<Map<String, String>> rename(
+    MediaItem item,
+    String newName,
+  ) async {
     final parent = item.parentPath;
+    final taken =
+        (item.isFolder ? await folderNamesIn(parent) : await namesIn(parent))
+          ..remove(item.name);
+    if (taken.contains(newName)) throw _clash(newName);
 
-    if (!item.isFolder) {
-      final names = await namesIn(parent)
-        ..remove(item.name);
-      if (names.contains(newName)) throw _clash(newName);
+    if (item.isFolder) {
+      if (!isRandomFolderName(item.rawName)) {
+        return PodMediaMoves.moveFolder(item, name: newName);
+      }
       await MediaNames.set(item.path, newName);
-      return item.path;
+      return const {};
     }
 
-    final parentUrl = await PodMediaService.folderUrl(parent);
-    final encoded = safeResourceName(newName);
-    if (await PodMediaService.folderExists('$parentUrl$encoded/')) {
-      throw _clash(newName);
+    if (!isRandomStoredName(item.rawName)) {
+      return {item.path: await PodMediaMoves.moveFile(item, name: newName)};
     }
 
-    final newPath = '$parent/$encoded';
-    await _copyFolder(item, newPath);
-    await MediaNames.copy({item.path: newPath});
-    await _delete(item);
-    return newPath;
+    // The file is written again with the new name in it, under the key it
+    // already has, so that everyone it is shared with can still read it.
+
+    final bytes = await PodMediaService.readBytes(item);
+    await PodMediaService.writeMedia(
+      path: item.path,
+      bytes: bytes,
+      name: newName,
+      overwrite: true,
+    );
+    await MediaNames.set(item.path, newName);
+    return const {};
+  }
+
+  /// Make sure the file at Pod-relative [path] carries its name inside it,
+  /// as everything written before names were kept there does not, so that
+  /// whoever it is about to be shared with sees the name rather than the
+  /// random one it is stored under.
+
+  static Future<void> ensureNameInside(String path) async {
+    final content = await readPod(path, pathType: PathType.relativeToPod);
+    final media = decodeMedia(content);
+    if (media.name != null) return;
+
+    final stored = path.substring(path.lastIndexOf('/') + 1);
+    await PodMediaService.writeMedia(
+      path: path,
+      bytes: media.bytes,
+      name: MediaNames.nameOf(path) ?? displayNameOf(stored),
+      overwrite: true,
+    );
   }
 
   /// Delete [items], which all sit in [parentPodPath]. Folders are removed
@@ -125,6 +160,17 @@ class PodMediaOps {
     String parentPodPath,
     List<MediaItem> items,
   ) async {
+    // The renditions of a file are filed under its own random name rather
+    // than its folder, so what is inside each folder is found while it is
+    // still there to be listed.
+
+    final inside = <String>[];
+    for (final item in items) {
+      if (item.isFolder && !item.isShared) {
+        inside.addAll(await filesUnder(item));
+      }
+    }
+
     final names = storedNamesOf(items);
     final result = await deleteItems(
       parentPath: parentPodPath,
@@ -134,9 +180,23 @@ class PodMediaOps {
     final gone = items
         .where((item) => !result.failed.containsKey(item.rawName))
         .toList();
-    await MediaRenditions.forget(gone);
+    await MediaRenditions.forget(gone, inside: inside);
     await MediaNames.forget(gone.map((item) => item.path));
     return result;
+  }
+
+  /// The Pod-relative path of every file inside [folder], however deep.
+
+  static Future<List<String>> filesUnder(MediaItem folder) async {
+    final found = <String>[];
+    for (final child in await PodMediaService.listFolder(folder.path)) {
+      if (child.isFolder) {
+        found.addAll(await filesUnder(child));
+      } else {
+        found.add(child.path);
+      }
+    }
+    return found;
   }
 
   /// The names [items] carry ON THE SERVER, split into files and folders.
@@ -185,6 +245,13 @@ class PodMediaOps {
       if (!each.isFolder) each.name,
   };
 
+  /// The names the user sees for the folders in [podPath].
+
+  static Future<Set<String>> folderNamesIn(String podPath) async => {
+    for (final each in await PodMediaService.listFolder(podPath))
+      if (each.isFolder) each.name,
+  };
+
   static PodMediaException _clash(String name) => PodMediaException(
     'Something called "$name" already exists in this folder.',
   );
@@ -204,60 +271,8 @@ class PodMediaOps {
     final bytes = await PodMediaService.readBytes(item);
     final path = await PodMediaService.newStoredPath(destPodPath, name);
     await MediaNames.set(path, name, taken: item.taken);
-    await PodMediaService.writeMedia(path: path, bytes: bytes);
+    await PodMediaService.writeMedia(path: path, bytes: bytes, name: name);
     await MediaRenditions.copy(item.path, path);
     return path;
-  }
-
-  // Recreate the folder [item] at [destPath] with everything inside it,
-  // walking one level at a time so that arbitrarily deep albums copy
-  // correctly.
-  //
-  // Each file keeps the name it is stored under, so its name in [MediaNames]
-  // follows it simply by the folder's path being rewritten. A plain file left
-  // by an earlier build is encrypted on the way, as everything PhotoPod
-  // writes is.
-
-  static Future<void> _copyFolder(MediaItem item, String destPath) async {
-    await PodMediaService.ensureFolder(
-      await PodMediaService.folderUrl(destPath),
-    );
-
-    for (final child in await PodMediaService.listFolder(item.path)) {
-      final stored = child.isEncrypted
-          ? child.rawName
-          : storedNameOf(child.rawName);
-      final childPath = '$destPath/${child.isFolder ? child.rawName : stored}';
-
-      if (child.isFolder) {
-        await _copyFolder(child, childPath);
-        continue;
-      }
-      await PodMediaService.writeMedia(
-        path: childPath,
-        bytes: await PodMediaService.readBytes(child),
-      );
-      await MediaRenditions.copy(child.path, childPath);
-
-      // The path of a plain file changes by more than its folder, so a name
-      // the user gave it, and the date it belongs under, are carried across
-      // by hand.
-
-      final name = MediaNames.nameOf(child.path);
-      if (stored != child.rawName && name != null) {
-        await MediaNames.set(childPath, name, taken: child.taken);
-      }
-    }
-  }
-
-  // Remove a single item, recursing into folders.
-
-  static Future<void> _delete(MediaItem item) async {
-    final result = await deleteAll(item.parentPath, [item]);
-    if (result.hasFailures) {
-      throw PodMediaException(
-        'Could not remove "${item.name}": ${result.failed.values.first}',
-      );
-    }
   }
 }

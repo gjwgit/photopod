@@ -167,6 +167,7 @@ extension MediaBrowserBody on MediaBrowserState {
       albumNames: context.read<Albums>().names,
       canRemoveFromAlbum: _inOwnAlbum && files.isNotEmpty,
       hasShared: _selectedItems.any((item) => item.isShared),
+      multiSelect: _multiSelect,
     );
 
     return LayoutBuilder(
@@ -307,7 +308,10 @@ extension MediaBrowserBody on MediaBrowserState {
     }
 
     // Tapping the background is how the selection is cleared, which matters
-    // because a tap on an item toggles rather than replaces the selection.
+    // most with Select several on, when a tap on an item toggles rather than
+    // replaces the selection.
+
+    final shared = context.read<SharedWithMe>();
 
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -322,6 +326,8 @@ extension MediaBrowserBody on MediaBrowserState {
               tileExtent: prefs.tileSize.extent,
               isSelected: (item) => _selected.contains(item.id),
               isFavourite: favourites.contains,
+              isSharedOut: (item) => shared.isSharedOut(item.url),
+              multiSelect: _multiSelect,
               onTap: (item) => _handleTap(item, visible),
               onActivate: _handleActivate,
               onToggleFavourite: (item) => _toggleFavourite(context, [item]),
@@ -330,6 +336,8 @@ extension MediaBrowserBody on MediaBrowserState {
               items: visible,
               isSelected: (item) => _selected.contains(item.id),
               isFavourite: favourites.contains,
+              isSharedOut: (item) => shared.isSharedOut(item.url),
+              multiSelect: _multiSelect,
               onTap: (item) => _handleTap(item, visible),
               onActivate: _handleActivate,
               onToggleFavourite: (item) => _toggleFavourite(context, [item]),
@@ -365,6 +373,8 @@ extension MediaBrowserBody on MediaBrowserState {
       tileExtent: prefs.tileSize.extent,
       isSelected: (item) => _selected.contains(item.id),
       isFavourite: favourites.contains,
+      isSharedOut: (item) => context.read<SharedWithMe>().isSharedOut(item.url),
+      multiSelect: _multiSelect,
       onTap: (item) => _handleTap(item, all),
       onActivate: _handleActivate,
       onToggleFavourite: (item) => _toggleFavourite(context, [item]),
@@ -386,6 +396,8 @@ extension MediaBrowserBody on MediaBrowserState {
       isSelected: (album, item) =>
           album == _selectedAlbum && _selected.contains(item.id),
       isFavourite: favourites.contains,
+      isSharedOut: (item) => context.read<SharedWithMe>().isSharedOut(item.url),
+      multiSelect: _multiSelect,
       onTap: (album, item) => _handleAlbumTap(
         album,
         item,

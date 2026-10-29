@@ -112,6 +112,8 @@ class AlbumList extends StatelessWidget {
     required this.onRename,
     required this.onDelete,
     required this.onDecline,
+    this.isSharedOut,
+    this.multiSelect = false,
   });
 
   /// The albums to list, in the order they are shown.
@@ -130,6 +132,15 @@ class AlbumList extends StatelessWidget {
   /// Whether an item carries a heart.
 
   final bool Function(MediaItem item) isFavourite;
+
+  /// Whether one of the user's own items is shared with someone else.
+
+  final bool Function(MediaItem item)? isSharedOut;
+
+  /// Whether several items can be selected at once, in which case each
+  /// selected tile is ticked as well as outlined.
+
+  final bool multiSelect;
 
   /// Called on a single tap on [item] in the album whose [AlbumEntry.id] is
   /// [album].
@@ -265,6 +276,9 @@ class _AlbumTile extends StatelessWidget {
                   child: MediaTile(
                     item: item,
                     selected: list.isSelected(album.id, item),
+                    sharedOut: list.isSharedOut?.call(item) ?? false,
+                    showCheck:
+                        list.multiSelect && list.isSelected(album.id, item),
                     favourite: list.isFavourite(item),
                     onTap: () => list.onTap(album.id, item),
                     onActivate: () => list.onActivate(album.id, item),

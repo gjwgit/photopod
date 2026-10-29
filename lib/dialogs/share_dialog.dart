@@ -25,12 +25,16 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:solidpod/solidpod.dart' show getWebId;
-import 'package:solidui/solidui.dart' show GrantPermissionUi;
+import 'package:solidpod/solidpod.dart' show KeyManager, getWebId;
+import 'package:solidui/solidui.dart'
+    show GrantPermissionUi, getKeyFromUserIfRequired;
 
 import 'package:photopod/constants/app.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/media_names.dart' show isRandomStoredName;
+import 'package:photopod/services/pod_keys.dart';
+import 'package:photopod/services/pod_media_ops.dart';
 
 /// Share [items] with other Solid users.
 ///
@@ -65,6 +69,15 @@ Future<void> showShareDialog(
 
   final isFile = folders == 0;
   final noun = isFile ? 'file' : 'folder';
+
+  // A file written before names were kept inside files is given its name
+  // now, so that the people it is shared with see that rather than the
+  // random name it is stored under.
+
+  if (isFile) {
+    await _ensureNamesInside(context, items);
+    if (!context.mounted) return;
+  }
 
   await showDialog<void>(
     context: context,
@@ -243,4 +256,41 @@ class _ShareDialog extends StatelessWidget {
       ),
     );
   }
+}
+
+// Write the name into each of the user's own [items] that lacks one. This
+// needs the security key, and any file that cannot be dealt with is shared
+// as it is: its recipients then see the random name, which is no reason to
+// refuse to share it.
+
+Future<void> _ensureNamesInside(
+  BuildContext context,
+  List<MediaItem> items,
+) async {
+  final own = [
+    for (final item in items)
+      if (!item.isShared &&
+          item.isEncrypted &&
+          isRandomStoredName(item.rawName))
+        item,
+  ];
+  if (own.isEmpty) return;
+
+  await getKeyFromUserIfRequired(
+    context,
+    const Text('Please enter your security key to share your files'),
+  );
+  if (!await KeyManager.hasSecurityKey() || !context.mounted) return;
+  await PodKeys.prime();
+  if (!context.mounted) return;
+
+  await showWorking(context, 'Preparing to share...', () async {
+    for (final item in own) {
+      try {
+        await PodMediaOps.ensureNameInside(item.path);
+      } on Object catch (e) {
+        debugPrint('PhotoPod: could not name ${item.path} inside: $e');
+      }
+    }
+  });
 }

@@ -61,27 +61,19 @@ String? validateName(
     return 'The name cannot begin or end with a space.';
   }
 
-  // A folder's name is its name on the server, so it cannot hold anything
-  // that would have to be percent-escaped inside a URL: the encryption key of
-  // everything in it would be filed under a different URL from the one it is
-  // looked up by. See [safeResourceName]. A file is stored under a random
-  // name, so its own name may be in any script, and only has to be one a
-  // file system will take when the file is downloaded.
+  // Files, folders and albums are all stored under random names, so the
+  // name the user gives one never reaches a URL and may be in any script.
+  // It only has to be one a file system will take, since a downloaded photo
+  // carries its name onto the user's own machine.
 
-  final invalid = isFolder
-      ? firstUnsafeCharacter(name)
-      : firstForbiddenFileNameCharacter(name);
+  final invalid = firstForbiddenFileNameCharacter(name);
   if (invalid != null) {
-    final display = invalid == ' '
-        ? 'a space'
-        : invalid.codeUnitAt(0) < 0x20 || invalid.codeUnitAt(0) == 0x7f
+    final display =
+        invalid.codeUnitAt(0) < 0x20 || invalid.codeUnitAt(0) == 0x7f
         ? 'a control character'
         : '"$invalid"';
-    return isFolder
-        ? 'A folder name cannot contain $display. Please use letters, '
-              "digits, and any of - _ . ! ~ ' ( ) only."
-        : 'A file name cannot contain $display. Please leave out '
-              r'/ \ : * ? " < > | and control characters.';
+    return 'A name cannot contain $display. Please leave out '
+        r'/ \ : * ? " < > | and control characters.';
   }
 
   if (trimmed == '.' || trimmed == '..') {

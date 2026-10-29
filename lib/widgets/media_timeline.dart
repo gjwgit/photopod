@@ -48,6 +48,8 @@ class MediaTimeline extends StatefulWidget {
     required this.onActivate,
     required this.onToggleFavourite,
     required this.onOpenMemory,
+    this.isSharedOut = _never,
+    this.multiSelect = false,
     this.tileExtent = 140,
   });
 
@@ -82,6 +84,15 @@ class MediaTimeline extends StatefulWidget {
   /// Called when a memory is opened.
 
   final void Function(TimelineMemory) onOpenMemory;
+
+  /// Whether one of the user's own items is shared with someone else.
+
+  final bool Function(MediaItem) isSharedOut;
+
+  /// Whether several items can be selected at once, in which case each
+  /// selected tile is ticked as well as outlined.
+
+  final bool multiSelect;
 
   /// The widest a tile may be, from the user's View preferences.
 
@@ -212,6 +223,8 @@ class _MediaTimelineState extends State<MediaTimeline> {
                     key: ValueKey(item.id),
                     item: item,
                     selected: widget.isSelected(item),
+                    sharedOut: widget.isSharedOut(item),
+                    showCheck: widget.multiSelect && widget.isSelected(item),
                     favourite: widget.isFavourite(item),
                     onTap: () => widget.onTap(item),
                     onActivate: () => widget.onActivate(item),
@@ -307,3 +320,5 @@ class _MemoryCard extends StatelessWidget {
     );
   }
 }
+
+bool _never(MediaItem item) => false;

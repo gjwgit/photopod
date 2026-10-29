@@ -134,6 +134,43 @@ Map<String, PermissionLogLine> latestLogLines(String content) {
   return latest;
 }
 
+/// The URLs of [me]'s own files that the permission log [content] says are
+/// shared with somebody else right now.
+///
+/// solidpod writes every grant and revocation the user makes into their own
+/// log too, one line for each recipient, so a file is still shared when the
+/// latest line for any one of its recipients is a grant. Album sharing grants
+/// through the same calls, so the photos shared by way of an album are found
+/// here as well.
+
+Set<String> sharedOutUrls(String content, String me) {
+  final self = sameWebId(me);
+  final latest = <String, PermissionLogLine>{};
+  for (final match in _logLine.allMatches(content)) {
+    final fields = match.group(1)!.split(';');
+    if (fields.length < 6) continue;
+    final line = (
+      time: fields[0],
+      url: fields[1],
+      owner: fields[2],
+      type: fields[3].toLowerCase(),
+      granter: fields[4],
+      recipient: fields[5],
+      permissions: fields.length > 6 ? fields[6] : '',
+    );
+    if (sameWebId(line.owner) != self) continue;
+    final key = '${line.url} ${sameWebId(line.recipient)}';
+    final before = latest[key];
+    if (before == null || line.time.compareTo(before.time) >= 0) {
+      latest[key] = line;
+    }
+  }
+  return {
+    for (final line in latest.values)
+      if (line.type == 'grant') line.url,
+  };
+}
+
 /// [webId] in a form in which two spellings of the same WebID agree: without
 /// its fragment or a trailing slash, and with the host in lower case.
 
