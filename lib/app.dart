@@ -36,6 +36,7 @@ import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_index.dart';
+import 'package:photopod/services/people.dart';
 import 'package:photopod/services/shared_with_me.dart';
 
 /// The root of the application.
@@ -70,6 +71,7 @@ class App extends StatelessWidget {
         ChangeNotifierProvider<MediaIndex>(
           create: (context) => MediaIndex(context.read<SharedWithMe>()),
         ),
+        ChangeNotifierProvider<People>(create: (context) => People()),
       ],
       child: SolidThemeApp(
         title: appTitle,

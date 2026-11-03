@@ -59,6 +59,17 @@ dependencies:
   # The latitude/longitude pair flutter_map speaks in.
   latlong2: ^0.9.1
 
+  # On-device face detection (YuNet) and recognition (SFace) for the People
+  # section, through OpenCV's FaceDetectorYN and FaceRecognizerSF. It binds
+  # OpenCV with dart:ffi, so it covers Android, iOS, Linux, macOS and Windows
+  # but not the web, where the People section explains that it is unavailable.
+  # The native modules it builds are chosen under `hooks` below.
+  opencv_dart: ^2.2.2
+
+  # The device's application support folder, where the two face models are
+  # kept once downloaded, rather than shipping 37 MB with every install.
+  path_provider: ^2.1.5
+
   # Graham's own drop-in Tooltip replacement with Markdown rendering and a
   # popup delay, used for every tooltip in the app.
   markdown_tooltip: ^0.0.10
@@ -96,6 +107,20 @@ dev_dependencies:
   # Generates the platform launcher icons from assets/images/app_icon.png.
   # Re-run after changing the icon: dart run flutter_launcher_icons
   flutter_launcher_icons: ^0.14.3
+
+# 20261103 tc opencv_dart builds only core, imgproc and imgcodecs unless told
+# otherwise. Face detection and recognition live in objdetect and run their
+# ONNX models through dnn, so both are added; objdetect brings in calib3d,
+# features2d and flann itself.
+
+hooks:
+  user_defines:
+    dartcv4:
+      include_modules:
+        - imgproc
+        - imgcodecs
+        - dnn
+        - objdetect
 
 flutter:
   assets:
