@@ -60,6 +60,17 @@ const int _faceImageSide = 96;
 
 const double _faceImageMargin = 1.6;
 
+// The functions face_engine.dart calls, matched by face_engine_stub.dart.
+
+bool faceEngineSupported() => true;
+
+Future<void> startFaceEngine({void Function(String)? onStatus}) =>
+    _Engine.start(onStatus: onStatus);
+
+Future<List<FoundFace>> analyseFaces(Uint8List image) => _Engine.analyse(image);
+
+void stopFaceEngine() => _Engine.stop();
+
 /// The face engine: YuNet finds the faces, SFace describes each one.
 ///
 /// Both models stay loaded in one long-lived isolate, since loading the
@@ -67,8 +78,8 @@ const double _faceImageMargin = 1.6;
 /// 10 to 40 ms on a laptop), and since OpenCV's calls would otherwise hold
 /// up the frames being drawn.
 
-class FaceEngine {
-  const FaceEngine._();
+class _Engine {
+  const _Engine._();
 
   static SendPort? _worker;
   static Future<void>? _starting;
@@ -76,8 +87,6 @@ class FaceEngine {
   static ReceivePort? _replies;
   static int _nextId = 0;
   static final Map<int, Completer<List<FoundFace>>> _pending = {};
-
-  static bool get isSupported => true;
 
   /// Fetch the models if need be and start the worker. [onStatus] hears
   /// what is happening, for the status line.

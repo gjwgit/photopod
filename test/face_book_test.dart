@@ -133,8 +133,10 @@ void main() {
 
   test('the file lists each person with their portrait and photos', () {
     final book = FaceBook()
-      ..addPhoto('a.jpg', [_found(_face(0))], url: 'https://pod/a.jpg')
-      ..addPhoto('b.jpg', [_found(_face(0, 0.2))], url: 'https://pod/b.jpg');
+      ..addPhoto('a.jpg', [_found(_face(0))], url: 'https://pod.example/a.jpg')
+      ..addPhoto('b.jpg', [
+        _found(_face(0, 0.2)),
+      ], url: 'https://pod.example/b.jpg');
     final alice = book.faces['a.jpg#0']!.person;
     book.people[alice]!.name = 'Alice';
 
@@ -145,11 +147,11 @@ void main() {
     expect(person['name'], 'Alice');
     expect(person['portrait'], isNotNull);
     expect(person['photos'], [
-      {'path': 'a.jpg', 'url': 'https://pod/a.jpg'},
-      {'path': 'b.jpg', 'url': 'https://pod/b.jpg'},
+      {'path': 'a.jpg', 'url': 'https://pod.example/a.jpg'},
+      {'path': 'b.jpg', 'url': 'https://pod.example/b.jpg'},
     ]);
     final face = (data['faces'] as Map)['a.jpg#0'] as Map;
-    expect(face['url'], 'https://pod/a.jpg');
+    expect(face['url'], 'https://pod.example/a.jpg');
     expect(base64Decode(face['image'] as String), [0xff, 0xd8, 1, 2]);
   });
 
@@ -181,7 +183,9 @@ void main() {
     expect(book.hasScanned('a.jpg'), isFalse);
     expect(book.hasScanned('empty.jpg'), isTrue);
 
-    book.addPhoto('a.jpg', [_found(_face(0, 0.05))], url: 'https://pod/a');
+    book.addPhoto('a.jpg', [
+      _found(_face(0, 0.05)),
+    ], url: 'https://pod.example/a');
     expect(book.faces['a.jpg#0']!.person, alice);
     expect(book.faces['a.jpg#0']!.image, isNotNull);
     expect(book.people[alice]!.name, 'Alice');

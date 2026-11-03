@@ -27,18 +27,15 @@ import 'dart:typed_data';
 
 import 'package:photopod/models/face_book.dart';
 
-/// Stands in for the OpenCV engine on the web.
+// Stand-ins for the OpenCV engine on the web, matching the functions of
+// face_engine_native.dart.
 
-class FaceEngine {
-  const FaceEngine._();
+bool faceEngineSupported() => false;
 
-  static bool get isSupported => false;
+Future<void> startFaceEngine({void Function(String)? onStatus}) async =>
+    throw UnsupportedError('Face recognition is not available on the web.');
 
-  static Future<void> start({void Function(String)? onStatus}) async =>
-      throw UnsupportedError('Face recognition is not available on the web.');
+Future<List<FoundFace>> analyseFaces(Uint8List image) async =>
+    throw UnsupportedError('Face recognition is not available on the web.');
 
-  static Future<List<FoundFace>> analyse(Uint8List image) async =>
-      throw UnsupportedError('Face recognition is not available on the web.');
-
-  static void stop() {}
-}
+void stopFaceEngine() {}
