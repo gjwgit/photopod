@@ -18,7 +18,7 @@
 #   Trivial update or bug fix
 
 APP=$(shell pwd | xargs basename)
-VER = $(shell egrep '^version:' pubspec.yaml | cut -d' ' -f2 | cut -d'+' -f1)
+VER = $(shell grep -E '^version:' pubspec.yaml | cut -d' ' -f2 | cut -d'+' -f1)
 DATE=$(shell date +%Y-%m-%d)
 
 # Identify a destination used by install.mk
@@ -129,17 +129,24 @@ tgz::
 # `make ginstall` fetches them (installers/update.sh). These targets
 # remain for uploading a build made on this machine with `make apk` or
 # `make appbundle`.
+#
+# 20261101 gjw ARCHIVE is git ignored, so a fresh clone has no
+# installers/ARCHIVE until something makes it. Each target that archives
+# makes it first.
 
 apk::
 	rsync -avzh installers/$(APP).apk $(REPO):$(RLOC)
 	ssh $(REPO) chmod a+r $(RLOC)$(APP).apk
+	mkdir -p installers/ARCHIVE
 	mv -f installers/$(APP)-*.apk installers/ARCHIVE/
 	rm -f installers/$(APP).apk
 	@echo ''
 
+# 20261031 gjw The aab is for the Play Store only, so it is archived
+# but not uploaded for download.
+
 appbundle::
-	rsync -avzh installers/$(APP).aab $(REPO):$(RLOC)
-	ssh $(REPO) chmod a+r $(RLOC)$(APP).aab
+	mkdir -p installers/ARCHIVE
 	mv -f installers/$(APP)-*.aab installers/ARCHIVE/
 	rm -f installers/$(APP).aab
 	@echo ''
@@ -156,13 +163,18 @@ deb:
 	wget $(DWLD)$(APP)_amd64.deb -O $(APP)_amd64.deb
 	wajig install $(APP)_amd64.deb
 	rm -f $(APP)_amd64.deb
+	mkdir -p installers/ARCHIVE
 	mv -f installers/$(APP)_*.deb installers/ARCHIVE/
 
 # 20261020 gjw A Flatpak, built locally for now. For radiopod the Flutter
 # bundle is built on the host with the scrambled Podcast Index pair, as
-# deb.sh does, and flatpak/com.togaware.radiopod.yml wraps it with a libmpv
-# built from source. Needs `flatpak install --user flathub
+# deb.sh does, and installers/flatpak/com.togaware.radiopod.yml wraps it
+# with a libmpv built from source. Needs `flatpak install --user flathub
 # org.flatpak.Builder org.gnome.Sdk//49`.
+#
+# 20261102 gjw The manifest moved from flatpak/ to installers/flatpak/,
+# beside the other installer files, so its paths to the bundle, the
+# pubspec and the icon start from ../../.
 
 FLATPAK_ID = com.togaware.$(APP)
 FLATPAK_BUILDER = flatpak run org.flatpak.Builder
@@ -183,7 +195,7 @@ flatpak:
 	flutter build linux --release $(DART_DEFINES) $(OBFUSCATE)
 	$(FLATPAK_BUILDER) --user --install --force-clean --disable-rofiles-fuse \
 	  --state-dir=$(FLATPAK_DIR)/state --repo=$(FLATPAK_DIR)/repo \
-	  $(FLATPAK_DIR)/build flatpak/$(FLATPAK_ID).yml
+	  $(FLATPAK_DIR)/build installers/flatpak/$(FLATPAK_ID).yml
 	flatpak build-bundle $(FLATPAK_DIR)/repo \
 	  installers/$(APP)-$(VER).flatpak $(FLATPAK_ID)
 	@echo "Run with: flatpak run $(FLATPAK_ID)"

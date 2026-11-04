@@ -17,8 +17,7 @@ Run the app online: [**web**](https://photopod.solidcommunity.au).
 Download the latest version:
 
 + **Android**
-  [apk](https://solidcommunity.au/installers/photopod.apk) or
-  [aab](https://solidcommunity.au/installers/photopod.aab);
+  [apk](https://solidcommunity.au/installers/photopod.apk);
 
 + **GNU/Linux**
   [deb](https://solidcommunity.au/installers/photopod_amd64.deb) or
