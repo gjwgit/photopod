@@ -1,4 +1,4 @@
-/// DESCRIBE THE PURPOSE OF THIS SOURCE FILE
+/// Privacy preserving photo manager
 ///
 // Time-stamp: <Monday 2026-09-21 17:03:18 +1000 Graham Williams>
 ///

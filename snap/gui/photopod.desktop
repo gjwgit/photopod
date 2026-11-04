@@ -6,3 +6,4 @@ Icon=${SNAP}/meta/gui/icon.png
 Terminal=false
 Type=Application
 Categories=Graphics;Photography;
+Keywords=photos;photography;gallery;solid;pod;

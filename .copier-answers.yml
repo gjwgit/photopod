@@ -1,0 +1,47 @@
+# Changes here will be overwritten by Copier. Change a value with
+# `copier update --data key=value` or by editing it here and running
+# `copier update`.
+_commit: v0.7.1
+_src_path: gh:gjwgit/fluttertmpl
+kind: app
+android: true
+app: photopod
+owner: gjwgit
+copyright: 2026, Togaware Pty Ltd
+publisher: Togaware Pty Ltd
+name: PhotoPod
+summary: Privacy preserving photo manager
+comment: Simple, Private, Secure Flutter Photo Manager
+categories:
+- Graphics
+- Photography
+keywords:
+- photos
+- photography
+- gallery
+- solid
+- pod
+build: {}
+deb:
+  depends:
+  - libasound2t64
+  - libmpv2
+  section: utils
+snap:
+  plugs:
+  - audio-playback
+  stage-packages:
+  - libasound2t64
+  - libmpv2
+windows:
+  appid: bb2de28c-c673-4140-a7da-0f83e45d08ea
+install:
+  folder: /var/www/html/web/installers/
+  host: solidcommunity.au
+  prod: true
+  url: https://solidcommunity.au/installers/
+flatpak: null
+description: |
+  PhotoPod collects your photos and securely stores them encrypted in
+  your personal online data store (Pod) within a Data Vault hosted by
+  your Solid Server of choice.
