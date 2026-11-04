@@ -35,6 +35,8 @@ extension MediaBrowserTransfers on MediaBrowserState {
   Future<void> _duplicate(BuildContext context) async {
     final files = _selectedFiles;
     if (files.isEmpty) return;
+    if (await _needsPod(context, 'duplicate photos and videos')) return;
+    if (!context.mounted) return;
 
     // The original has to be decrypted and the copy encrypted again.
 
@@ -72,6 +74,8 @@ extension MediaBrowserTransfers on MediaBrowserState {
   Future<void> _rename(BuildContext context) async {
     final items = _selectedItems;
     if (items.isEmpty) return;
+    if (await _needsPod(context, 'rename photos and videos')) return;
+    if (!context.mounted) return;
 
     final item = items.first;
     final name = await showRenameDialog(context, item);

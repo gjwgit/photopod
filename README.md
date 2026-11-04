@@ -116,6 +116,34 @@ rather than over one folder, so they walk the folders once and share the
 result. The walk stops after 400 folders or 12 levels, and says so when
 it has.
 
+## Sample album
+
+PhotoPod does not ask anyone to log in before they can look around. A
+visitor goes straight into the app and finds every section filled with a
+sample album bundled in `assets/demo/`:
+
+- **Maps** — landscapes from six continents, from the Grand Canyon to
+  Milford Sound, each carrying GPS coordinates in its EXIF block.
+- **Library** — photos dated across many years, so sorting by date and
+  the timeline both have something to show.
+- **People** — official portraits of Barack Obama, Michelle Obama, Joe
+  Biden and Kamala Harris, several of each. The faces are found and
+  grouped on the device, exactly as for a real album; each group is then
+  named after whoever is in most of its photos.
+- **Videos** — a short clip of the Birch Building at ANU, placed on the
+  map too.
+- **Favourites** and **Albums** — a few hearts and two albums to start
+  with. Changes to them last until the app is closed.
+
+Every sample photo is from Wikimedia Commons and is in the public domain
+or released under CC0, so none needs attribution. The video is the
+authors' own.
+
+Nothing in the sample album is stored in a Pod, so adding, deleting,
+renaming and sharing ask the visitor to log in instead. Logging in, from
+the banner above each section or from the profile menu, replaces the
+samples with the user's own album.
+
 ## Getting started
 
 ```bash

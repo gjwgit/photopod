@@ -203,6 +203,9 @@ extension MediaBrowserAlbums on MediaBrowserState {
     String album,
     List<MediaItem> items,
   ) async {
+    if (await _needsPod(context, 'share albums')) return;
+    if (!context.mounted) return;
+
     final String fileUrl;
     try {
       fileUrl = await _albumFileUrl(album);
@@ -254,6 +257,10 @@ extension MediaBrowserAlbums on MediaBrowserState {
   /// shared an album.
 
   Future<void> _syncSharing(BuildContext context) async {
+    // The sample albums are never shared, and have no files to share.
+
+    if (_demo) return;
+
     final sharing = context.read<AlbumSharing>();
     final favourites = context.read<Favourites>();
     final albums = context.read<Albums>();

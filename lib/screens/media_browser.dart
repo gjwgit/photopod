@@ -51,6 +51,7 @@ import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_dates_backfill.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/media_names.dart';
@@ -66,6 +67,7 @@ import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/utils/resource_name.dart';
 import 'package:photopod/widgets/album_list.dart';
 import 'package:photopod/widgets/breadcrumb_bar.dart';
+import 'package:photopod/widgets/demo_banner.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
 import 'package:photopod/widgets/media_timeline.dart';
@@ -144,6 +146,11 @@ class MediaBrowserState extends State<MediaBrowser> {
   bool _loading = true;
   String? _error;
 
+  /// Whether nobody is logged in, so this section shows the bundled sample
+  /// album rather than a Pod. See [DemoLibrary].
+
+  bool _demo = false;
+
   /// Whether files are being dragged over the Library right now.
 
   bool _dragging = false;
@@ -164,15 +171,17 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   Future<void> _start() async {
     try {
+      // PhotoPod skips the login screen, so a visitor who has not logged in
+      // is shown the sample album, which needs no folder on any Pod.
+
       if (!await isUserLoggedIn()) {
-        if (mounted) {
-          setState(() {
-            _loading = false;
-            _error =
-                'Please log in to your Pod to see your '
-                '${widget.section.noun}.';
-          });
-        }
+        if (!mounted) return;
+        setState(() {
+          _demo = true;
+          _root = DemoLibrary.root;
+          _path = DemoLibrary.root;
+        });
+        await reload();
         return;
       }
 
@@ -225,13 +234,30 @@ class MediaBrowserState extends State<MediaBrowser> {
   Future<void> reload({bool force = false}) async {
     // Another device may have renamed something since the names were read.
 
-    if (force) MediaNames.invalidate();
+    if (force && !_demo) MediaNames.invalidate();
+
+    // The samples are in the app bundle: there is no key to ask for, no
+    // folder to list and nothing shared to fold in.
+
+    if (_demo && widget.section.browsesFolders) {
+      final kinds = widget.section.kinds;
+      setState(() {
+        _items = [
+          for (final item in DemoLibrary.items)
+            if (kinds.contains(item.kind)) item,
+        ];
+        _loading = false;
+        _error = null;
+      });
+      unawaited(_readWholeAlbum());
+      return;
+    }
 
     // The names of the files are encrypted, so the key is asked for before
     // the folder is listed rather than after, when the tiles would already
     // be showing the names they are stored under.
 
-    if (await MediaNames.needsKey() && mounted) {
+    if (!_demo && await MediaNames.needsKey() && mounted) {
       await _ensureSecurityKey(context);
     }
     if (!mounted) return;
@@ -256,7 +282,7 @@ class MediaBrowserState extends State<MediaBrowser> {
       // Refreshing the albums is also when any sharing that fell behind —
       // say, a heart given from the preview — is caught up.
 
-      if (force && widget.section == LibrarySection.albums) {
+      if (force && !_demo && widget.section == LibrarySection.albums) {
         await _syncSharing(context);
         if (!mounted) return;
       }

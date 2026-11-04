@@ -33,6 +33,7 @@ import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
@@ -162,6 +163,13 @@ class _InfoDialogState extends State<_InfoDialog> {
     final folder = root == null || !parent.startsWith(root)
         ? parent
         : parent.substring(root.length).replaceFirst('/', '');
+
+    if (DemoLibrary.isDemo(item)) {
+      return [
+        ('Kind', _kindLabel(item)),
+        ('Storage', 'A sample included with PhotoPod, not stored in a Pod'),
+      ];
+    }
 
     if (item.isShared) {
       return [

@@ -33,6 +33,7 @@ import 'package:solidpod/solidpod.dart';
 
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/pod_media_service.dart';
 
@@ -159,6 +160,9 @@ class MediaRenditions {
   /// shared.
 
   static Future<SmallRendition?> readSmall(MediaItem item) async {
+    // The samples shown before login have no Pod to keep renditions in.
+
+    if (DemoLibrary.isDemo(item)) return null;
     final content =
         await _read(item, RenditionLevel.small) ??
         (item.isVideo ? await _read(item, null) : null);
@@ -169,6 +173,7 @@ class MediaRenditions {
   /// The large rendition of [item], or null when it has none.
 
   static Future<Uint8List?> readLarge(MediaItem item) async {
+    if (DemoLibrary.isDemo(item)) return null;
     final content = await _read(item, RenditionLevel.large);
     return content == null ? null : base64Decode(content.trim());
   }
@@ -203,7 +208,7 @@ class MediaRenditions {
   /// next time.
 
   static void backfill(MediaItem item, PhotoRenditions renditions) {
-    if (item.isShared) return;
+    if (item.isShared || DemoLibrary.isDemo(item)) return;
     _queue = _queue.then((_) async {
       try {
         if (!await KeyManager.hasSecurityKey()) return;

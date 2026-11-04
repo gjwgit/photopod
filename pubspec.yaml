@@ -126,6 +126,11 @@ flutter:
   assets:
     - assets/images/app_icon.png
     - assets/images/app_image.jpg
+
+    # The sample album shown to anyone not logged in. See
+    # lib/services/demo_library.dart.
+
+    - assets/demo/
   uses-material-design: true
 
 # 20260830 gjw Define launcher icons for all platforms (except Linux)

@@ -69,6 +69,8 @@ extension MediaBrowserActions on MediaBrowserState {
   /// what was just shared carries the two-people mark straight away.
 
   Future<void> _share(BuildContext context) async {
+    if (await _needsPod(context, 'share photos and videos')) return;
+    if (!context.mounted) return;
     final shared = context.read<SharedWithMe>();
     await showShareDialog(context, _selectedItems);
     await shared.load(force: true);
@@ -448,6 +450,9 @@ extension MediaBrowserActions on MediaBrowserState {
   // renaming it puts everything right.
 
   Future<bool> _folderIsWritable(BuildContext context) async {
+    if (await _needsPod(context, 'add photos and videos')) return false;
+    if (!context.mounted) return false;
+
     final segment = unsafeSegmentOf(_path);
     if (segment == null) return true;
 
@@ -472,6 +477,8 @@ extension MediaBrowserActions on MediaBrowserState {
   Future<void> _delete(BuildContext context) async {
     final items = _selectedItems;
     if (items.isEmpty) return;
+    if (await _needsPod(context, 'delete photos and videos')) return;
+    if (!context.mounted) return;
 
     // What someone else shared with the user is theirs, not the user's, so
     // it is declined rather than deleted. See [SharedWithMe.decline].
@@ -621,6 +628,25 @@ extension MediaBrowserActions on MediaBrowserState {
       }
       return false;
     }
+  }
+
+  /// Whether the sample album is showing, in which case [what] cannot be
+  /// done, and the user is told why and how to do it for real.
+  ///
+  /// The samples are part of the app, not files in a Pod, so anything that
+  /// writes to a Pod has nowhere to write. Hearts and albums still work on
+  /// the samples, in memory, so that a visitor can try them.
+
+  Future<bool> _needsPod(BuildContext context, String what) async {
+    if (!_demo) return false;
+    await showErrorDialog(
+      context,
+      'Log in to $what',
+      'These are sample photos and videos, included with PhotoPod to show '
+          'what it can do. They are not stored in a Pod.\n\n'
+          'Log in to $what in your own Pod.',
+    );
+    return true;
   }
 
   /// Run [action], reporting anything that goes wrong in a dialogue.

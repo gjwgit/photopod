@@ -35,6 +35,7 @@ import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/albums.dart' show albumsFolderName;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/container_listing.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_envelope.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/shared_names.dart';
@@ -168,6 +169,9 @@ class PodMediaService {
   /// [MediaNames].
 
   static Future<MediaContent> readMedia(MediaItem item) async {
+    if (DemoLibrary.isDemo(item)) {
+      return (bytes: await DemoLibrary.read(item), name: null);
+    }
     if (!item.isEncrypted) {
       return (bytes: await _readRaw(item.url), name: null);
     }

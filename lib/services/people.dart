@@ -25,8 +25,11 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
+
 import 'package:photopod/models/face_book.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
 import 'package:photopod/services/face_engine.dart';
 import 'package:photopod/services/media_renditions.dart';
@@ -85,6 +88,11 @@ class PersonEntry {
 class People extends ChangeNotifier {
   FaceBook _book = FaceBook();
   bool _loaded = false;
+
+  // Whether the faces are those of the sample album shown before login,
+  // which are kept in memory only.
+
+  bool _demo = false;
   bool _scanning = false;
   bool _cancelled = false;
   int _done = 0;
@@ -161,7 +169,21 @@ class People extends ChangeNotifier {
   /// Read the faces file, once per login.
 
   Future<void> load() async {
+    // Logging in or out swaps the sample album for a Pod or back, and the
+    // faces found in one mean nothing in the other.
+
+    final demo = !await isUserLoggedIn();
+    if (demo != _demo) {
+      _book = FaceBook();
+      _loaded = false;
+      _demo = demo;
+    }
     if (_loaded) return;
+    if (_demo) {
+      _loaded = true;
+      notifyListeners();
+      return;
+    }
     final json = await _file.read();
     _book = json == null ? FaceBook() : FaceBook.fromJson(json);
     _loaded = true;
@@ -229,6 +251,7 @@ class People extends ChangeNotifier {
         notifyListeners();
       }
 
+      if (_demo) _nameSamples();
       if (changed && !_cancelled) await _save();
     } on Object catch (e) {
       _error = '$e';
@@ -276,7 +299,50 @@ class People extends ChangeNotifier {
     notifyListeners();
   }
 
+  // Name each person found in the samples after whoever is known to be in
+  // most of their photos, and fold together two found to be the same
+  // person, as the owner of an album would tidy it. The search itself knows
+  // nothing of the names: they are only put on what it found.
+
+  void _nameSamples() {
+    final named = <String, String>{};
+    final found = _book.people.values.toList()
+      ..sort(
+        (a, b) =>
+            _book.facesOf(b.id).length.compareTo(_book.facesOf(a.id).length),
+      );
+
+    for (final person in found) {
+      final paths = {for (final face in _book.facesOf(person.id)) face.path};
+      final counts = <String, int>{};
+      for (final path in paths) {
+        for (final who in DemoLibrary.peopleAt(path)) {
+          counts[who] = (counts[who] ?? 0) + 1;
+        }
+      }
+      if (counts.isEmpty) continue;
+
+      // Only a clear majority names anyone. A face from a photo of two
+      // people, found on its own, could be either of them.
+
+      final ranked = counts.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      final best = ranked.first;
+      if (best.value * 2 <= paths.length) continue;
+      if (ranked.length > 1 && ranked[1].value == best.value) continue;
+
+      final into = named[best.key];
+      if (into != null) {
+        _book.merge(person.id, into);
+        continue;
+      }
+      person.name ??= best.key;
+      named[best.key] = person.id;
+    }
+  }
+
   Future<void> _save() async {
+    if (_demo) return;
     try {
       await _file.write(_book.toJson());
     } on Object catch (e) {
