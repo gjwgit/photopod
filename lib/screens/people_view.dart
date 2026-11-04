@@ -35,6 +35,7 @@ import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/people.dart';
 import 'package:photopod/services/pod_keys.dart';
+import 'package:photopod/widgets/demo_banner.dart';
 import 'package:photopod/widgets/person_section.dart';
 
 /// The People section: everyone whose face turns up in the album, those in
@@ -69,8 +70,24 @@ class _PeopleViewState extends State<PeopleView> {
     if (!mounted) return;
 
     // The faces file and the photos are both encrypted, so the security key
-    // has to be in hand before either can be read.
+    // has to be in hand before either can be read. The samples shown before
+    // login are neither.
 
+    if (!index.isDemo) {
+      if (!await _unlock()) return;
+      if (!mounted) return;
+    }
+
+    await people.scan(
+      index.photos,
+      prune: !index.isTruncated && index.error == null,
+    );
+  }
+
+  // Ask for the security key if it is needed, returning whether it is now
+  // in hand.
+
+  Future<bool> _unlock() async {
     try {
       await getKeyFromUserIfRequired(
         context,
@@ -85,15 +102,10 @@ class _PeopleViewState extends State<PeopleView> {
       await PodKeys.prime();
     } on Object catch (e) {
       if (mounted) setState(() => _keyError = '$e');
-      return;
+      return false;
     }
-    if (!mounted) return;
-    setState(() => _keyError = null);
-
-    await people.scan(
-      index.photos,
-      prune: !index.isTruncated && index.error == null,
-    );
+    if (mounted) setState(() => _keyError = null);
+    return true;
   }
 
   @override
@@ -104,6 +116,7 @@ class _PeopleViewState extends State<PeopleView> {
 
     return Column(
       children: [
+        if (index.isDemo) const DemoBanner(),
         _buildStatusBar(context, index, people, entries.length),
         const Divider(height: 1),
         Expanded(child: _buildBody(context, index, people, entries)),

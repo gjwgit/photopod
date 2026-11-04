@@ -37,9 +37,11 @@ import 'package:photopod/dialogs/preview_dialog.dart';
 import 'package:photopod/models/map_source.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
+import 'package:photopod/widgets/demo_banner.dart';
 import 'package:photopod/widgets/media_grid.dart' show mediaTooltipText;
 import 'package:photopod/widgets/media_thumbnail.dart';
 
@@ -132,7 +134,13 @@ class _MapViewState extends State<MapView> {
     if (_scanning) return;
     if (!force && _scannedAt != null && _scannedAt == index.scannedAt) return;
 
-    final photos = index.photos.take(maxMappedPhotos).toList();
+    // Videos say nothing about where they were taken, except the sample
+    // video, whose place is known; see DemoLibrary.
+
+    final photos = [
+      ...index.photos,
+      if (index.isDemo) ...DemoLibrary.placedVideos,
+    ].take(maxMappedPhotos).toList();
 
     setState(() {
       _scanning = true;
@@ -229,6 +237,7 @@ class _MapViewState extends State<MapView> {
 
     return Column(
       children: [
+        if (index.isDemo) const DemoBanner(),
         _buildStatusBar(context, index),
         const Divider(height: 1),
         Expanded(child: _buildMap(context, index)),

@@ -31,6 +31,7 @@ import 'package:flutter/foundation.dart';
 import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
 import 'package:photopod/services/pod_keys.dart';
 
@@ -100,6 +101,11 @@ class Favourites extends ChangeNotifier {
 
   bool _fromPod = false;
 
+  // Whether these are the sample hearts shown before login, kept in memory
+  // only: there is no Pod to write them to.
+
+  bool _demo = false;
+
   /// Writes are chained rather than issued in parallel, so that two quick
   /// taps on two hearts cannot race and leave the Pod holding the older of
   /// the two lists.
@@ -141,7 +147,14 @@ class Favourites extends ChangeNotifier {
 
   Future<void> load() async {
     try {
-      if (!await isUserLoggedIn()) return;
+      _demo = !await isUserLoggedIn();
+      if (_demo) {
+        _paths
+          ..clear()
+          ..addAll(DemoLibrary.favourites);
+        _error = null;
+        return;
+      }
       final content = await _file.read();
       _paths.clear();
       if (content != null) _paths.addAll(decodeFavourites(content));
@@ -161,7 +174,7 @@ class Favourites extends ChangeNotifier {
   // Read the list before changing it, if that has not yet been possible.
 
   Future<void> _ensureRead() async {
-    if (!_fromPod) await load();
+    if (!_fromPod && !_demo) await load();
   }
 
   /// Add a heart to [items], or take it away from all of them.
@@ -247,6 +260,7 @@ class Favourites extends ChangeNotifier {
   // refused so that the screen never claims more than the Pod holds.
 
   Future<bool> _save(Set<String> before) {
+    if (_demo) return Future.value(true);
     final write = _writes.then((_) async {
       try {
         if (!_fromPod) throw SecurityKeyNeeded(favouritesFileName);

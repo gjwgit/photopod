@@ -29,6 +29,7 @@ import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart';
@@ -69,6 +70,7 @@ class MediaIndex extends ChangeNotifier {
   final SharedWithMe _shared;
 
   List<MediaItem> _items = const [];
+  bool _demo = false;
   bool _loading = false;
   bool _stale = true;
   bool _truncated = false;
@@ -78,7 +80,12 @@ class MediaIndex extends ChangeNotifier {
   /// Every photo and video found, in the order the folders were walked,
   /// followed by everything shared with the user.
 
-  List<MediaItem> get items => [..._items, ..._shared.items];
+  List<MediaItem> get items => _demo ? _items : [..._items, ..._shared.items];
+
+  /// Whether the album is the bundled sample one, shown because nobody is
+  /// logged in. See [DemoLibrary].
+
+  bool get isDemo => _demo;
 
   /// Whether a scan is running now.
 
@@ -133,6 +140,12 @@ class MediaIndex extends ChangeNotifier {
   Future<void> refresh({bool force = false}) async {
     if (_loading) return;
 
+    // Logging in or out swaps the sample album for a real one or back, so
+    // whatever was scanned before belongs to the other and is scanned again.
+
+    final demo = !await isUserLoggedIn();
+    if (demo != _demo) force = true;
+
     // The user's own album is walked again only when it has changed, but
     // someone may have shared something since the last visit, so that is
     // looked at every time. It is one read unless it has changed.
@@ -147,11 +160,15 @@ class MediaIndex extends ChangeNotifier {
     notifyListeners();
 
     try {
-      if (!await isUserLoggedIn()) {
-        throw const PodMediaException(
-          'Please log in to your Pod to see your album.',
-        );
+      if (demo) {
+        _items = DemoLibrary.items;
+        _demo = true;
+        _truncated = false;
+        _stale = false;
+        _scannedAt = DateTime.now();
+        return;
       }
+      _demo = false;
 
       final root = await PodMediaService.rootPath();
       final found = <MediaItem>[];

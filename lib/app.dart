@@ -41,9 +41,10 @@ import 'package:photopod/services/shared_with_me.dart';
 
 /// The root of the application.
 ///
-/// On startup [SolidLogin] connects to the user's Pod on their chosen Solid
-/// server through the standard Solid-OIDC flow, and only then hands over to
-/// the app scaffold. The three stores are provided above the login screen so
+/// [SolidLogin] skips its login screen and goes straight to the app
+/// scaffold, which shows the bundled sample album until the user logs in to
+/// their Pod on their chosen Solid server through the standard Solid-OIDC
+/// flow. The three stores are provided above the login screen so
 /// that whichever section the user lands on finds them already in place: the
 /// display preferences, which are device-local; the favourites, which are
 /// read from the Pod once the scaffold appears; and the album index, which
@@ -80,6 +81,14 @@ class App extends StatelessWidget {
           useMaterial3: true,
         ),
         home: SolidLogin(
+          // A visitor goes straight into the app, without logging in, and
+          // finds every section showing the sample album (see DemoLibrary):
+          // landscapes from around the world on the map, dates across many
+          // years, and familiar faces for People. Logging in from the profile menu, or from the
+          // banner above each section, replaces the samples with the photos
+          // in their own Pod.
+
+          skipLogin: true,
           title: appTitle.replaceAll(' - ', '\n'),
           image: const AssetImage('assets/images/app_image.jpg'),
           logo: const AssetImage('assets/images/app_icon.png'),

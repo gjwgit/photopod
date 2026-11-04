@@ -33,6 +33,7 @@ import 'package:image/image.dart' as img;
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/pod_media_service.dart';
 
@@ -143,7 +144,16 @@ class ThumbnailCache {
     if (stored != null) {
       return PhotoAnalysis(thumbnail: stored.image, metadata: stored.metadata);
     }
-    if (item.isVideo) return const PhotoAnalysis();
+    if (item.isVideo) {
+      // A sample video brings a still frame of its own, and its place.
+
+      return DemoLibrary.isDemo(item)
+          ? PhotoAnalysis(
+              thumbnail: await DemoLibrary.poster(item),
+              metadata: DemoLibrary.videoMetadataOf(item),
+            )
+          : const PhotoAnalysis();
+    }
 
     final made = await _renderFromOriginal(item);
     if (made == null) return null;

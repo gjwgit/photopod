@@ -32,6 +32,7 @@ import 'package:solidpod/solidpod.dart' show getDataDirPath, isUserLoggedIn;
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
 import 'package:photopod/services/media_names.dart'
     show isRandomFolderName, randomFolderName;
@@ -174,6 +175,11 @@ class Albums extends ChangeNotifier {
 
   bool _fromPod = false;
 
+  // Whether these are the sample albums shown before login, kept in memory
+  // only: there is no Pod to write them to.
+
+  bool _demo = false;
+
   /// Writes are chained rather than issued in parallel, so that two changes
   /// in quick succession cannot race and leave the older one on the Pod.
 
@@ -214,7 +220,21 @@ class Albums extends ChangeNotifier {
 
   Future<void> load() async {
     try {
-      if (!await isUserLoggedIn()) return;
+      _demo = !await isUserLoggedIn();
+      if (_demo) {
+        // Nothing is ever written for a sample album, but rename and delete
+        // look for its file before doing anything, so each is given one.
+
+        final samples = DemoLibrary.albums;
+        _files
+          ..clear()
+          ..addAll({for (final name in samples.keys) name: name});
+        _albums
+          ..clear()
+          ..addAll(samples);
+        _error = null;
+        return;
+      }
       final folder = await _folderPath();
       await PodMediaService.ensureFolder(
         await PodMediaService.folderUrl(folder),
@@ -473,6 +493,10 @@ class Albums extends ChangeNotifier {
   // write would poison every write after it.
 
   Future<bool> _chain(Future<void> Function() action) {
+    // Changes to the sample albums are made in memory, and that is all.
+
+    if (_demo) return Future.value(true);
+
     final write = _writes.then((_) async {
       try {
         if (!_fromPod) await load();

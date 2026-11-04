@@ -55,6 +55,7 @@ extension MediaBrowserBody on MediaBrowserState {
 
     return Column(
       children: [
+        if (_demo) const DemoBanner(),
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
           child: _buildHeader(context),
