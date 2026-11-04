@@ -30,6 +30,13 @@ then please show some ❤️ and tap on the star at
 This app is authored by Tony Chen and [Graham
 Williams](https://togaware.com/Graham.Williams.html).
 
+## 1.1 Functional Updates
+
++ Skip login. [1.1.2 20261105 tonypioneer]
++ Initial face recognition. [1.1.1 20261105 tonypioneer]
++ Random filenames [1.1.0 20261105 tonypioneer]
+
+
 ## 1.0 Initial Functional Release
 
 + Video thumbnails fixes [1.0.4 20261028 tonypioneer]
