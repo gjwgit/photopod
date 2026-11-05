@@ -31,6 +31,8 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import 'package:photopod/constants/media.dart';
+import 'package:photopod/services/mpv_property_native.dart'
+    if (dart.library.js_interop) 'package:photopod/services/mpv_property_stub.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
 /// How long to wait for the opening frame to be decoded before giving up on
@@ -103,9 +105,8 @@ Future<Uint8List?> _headlessFirstFrame(Uint8List bytes, String fileName) async {
   );
 
   try {
-    final native = player.platform as NativePlayer;
-    await native.setProperty('vid', 'auto');
-    await native.setProperty('aid', 'no');
+    await setMpvProperty(player, 'vid', 'auto');
+    await setMpvProperty(player, 'aid', 'no');
 
     final media = await Media.memory(bytes, type: contentTypeOf(fileName));
     await player.open(media, play: false);
