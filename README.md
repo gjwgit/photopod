@@ -123,13 +123,15 @@ visitor goes straight into the app and finds every section filled with a
 sample album bundled in `assets/demo/`:
 
 - **Maps** — landscapes from six continents, from the Grand Canyon to
-  Milford Sound, each carrying GPS coordinates in its EXIF block.
+  Milford Sound, and the portraits below, each carrying GPS coordinates
+  in its EXIF block.
 - **Library** — photos dated across many years, so sorting by date and
   the timeline both have something to show.
-- **People** — official portraits of Barack Obama, Michelle Obama, Joe
-  Biden and Kamala Harris, several of each. The faces are found and
-  grouped on the device, exactly as for a real album; each group is then
-  named after whoever is in most of its photos.
+- **People** — recent portraits of the Nobel laureates in physics John
+  Mather, David Wineland and Adam Riess, several of each, dated and
+  placed on the map. The faces
+  are found and grouped on the device, exactly as for a real album; each
+  group is then named after whoever is in most of its photos.
 - **Videos** — a short clip of the Birch Building at ANU, placed on the
   map too.
 - **Favourites** and **Albums** — a few hearts and two albums to start

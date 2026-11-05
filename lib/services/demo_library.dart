@@ -78,8 +78,10 @@ class DemoEntry {
 /// the app straight away. With no Pod to read, every section shows this
 /// album instead: landscapes from around the world, each carrying GPS
 /// coordinates in its EXIF block for the Maps section; dates spread across
-/// many years for sorting and the timeline; and official portraits of public
-/// figures, several of each, for the People section to recognise and group.
+/// many years for sorting and the timeline; and recent portraits of three
+/// Nobel laureates in physics, several of each, for the People section to
+/// recognise and group. None of them is a political figure, and no one else
+/// appears in their photos.
 ///
 /// Every photo is from Wikimedia Commons and is in the public domain or
 /// released under CC0, so none needs attribution. The photographer is
@@ -110,7 +112,7 @@ class DemoLibrary {
 
   /// The name of the sample album gathering the portraits.
 
-  static const String faceAlbum = 'Famous Faces';
+  static const String faceAlbum = 'Nobel Laureates';
 
   static final List<DemoEntry> entries = [
     // Landscapes, across six continents.
@@ -193,66 +195,73 @@ class DemoLibrary {
       DateTime(2026, 1, 9, 12, 40),
     ),
 
-    // Public figures, several portraits each, for face recognition.
+    // Nobel laureates in physics, several portraits each, for face
+    // recognition. All are recent photos from NASA, NIST and the Space
+    // Telescope Science Institute, so each carries the date and the place it
+    // was taken in its EXIF block, and appears on the map with the
+    // landscapes. Each photo shows only the person named, since a face
+    // nobody is listed for would otherwise be named after, and merged with,
+    // whoever else is. Where Wikimedia Commons gives only the year a photo
+    // was taken, the month and day are made up.
     DemoEntry(
-      'obama_2005.jpg',
-      'Barack Obama, 2005.jpg',
-      DateTime(2005, 1, 3, 10),
-      people: ['Barack Obama'],
+      'john_mather_2012.jpg',
+      'John Mather, 2012.jpg',
+      DateTime(2012, 11, 19, 10, 10),
+      people: ['John Mather'],
     ),
     DemoEntry(
-      'obama_biden_2009.jpg',
-      'Obama and Biden, 2009.jpg',
-      DateTime(2009, 11, 23, 10),
-      people: ['Barack Obama', 'Joe Biden'],
+      'john_mather_webb_2016.jpg',
+      'John Mather and the Webb telescope, 2016.jpg',
+      DateTime(2016, 5, 4, 14, 25),
+      people: ['John Mather'],
     ),
     DemoEntry(
-      'obama_2012.jpg',
-      'Barack Obama, 2012.jpg',
-      DateTime(2012, 12, 6, 10),
-      people: ['Barack Obama'],
+      'john_mather_2016.jpg',
+      'John Mather, 2016.jpg',
+      DateTime(2016, 11, 28, 13, 35),
+      people: ['John Mather'],
     ),
     DemoEntry(
-      'biden_2013.jpg',
-      'Joe Biden, 2013.jpg',
-      DateTime(2013, 1, 10, 10),
-      people: ['Joe Biden'],
+      'john_mather_houston_2017.jpg',
+      'John Mather in Houston, 2017.jpg',
+      DateTime(2017, 6, 21, 11, 5),
+      people: ['John Mather'],
     ),
     DemoEntry(
-      'biden_2021.jpg',
-      'Joe Biden, 2021.jpg',
-      DateTime(2021, 3, 3, 10),
-      people: ['Joe Biden'],
+      'david_wineland_2008.jpg',
+      'David Wineland, 2008.jpg',
+      DateTime(2008, 9, 15, 11),
+      people: ['David Wineland'],
     ),
     DemoEntry(
-      'harris_2011.jpg',
-      'Kamala Harris, 2011.jpg',
-      DateTime(2011, 1, 3, 10),
-      people: ['Kamala Harris'],
+      'david_wineland_laboratory_2012.jpg',
+      'David Wineland in his laboratory, 2012.jpg',
+      DateTime(2012, 10, 18, 15),
+      people: ['David Wineland'],
     ),
     DemoEntry(
-      'harris_2017.jpg',
-      'Kamala Harris, 2017.jpg',
-      DateTime(2017, 1, 3, 10),
-      people: ['Kamala Harris'],
+      'david_wineland_2013.jpg',
+      'David Wineland, 2013.jpg',
+      DateTime(2013, 1, 23, 12, 34),
+      people: ['David Wineland'],
     ),
     DemoEntry(
-      'harris_2021.jpg',
-      'Kamala Harris, 2021.jpg',
-      DateTime(2021, 3, 31, 10),
-      people: ['Kamala Harris'],
+      'adam_riess_2006.jpg',
+      'Adam Riess, 2006.jpg',
+      DateTime(2006, 6, 22, 10),
+      people: ['Adam Riess'],
     ),
     DemoEntry(
-      'michelle_obama_2009.jpg',
-      'Michelle Obama, 2009.jpg',
-      DateTime(2009, 2, 18, 10),
-      people: ['Michelle Obama'],
+      'adam_riess_2008.jpg',
+      'Adam Riess, 2008.jpg',
+      DateTime(2008, 9, 23, 10),
+      people: ['Adam Riess'],
     ),
     DemoEntry(
-      'michelle_obama_2013.jpg',
-      'Michelle Obama, 2013.jpg',
-      DateTime(2013, 2, 5, 10),
-      people: ['Michelle Obama'],
+      'adam_riess_2009.jpg',
+      'Adam Riess, 2009.jpg',
+      DateTime(2009, 4, 28, 10),
+      people: ['Adam Riess'],
     ),
   ];
 
