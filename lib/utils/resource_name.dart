@@ -23,36 +23,6 @@
 
 library;
 
-/// Why PhotoPod will not put a space, or anything else that has to be
-/// percent-escaped, into a resource name.
-///
-/// solidpod files the encryption key for a resource under a URL it rebuilds
-/// from the resource's own URL, and the two halves of that round trip do not
-/// agree about escaping: the path is taken out of the URL with
-/// `Uri.pathSegments`, which *decodes* each segment, and the URL is then put
-/// back together by joining the segments verbatim, which does *not* re-encode
-/// them. A photo stored as `my%20photo.jpg.enc.ttl` therefore has its key
-/// filed under `.../my photo.jpg.enc.ttl`, where nothing will ever look for
-/// it, and the key file itself ends up holding a subject IRI with a raw space
-/// in it — which is not valid Turtle, and which costs every key written after
-/// it when the file is next read back.
-///
-/// Keeping every name inside the set of characters that percent-encoding
-/// leaves alone makes that round trip the identity, and so makes the whole
-/// question go away.
-///
-/// The set is the one `Uri.encodeComponent` passes through unchanged —
-/// letters, digits, and `- _ . ! ~ * ' ( )` — less the asterisk, which no
-/// Windows file system will accept and which a photo downloaded out of the
-/// Pod would trip over.
-
-final RegExp _unsafeCharacters = RegExp(r"[^A-Za-z0-9\-_.!~'()]");
-
-/// Whether [name] can be used as a resource name exactly as it stands.
-
-bool isSafeResourceName(String name) =>
-    name.isNotEmpty && !_unsafeCharacters.hasMatch(name);
-
 /// The characters a file name the user sees may not hold.
 ///
 /// A file's own name never reaches a URL, since it is stored under a random

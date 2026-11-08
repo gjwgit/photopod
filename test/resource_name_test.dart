@@ -25,41 +25,7 @@ library;
 
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:photopod/utils/resource_name.dart';
-
 void main() {
-  group('isSafeResourceName', () {
-    test('accepts a name that needs no escaping', () {
-      for (final name in [
-        'DSC03274_colcorrected_NB.jpg',
-        'beach.jpg',
-        'holiday-2026.mp4',
-        "don't.png",
-        'clip(2).mov',
-        'a~b!c.jpg',
-      ]) {
-        expect(isSafeResourceName(name), isTrue, reason: name);
-      }
-    });
-
-    test('rejects a name that would be escaped or refused', () {
-      for (final name in [
-        'my photo.jpg',
-        '我的照片.jpg',
-        'a*b.jpg',
-        'a%20b.jpg',
-        'a/b.jpg',
-        'a+b&c=d.png',
-      ]) {
-        expect(isSafeResourceName(name), isFalse, reason: name);
-      }
-    });
-
-    test('an empty name is not usable', () {
-      expect(isSafeResourceName(''), isFalse);
-    });
-  });
-
   group('the round trip solidpod makes through a URL', () {
     // solidpod takes a resource's path back out of its URL with
     // `Uri.pathSegments`, which decodes each segment, and rebuilds the URL by

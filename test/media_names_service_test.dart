@@ -42,7 +42,6 @@ void main() {
       for (final name in ['海滩 照片.jpg', 'a#b%c.mov', 'ビーチ.png']) {
         final stored = randomStoredName(name);
         expect(Uri.encodeComponent(stored), stored, reason: name);
-        expect(isSafeResourceName(stored), isTrue, reason: name);
       }
     });
 
