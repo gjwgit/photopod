@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.2 Single Photo Store
 
++ Tags and people in Get Info, info button on tiles [1.2.1 20261109 gjwgit]
 + Catalog, single photo store, folders become albums [1.2.0 20261108 gjwgit]
 
 ## 1.1 Functional Updates
