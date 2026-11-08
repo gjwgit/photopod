@@ -453,14 +453,30 @@ class _RemoveButton extends StatelessWidget {
   );
 }
 
-/// What hovering over [item] on the map shows: its name, and who shared it
-/// for anything shared with the user.
+/// What hovering over [item] on the map shows, as Markdown: its [title]
+/// when it has one, or failing that its file name, and who shared it for
+/// anything shared with the user. All of it is escaped so that a name such
+/// as `my_photo_1.jpg` is not taken for Markdown.
 
-String mediaTooltipText(MediaItem item) {
+String mediaTooltipMarkdown(MediaItem item, {String? title}) {
+  final heading = title == null || title.trim().isEmpty
+      ? item.name
+      : title.trim();
+  final name = '**${escapeMarkdown(heading)}**';
   final owner = item.sharedBy;
-  if (owner == null) return item.name;
-  return '${item.name}\nShared by ${webIdLabel(owner)}\n$owner';
+  if (owner == null) return name;
+  return '$name\n\n'
+      'Shared by ${escapeMarkdown(webIdLabel(owner))}\n\n'
+      '${escapeMarkdown(owner)}';
 }
+
+/// Escape the characters Markdown gives a meaning to, so that [text] is shown
+/// exactly as it is written.
+
+String escapeMarkdown(String text) => text.replaceAllMapped(
+  RegExp(r'[\\`*_{}\[\]()#+\-.!|<>~]'),
+  (m) => '\\${m[0]}',
+);
 
 class _VideoBadge extends StatelessWidget {
   const _VideoBadge();

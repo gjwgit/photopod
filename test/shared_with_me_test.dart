@@ -112,12 +112,32 @@ void main() {
       sharedBy: _alice,
     );
 
-    test('shows only the name of the user\'s own photo', () {
-      expect(mediaTooltipText(own), 'my_photo_1.jpg');
+    test('shows the file name of a photo with no title', () {
+      expect(mediaTooltipMarkdown(own), r'**my\_photo\_1\.jpg**');
+    });
+
+    test('shows the title in place of the file name', () {
+      expect(
+        mediaTooltipMarkdown(own, title: 'Sunset at Bondi'),
+        '**Sunset at Bondi**',
+      );
+    });
+
+    test('falls back to the file name for an empty title', () {
+      expect(mediaTooltipMarkdown(own, title: '  '), r'**my\_photo\_1\.jpg**');
+    });
+
+    test('escapes a title so it is not taken for Markdown', () {
+      expect(
+        mediaTooltipMarkdown(own, title: '*Not* bold_'),
+        r'**\*Not\* bold\_**',
+      );
     });
 
     test('shows who shared a photo shared with the user', () {
-      expect(mediaTooltipText(shared), 'beach.jpg\nShared by alice\n$_alice');
+      final tip = mediaTooltipMarkdown(shared);
+      expect(tip, startsWith(r'**beach\.jpg**'));
+      expect(tip, contains('Shared by alice'));
     });
   });
 

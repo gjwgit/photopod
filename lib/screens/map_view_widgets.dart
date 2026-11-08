@@ -44,10 +44,13 @@ class _PlaceMarker extends StatelessWidget {
 
     return GestureDetector(
       onTap: onTap,
-      child: Tooltip(
+      child: MarkdownTooltip(
         message: place.items.length == 1
-            ? place.items.first.name
-            : '${place.items.length} photos',
+            ? mediaTooltipMarkdown(
+                place.items.first,
+                title: MediaCatalog.titleOf(place.items.first.path)?.text,
+              )
+            : '**${place.items.length} photos**',
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -119,8 +122,11 @@ class _PlaceDialog extends StatelessWidget {
           runSpacing: 8,
           children: [
             for (final item in place.items)
-              Tooltip(
-                message: mediaTooltipText(item),
+              MarkdownTooltip(
+                message: mediaTooltipMarkdown(
+                  item,
+                  title: MediaCatalog.titleOf(item.path)?.text,
+                ),
                 child: InkWell(
                   onTap: () async {
                     Navigator.of(context).pop();

@@ -30,6 +30,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:gap/gap.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:markdown_tooltip/markdown_tooltip.dart';
 import 'package:provider/provider.dart';
 import 'package:solidpod/solidpod.dart' show KeyManager;
 import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
@@ -45,7 +46,7 @@ import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/widgets/demo_banner.dart';
-import 'package:photopod/widgets/media_grid.dart' show mediaTooltipText;
+import 'package:photopod/widgets/media_grid.dart' show mediaTooltipMarkdown;
 import 'package:photopod/widgets/media_thumbnail.dart';
 
 part 'map_view_widgets.dart';
