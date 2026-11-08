@@ -37,7 +37,6 @@ Williams](https://togaware.com/Graham.Williams.html).
 + Initial face recognition. [1.1.1 20261105 tonypioneer]
 + Random filenames [1.1.0 20261105 tonypioneer]
 
-
 ## 1.0 Initial Functional Release
 
 + Video thumbnails fixes [1.0.4 20261028 tonypioneer]

@@ -36,7 +36,6 @@ import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_index.dart';
-import 'package:photopod/services/people.dart';
 import 'package:photopod/services/shared_with_me.dart';
 
 /// The root of the application.
@@ -72,7 +71,6 @@ class App extends StatelessWidget {
         ChangeNotifierProvider<MediaIndex>(
           create: (context) => MediaIndex(context.read<SharedWithMe>()),
         ),
-        ChangeNotifierProvider<People>(create: (context) => People()),
       ],
       child: SolidThemeApp(
         title: appTitle,
@@ -84,9 +82,9 @@ class App extends StatelessWidget {
           // A visitor goes straight into the app, without logging in, and
           // finds every section showing the sample album (see DemoLibrary):
           // landscapes from around the world on the map, dates across many
-          // years, and familiar faces for People. Logging in from the profile menu, or from the
-          // banner above each section, replaces the samples with the photos
-          // in their own Pod.
+          // years, and an album of familiar faces. Logging in from the
+          // profile menu, or from the banner above each section, replaces
+          // the samples with the photos in their own Pod.
 
           skipLogin: true,
           title: appTitle.replaceAll(' - ', '\n'),

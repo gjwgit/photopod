@@ -44,9 +44,8 @@ class DemoEntry {
 
   final DateTime taken;
 
-  /// The people in it, for the portraits. After the face scan each person
-  /// found is named after whichever of these turns up in most of their
-  /// photos.
+  /// The people in it, for the portraits, which sorts each sample into the
+  /// faces or the nature album.
 
   final List<String> people;
 
@@ -79,9 +78,9 @@ class DemoEntry {
 /// album instead: landscapes from around the world, each carrying GPS
 /// coordinates in its EXIF block for the Maps section; dates spread across
 /// many years for sorting and the timeline; and recent portraits of three
-/// Nobel laureates in physics, several of each, for the People section to
-/// recognise and group. None of them is a political figure, and no one else
-/// appears in their photos.
+/// Nobel laureates in physics, several of each, which also appear on the map.
+/// None of them is a political figure, and no one else appears in their
+/// photos.
 ///
 /// Every photo is from Wikimedia Commons and is in the public domain or
 /// released under CC0, so none needs attribution. The photographer is
@@ -195,14 +194,12 @@ class DemoLibrary {
       DateTime(2026, 1, 9, 12, 40),
     ),
 
-    // Nobel laureates in physics, several portraits each, for face
-    // recognition. All are recent photos from NASA, NIST and the Space
-    // Telescope Science Institute, so each carries the date and the place it
-    // was taken in its EXIF block, and appears on the map with the
-    // landscapes. Each photo shows only the person named, since a face
-    // nobody is listed for would otherwise be named after, and merged with,
-    // whoever else is. Where Wikimedia Commons gives only the year a photo
-    // was taken, the month and day are made up.
+    // Nobel laureates in physics, several portraits each. All are recent
+    // photos from NASA, NIST and the Space Telescope Science Institute, so
+    // each carries the date and the place it was taken in its EXIF block,
+    // and appears on the map with the landscapes. Each photo shows only the
+    // person named. Where Wikimedia Commons gives only the year a photo was
+    // taken, the month and day are made up.
     DemoEntry(
       'john_mather_2012.jpg',
       'John Mather, 2012.jpg',
@@ -242,7 +239,7 @@ class DemoLibrary {
     DemoEntry(
       'david_wineland_2013.jpg',
       'David Wineland, 2013.jpg',
-      DateTime(2013, 1, 23, 12, 34),
+      DateTime(2013, 1, 23, 12, 34, 19),
       people: ['David Wineland'],
     ),
     DemoEntry(
@@ -338,11 +335,6 @@ class DemoLibrary {
         _byPath[item.path]?.latitude != null &&
         _byPath[item.path]?.longitude != null,
   );
-
-  /// The people known to be in the sample at [path].
-
-  static List<String> peopleAt(String path) =>
-      _byPath[path]?.people ?? const [];
 
   /// The paths of the samples hearted from the start.
 

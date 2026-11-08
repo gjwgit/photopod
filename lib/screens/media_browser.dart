@@ -453,7 +453,6 @@ class MediaBrowserState extends State<MediaBrowser> {
             .toList();
       case LibrarySection.videos:
         return context.read<MediaIndex>().videos;
-      case LibrarySection.people:
       case LibrarySection.maps:
         return const [];
     }

@@ -71,20 +71,20 @@ void main() {
 
       expect(metadata.taken, entry.taken, reason: entry.file);
 
-      // The landscapes are there for the map; the portraits are not.
+      // The landscapes and the portraits alike appear on the map.
 
-      expect(metadata.hasLocation, entry.people.isEmpty, reason: entry.file);
+      expect(metadata.hasLocation, isTrue, reason: entry.file);
     }
   });
 
-  test('the portraits give each person several photos to be grouped by', () {
+  test('the portraits give each of three people several photos', () {
     final counts = <String, int>{};
     for (final entry in DemoLibrary.entries) {
       for (final who in entry.people) {
         counts[who] = (counts[who] ?? 0) + 1;
       }
     }
-    expect(counts, hasLength(4));
+    expect(counts, hasLength(3));
     expect(counts.values.every((count) => count >= 2), isTrue);
   });
 
