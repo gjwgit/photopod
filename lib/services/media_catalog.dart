@@ -280,6 +280,23 @@ class MediaCatalog {
     }
   });
 
+  /// Give the item at [path] the title [title], merged with the one it
+  /// has as [PhotoTitle.merge] says: the user's own words always win, and a
+  /// service's suggestion fills in only where the user has given none.
+
+  static Future<void> setTitle(String path, PhotoTitle title) =>
+      _change((entries) {
+        final entry = _forUpdate(entries, path);
+        if (entry == null) return;
+        entries[catalogKeyOf(path)] = entry.withTitle(
+          PhotoTitle.merge(entry.title, title),
+        );
+      });
+
+  /// The title of the item at Pod-relative [path], if it has one.
+
+  static PhotoTitle? titleOf(String path) => entryOf(path)?.title;
+
   /// Replace the tags of the item at [path] with [tags].
 
   static Future<void> setTags(String path, List<PhotoTag> tags) => _change((

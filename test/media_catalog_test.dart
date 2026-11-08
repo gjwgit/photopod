@@ -149,4 +149,89 @@ void main() {
       expect(catalogFromNames('not json'), isEmpty);
     });
   });
+
+  group('PhotoTitle.merge', () {
+    const mine = PhotoTitle('Our beach');
+    const suggested = PhotoTitle('A beach', source: 'teepod:vision');
+
+    test('takes a title where there was none', () {
+      expect(PhotoTitle.merge(null, mine)?.text, 'Our beach');
+      expect(PhotoTitle.merge(null, suggested)?.source, 'teepod:vision');
+    });
+
+    test('lets the user replace a suggestion, which becomes theirs', () {
+      final merged = PhotoTitle.merge(suggested, const PhotoTitle('Bondi'));
+      expect(merged?.text, 'Bondi');
+      expect(merged?.isUsers, isTrue);
+    });
+
+    test('never lets a suggestion replace the user\'s title', () {
+      expect(PhotoTitle.merge(mine, suggested), same(mine));
+    });
+
+    test('lets a newer suggestion replace an older one', () {
+      final newer = PhotoTitle.merge(
+        suggested,
+        const PhotoTitle('Sunset at the beach', source: 'teepod:vision2'),
+      );
+      expect(newer?.text, 'Sunset at the beach');
+      expect(newer?.source, 'teepod:vision2');
+    });
+
+    test('takes the title away when the user empties it', () {
+      expect(PhotoTitle.merge(mine, const PhotoTitle('  ')), isNull);
+      expect(PhotoTitle.merge(suggested, const PhotoTitle('')), isNull);
+    });
+
+    test('changes nothing for an empty suggestion', () {
+      expect(
+        PhotoTitle.merge(suggested, const PhotoTitle('', source: 'teepod:x')),
+        same(suggested),
+      );
+    });
+
+    test('trims what it is given', () {
+      expect(
+        PhotoTitle.merge(null, const PhotoTitle('  Bondi '))?.text,
+        'Bondi',
+      );
+    });
+  });
+
+  group('the title in the catalog', () {
+    test('round trips with its source', () {
+      final entries = {
+        _key: const CatalogEntry(
+          'photopod/data/x',
+          title: PhotoTitle('A beach', source: 'teepod:vision'),
+        ),
+      };
+      final title = decodeCatalog(encodeCatalog(entries))[_key]!.title!;
+      expect(title.text, 'A beach');
+      expect(title.source, 'teepod:vision');
+    });
+
+    test('is the user\'s when written by hand as plain text', () {
+      final entry = decodeCatalog(
+        '{"items": {"a": {"path": "p/a", "title": "Bondi"}}}',
+      )['a']!;
+      expect(entry.title?.text, 'Bondi');
+      expect(entry.title?.isUsers, isTrue);
+    });
+
+    test('is left out when empty or the wrong shape', () {
+      final entries = decodeCatalog(
+        '{"items": {"a": {"path": "p/a", "title": ""}, '
+        '"b": {"path": "p/b", "title": 3}}}',
+      );
+      expect(entries['a']!.title, isNull);
+      expect(entries['b']!.title, isNull);
+    });
+
+    test('is kept when other fields change, and can be taken away', () {
+      const entry = CatalogEntry('p/a', title: PhotoTitle('Bondi'));
+      expect(entry.copyWith(name: 'b.jpg').title?.text, 'Bondi');
+      expect(entry.withTitle(null).title, isNull);
+    });
+  });
 }

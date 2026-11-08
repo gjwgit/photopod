@@ -43,6 +43,7 @@ import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/label_editor.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
+import 'package:photopod/widgets/title_editor.dart';
 
 /// Describe [item] in a modal dialogue.
 ///
@@ -52,8 +53,9 @@ import 'package:photopod/widgets/media_thumbnail.dart';
 /// itself come from the catalog, or failing that need the thumbnail fetched
 /// and decoded, so they may arrive a moment later.
 ///
-/// It is also where the user tags one of their own photos or videos and
-/// names the people in it. Each change is saved to the catalog at once.
+/// It is also where the user titles and tags one of their own photos or
+/// videos and names the people in it. Each change is saved to the catalog at
+/// once.
 
 Future<void> showInfoDialog(BuildContext context, MediaItem item) =>
     showDialog<void>(
@@ -73,6 +75,7 @@ class _InfoDialog extends StatefulWidget {
 class _InfoDialogState extends State<_InfoDialog> {
   PhotoMetadata? _metadata;
   bool _reading = false;
+  PhotoTitle? _title;
   List<PhotoTag> _tags = const [];
   List<PhotoFace> _faces = const [];
 
@@ -86,6 +89,7 @@ class _InfoDialogState extends State<_InfoDialog> {
   void initState() {
     super.initState();
     final entry = MediaCatalog.entryOf(widget.item.path);
+    _title = MediaCatalog.titleOf(widget.item.path);
     _tags = entry?.tags ?? const [];
     _faces = entry?.faces ?? const [];
     if (widget.item.isPhoto) _read();
@@ -217,12 +221,17 @@ class _InfoDialogState extends State<_InfoDialog> {
     ];
   }
 
-  // The tags and the people, each a row of chips with a field to add more.
-  // What has been used on other photos is offered while the user types.
+  // The title, then the tags and the people, each a row of chips with a
+  // field to add more. What has been used on other photos is offered while
+  // the user types.
 
   List<Widget> _buildLabels(BuildContext context) {
     final style = Theme.of(context).textTheme.labelLarge;
     return [
+      const Gap(16),
+      Text('Title', style: style),
+      const Gap(8),
+      TitleEditor(title: _title, onChanged: _saveTitle),
       const Gap(16),
       Text('Tags', style: style),
       const Gap(8),
@@ -294,7 +303,24 @@ class _InfoDialogState extends State<_InfoDialog> {
   }
 
   // The change shows at once, and is taken back if the catalog cannot be
-  // saved.
+  // saved. Whatever the user writes is theirs, replacing a suggestion.
+
+  Future<void> _saveTitle(String text) async {
+    final before = _title;
+    final title = PhotoTitle.merge(before, PhotoTitle(text));
+
+    // The field saves what was typed as the dialogue closes, by which time
+    // there may be nothing left to show it in.
+
+    if (mounted) setState(() => _title = title);
+    try {
+      await MediaCatalog.setTitle(widget.item.path, PhotoTitle(text));
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() => _title = before);
+      await showErrorDialog(context, 'The title was not saved', '$e');
+    }
+  }
 
   Future<void> _saveTags(List<PhotoTag> tags) async {
     final before = _tags;
@@ -388,6 +414,7 @@ class _InfoDialogState extends State<_InfoDialog> {
     final metadata = _metadata;
     final lines = [
       widget.item.name,
+      if (_title != null) 'Title: ${_title!.text}',
       for (final row in _podRows()) '${row.$1}: ${row.$2}',
       if (_tags.isNotEmpty) 'Tags: ${_tags.map((tag) => tag.label).join(', ')}',
       if (_faces.isNotEmpty)

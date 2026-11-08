@@ -112,9 +112,62 @@ class PhotoFace {
   }
 }
 
+/// A short title for a photo, such as `Sunset over the harbour`, and who
+/// gave it: [userSource], or the service that suggested it.
+
+class PhotoTitle {
+  final String text;
+
+  final String source;
+
+  const PhotoTitle(this.text, {this.source = userSource});
+
+  /// Whether the user gave this title, rather than a service.
+
+  bool get isUsers => source == userSource;
+
+  Map<String, Object> toJson() => {'text': text, 'source': source};
+
+  /// The title [toJson] wrote, or null when [json] is not one. Plain text is
+  /// taken as a title the user gave, which is what a person editing the
+  /// catalog by hand would write.
+
+  static PhotoTitle? fromJson(Object? json) {
+    if (json is String) {
+      return json.trim().isEmpty ? null : PhotoTitle(json.trim());
+    }
+    if (json is! Map<String, dynamic>) return null;
+    final text = json['text'];
+    if (text is! String || text.trim().isEmpty) return null;
+    final source = json['source'];
+    return PhotoTitle(
+      text.trim(),
+      source: source is String && source.isNotEmpty ? source : userSource,
+    );
+  }
+
+  /// The title a photo ends up with when [incoming] arrives and it has
+  /// [current], or null for none.
+  ///
+  /// What the user writes always wins: it replaces whatever is there, and
+  /// an empty title from the user takes the title away. What a service
+  /// suggests is taken only while the user has given no title of their own,
+  /// so a later suggestion never overwrites the user's words; an empty
+  /// suggestion changes nothing.
+
+  static PhotoTitle? merge(PhotoTitle? current, PhotoTitle incoming) {
+    final text = incoming.text.trim();
+    if (incoming.isUsers) {
+      return text.isEmpty ? null : PhotoTitle(text);
+    }
+    if (text.isEmpty || (current?.isUsers ?? false)) return current;
+    return PhotoTitle(text, source: incoming.source);
+  }
+}
+
 /// One entry in the catalog: where an item is stored, the name the user
-/// knows it by, when it was taken, what its EXIF block says, and the tags and
-/// faces the user, or a service, has given it.
+/// knows it by, its title, when it was taken, what its EXIF block says, and
+/// the tags and faces the user, or a service, has given it.
 ///
 /// Every field but [path] is optional, since an entry is filled in piece by
 /// piece: the name and date when a photo is added, the details once its
@@ -128,6 +181,10 @@ class CatalogEntry {
   /// The name the user gave it.
 
   final String? name;
+
+  /// A short title saying what the photo shows, from the user or a service.
+
+  final PhotoTitle? title;
 
   /// When it was taken, as ISO 8601 text; see [encodeDate].
 
@@ -145,6 +202,7 @@ class CatalogEntry {
   const CatalogEntry(
     this.path, {
     this.name,
+    this.title,
     this.taken,
     this.metadata,
     this.tags = const [],
@@ -163,15 +221,29 @@ class CatalogEntry {
   }) => CatalogEntry(
     path ?? this.path,
     name: name ?? this.name,
+    title: title,
     taken: taken ?? this.taken,
     metadata: metadata ?? this.metadata,
     tags: tags ?? this.tags,
     faces: faces ?? this.faces,
   );
 
+  /// The same entry with [title] in place of its title, or none.
+
+  CatalogEntry withTitle(PhotoTitle? title) => CatalogEntry(
+    path,
+    name: name,
+    title: title,
+    taken: taken,
+    metadata: metadata,
+    tags: tags,
+    faces: faces,
+  );
+
   Map<String, Object> toJson() => {
     'path': path,
     'name': ?name,
+    'title': ?title?.toJson(),
     'taken': ?taken,
     'exif': ?metadata?.toJson(),
     if (tags.isNotEmpty) 'tags': [for (final tag in tags) tag.toJson()],
@@ -194,6 +266,7 @@ class CatalogEntry {
     return CatalogEntry(
       path,
       name: name is String && name.isNotEmpty ? name : null,
+      title: PhotoTitle.fromJson(json['title']),
       taken: taken is String && DateTime.tryParse(taken) != null ? taken : null,
       metadata: exif is Map<String, dynamic>
           ? PhotoMetadata.fromJson(exif)
