@@ -323,6 +323,7 @@ extension MediaBrowserBody on MediaBrowserState {
               onTap: (item) => _handleTap(item, visible),
               onActivate: _handleActivate,
               onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+              onInfo: (item) => showInfoDialog(context, item),
             )
           : MediaList(
               items: visible,
@@ -359,6 +360,7 @@ extension MediaBrowserBody on MediaBrowserState {
       onTap: (item) => _handleTap(item, all),
       onActivate: _handleActivate,
       onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+      onInfo: (item) => showInfoDialog(context, item),
       onOpenMemory: (memory) =>
           _handleActivate(memory.items.first, memory.items),
     );
@@ -389,6 +391,7 @@ extension MediaBrowserBody on MediaBrowserState {
         entries.firstWhere((entry) => entry.id == album).items,
       ),
       onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+      onInfo: (item) => showInfoDialog(context, item),
       onShare: (album) => _shareAlbum(
         context,
         album,

@@ -48,6 +48,7 @@ class MediaGrid extends StatelessWidget {
     required this.onTap,
     required this.onActivate,
     required this.onToggleFavourite,
+    this.onInfo,
     this.isSharedOut = _never,
     this.multiSelect = false,
     this.tileExtent = 140,
@@ -76,6 +77,11 @@ class MediaGrid extends StatelessWidget {
   /// Called when the heart on a tile is tapped.
 
   final void Function(MediaItem) onToggleFavourite;
+
+  /// Called when the info button on a tile is tapped. Tiles have no info
+  /// button when this is null.
+
+  final void Function(MediaItem)? onInfo;
 
   /// Whether one of the user's own items is shared with someone else.
 
@@ -111,6 +117,7 @@ class MediaGrid extends StatelessWidget {
         onTap: () => onTap(item),
         onActivate: () => onActivate(item),
         onToggleFavourite: () => onToggleFavourite(item),
+        onInfo: onInfo == null ? null : () => onInfo!(item),
       );
     },
   );
@@ -123,7 +130,8 @@ class MediaGrid extends StatelessWidget {
 /// row of differently shaped pictures. Selection is shown by an outline, and
 /// by a tick as well when several items can be selected at once. The heart
 /// appears on hover, when the item is already a favourite, or when the tile
-/// is selected. Anything shared with the user, and anything of the user's own
+/// is selected, and beside it, on hover or when selected, a button that opens
+/// Get Info. Anything shared with the user, and anything of the user's own
 /// they have shared with someone, carries a two-people mark beside the
 /// heart. A tile shown inside one of the
 /// user's own albums also offers, on hover or when selected, to take the item
@@ -138,6 +146,7 @@ class MediaTile extends StatefulWidget {
     required this.onTap,
     required this.onActivate,
     required this.onToggleFavourite,
+    this.onInfo,
     this.onRemoveFromAlbum,
     this.sharedOut = false,
     this.showCheck = false,
@@ -166,6 +175,11 @@ class MediaTile extends StatefulWidget {
   /// Called when the heart is tapped.
 
   final VoidCallback onToggleFavourite;
+
+  /// Called when the info button is tapped. The button appears only when
+  /// this is set.
+
+  final VoidCallback? onInfo;
 
   /// Called when the remove button is tapped. Only a tile shown inside an
   /// album has one, so the button appears only when this is set.
@@ -263,6 +277,9 @@ class _MediaTileState extends State<MediaTile> {
                         SharedBadge(owner: item.sharedBy!)
                       else if (widget.sharedOut)
                         const SharedBadge(),
+                      if (widget.onInfo != null &&
+                          (_hovering || widget.selected))
+                        _InfoButton(onPressed: widget.onInfo!),
                       if (widget.favourite || _hovering || widget.selected)
                         _HeartButton(
                           favourite: widget.favourite,
@@ -317,6 +334,29 @@ class _MediaTileState extends State<MediaTile> {
       ),
     );
   }
+}
+
+class _InfoButton extends StatelessWidget {
+  const _InfoButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    iconSize: 18,
+    visualDensity: VisualDensity.compact,
+    padding: const EdgeInsets.all(4),
+    constraints: const BoxConstraints(),
+    tooltip: 'Get Info',
+    icon: const Icon(
+      Icons.info_outline,
+      color: Colors.white,
+
+      // As for the heart, the shadow keeps it legible on any photo.
+      shadows: [Shadow(blurRadius: 4, color: Colors.black54)],
+    ),
+    onPressed: onPressed,
+  );
 }
 
 class _HeartButton extends StatelessWidget {

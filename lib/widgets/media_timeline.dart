@@ -48,6 +48,7 @@ class MediaTimeline extends StatefulWidget {
     required this.onActivate,
     required this.onToggleFavourite,
     required this.onOpenMemory,
+    this.onInfo,
     this.isSharedOut = _never,
     this.multiSelect = false,
     this.tileExtent = 140,
@@ -80,6 +81,11 @@ class MediaTimeline extends StatefulWidget {
   /// Called when the heart on a tile is tapped.
 
   final void Function(MediaItem) onToggleFavourite;
+
+  /// Called when the info button on a tile is tapped. Tiles have no info
+  /// button when this is null.
+
+  final void Function(MediaItem)? onInfo;
 
   /// Called when a memory is opened.
 
@@ -229,6 +235,9 @@ class _MediaTimelineState extends State<MediaTimeline> {
                     onTap: () => widget.onTap(item),
                     onActivate: () => widget.onActivate(item),
                     onToggleFavourite: () => widget.onToggleFavourite(item),
+                    onInfo: widget.onInfo == null
+                        ? null
+                        : () => widget.onInfo!(item),
                   ),
                 ),
               ],

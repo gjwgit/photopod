@@ -112,6 +112,7 @@ class AlbumList extends StatelessWidget {
     required this.onRename,
     required this.onDelete,
     required this.onDecline,
+    this.onInfo,
     this.isSharedOut,
     this.multiSelect = false,
   });
@@ -156,6 +157,11 @@ class AlbumList extends StatelessWidget {
   /// Called when the heart on a tile is tapped.
 
   final void Function(MediaItem item) onToggleFavourite;
+
+  /// Called when the info button on a tile is tapped. Tiles have no info
+  /// button when this is null.
+
+  final void Function(MediaItem item)? onInfo;
 
   /// Called by the share button in an album's title bar, with the album's
   /// name. Only the user's own albums have one.
@@ -283,6 +289,9 @@ class _AlbumTile extends StatelessWidget {
                     onTap: () => list.onTap(album.id, item),
                     onActivate: () => list.onActivate(album.id, item),
                     onToggleFavourite: () => list.onToggleFavourite(item),
+                    onInfo: list.onInfo == null
+                        ? null
+                        : () => list.onInfo!(item),
                     onRemoveFromAlbum: album.isFromOthers
                         ? null
                         : () => list.onRemoveFromAlbum(album.name, item),

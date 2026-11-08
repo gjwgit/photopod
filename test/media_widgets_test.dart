@@ -23,6 +23,7 @@
 
 library;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -902,6 +903,59 @@ void main() {
       );
       expect(find.byIcon(Icons.people), findsOneWidget);
       expect(find.bySemanticsLabel('Shared by you'), findsOneWidget);
+    });
+  });
+
+  group('MediaTile info button', () {
+    Widget tile({required bool selected, VoidCallback? onInfo}) => _wrap(
+      SizedBox(
+        width: 140,
+        height: 140,
+        child: MediaTile(
+          item: _item('beach.jpg'),
+          selected: selected,
+          favourite: false,
+          onTap: () {},
+          onActivate: () {},
+          onToggleFavourite: () {},
+          onInfo: onInfo,
+        ),
+      ),
+    );
+
+    testWidgets('appears beside the heart on a selected tile', (tester) async {
+      await tester.pumpWidget(tile(selected: true, onInfo: () {}));
+      expect(find.byIcon(Icons.info_outline), findsOneWidget);
+      expect(find.byIcon(Icons.favorite_border), findsOneWidget);
+    });
+
+    testWidgets('appears on hover', (tester) async {
+      await tester.pumpWidget(tile(selected: false, onInfo: () {}));
+      expect(find.byIcon(Icons.info_outline), findsNothing);
+
+      final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await mouse.addPointer(location: Offset.zero);
+      addTearDown(mouse.removePointer);
+      await mouse.moveTo(tester.getCenter(find.byType(MediaTile)));
+      await tester.pump();
+      expect(find.byIcon(Icons.info_outline), findsOneWidget);
+    });
+
+    testWidgets('opens Get Info when tapped', (tester) async {
+      var opened = 0;
+      await tester.pumpWidget(tile(selected: true, onInfo: () => opened++));
+
+      // As for the heart, the tap settles once the tile stops waiting for a
+      // second one.
+
+      await tester.tap(find.byIcon(Icons.info_outline));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(opened, 1);
+    });
+
+    testWidgets('is absent when nothing would open', (tester) async {
+      await tester.pumpWidget(tile(selected: true));
+      expect(find.byIcon(Icons.info_outline), findsNothing);
     });
   });
 }
