@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.2 Single Photo Store
 
++ Show the photo title in the preview [1.2.3 20261109 gjwgit]
 + Photo titles in Get Info, titles on the map [1.2.2 20261109 gjwgit]
 + Tags and people in Get Info, info button on tiles [1.2.1 20261109 gjwgit]
 + Catalog, single photo store, folders become albums [1.2.0 20261108 gjwgit]

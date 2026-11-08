@@ -38,6 +38,7 @@ import 'package:photopod/dialogs/download_media.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
@@ -304,7 +305,12 @@ class _PreviewDialogState extends State<_PreviewDialog> {
     final favourites = context.watch<Favourites>();
     final favourite = favourites.contains(_item);
 
+    // A photo with a title is headed by it, and its file name moves down
+    // among the details; one without is headed by its file name.
+
+    final title = MediaCatalog.titleOf(_item.path)?.text;
     final details = [
+      if (title != null) _item.name,
       if (widget.items.length > 1) '${_index + 1} of ${widget.items.length}',
       if (_item.size != null) formatBytes(_item.size),
       if (_item.modified != null) formatDateTime(_item.modified),
@@ -324,12 +330,16 @@ class _PreviewDialogState extends State<_PreviewDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _item.name,
+                  title ?? _item.name,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 if (details.isNotEmpty)
-                  Text(details, style: Theme.of(context).textTheme.bodySmall),
+                  Text(
+                    details,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
               ],
             ),
           ),
@@ -349,7 +359,13 @@ class _PreviewDialogState extends State<_PreviewDialog> {
           IconButton(
             icon: const Icon(Icons.info_outline),
             tooltip: 'Get Info',
-            onPressed: () => showInfoDialog(context, _item),
+
+            // The title may have been changed there, so the header is drawn
+            // again once it closes.
+            onPressed: () async {
+              await showInfoDialog(context, _item);
+              if (mounted) setState(() {});
+            },
           ),
           IconButton(
             icon: const Icon(Icons.close),
