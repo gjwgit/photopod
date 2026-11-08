@@ -113,12 +113,10 @@ void main() {
     );
 
     test('shows only the name of the user\'s own photo', () {
-      expect(mediaTooltipMarkdown(own), r'**my\_photo\_1\.jpg**');
       expect(mediaTooltipText(own), 'my_photo_1.jpg');
     });
 
     test('shows who shared a photo shared with the user', () {
-      expect(mediaTooltipMarkdown(shared), contains('Shared by alice'));
       expect(mediaTooltipText(shared), 'beach.jpg\nShared by alice\n$_alice');
     });
   });

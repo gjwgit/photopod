@@ -35,7 +35,7 @@ import 'package:photopod/widgets/media_thumbnail.dart';
 ///
 /// File names are deliberately absent. An album is looked at, not read, and
 /// a caption under every tile turns a wall of pictures into a list of
-/// filenames; the name is still a hover away, and Get Info has it in full.
+/// filenames; the name is in Get Info, a tap on a tile's info button away.
 /// Folders are the exception — a folder tile with no name says nothing at
 /// all — so those keep their label.
 
@@ -208,97 +208,92 @@ class _MediaTileState extends State<MediaTile> {
     final scheme = Theme.of(context).colorScheme;
     final item = widget.item;
 
-    // The file name is not written on the tile, so it is shown on hover
-    // instead, along with who shared it for anything that is not the user's.
+    // Nothing pops up over the tile on hover, where it would cover the heart
+    // and the info button; the name, and who shared it, are in Get Info.
 
-    return MarkdownTooltip(
-      message: mediaTooltipMarkdown(item),
-      wait: const Duration(milliseconds: 700),
-      child: MouseRegion(
-        onEnter: (_) => setState(() => _hovering = true),
-        onExit: (_) => setState(() => _hovering = false),
-        child: GestureDetector(
-          onTap: widget.onTap,
-          onDoubleTap: widget.onActivate,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: Container(
-                  color: scheme.surfaceContainerHighest,
-                  child: item.isFolder
-                      ? _buildFolder(context)
-                      : MediaThumbnail(item: item),
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovering = true),
+      onExit: (_) => setState(() => _hovering = false),
+      child: GestureDetector(
+        onTap: widget.onTap,
+        onDoubleTap: widget.onActivate,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: Container(
+                color: scheme.surfaceContainerHighest,
+                child: item.isFolder
+                    ? _buildFolder(context)
+                    : MediaThumbnail(item: item),
+              ),
+            ),
+
+            // The selection outline is drawn over the picture rather than
+            // around it, so that selecting a tile never nudges its
+            // neighbours.
+            if (widget.selected)
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: scheme.primary, width: 3),
                 ),
               ),
 
-              // The selection outline is drawn over the picture rather than
-              // around it, so that selecting a tile never nudges its
-              // neighbours.
-              if (widget.selected)
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(4),
-                    border: Border.all(color: scheme.primary, width: 3),
-                  ),
-                ),
+            if (item.isVideo)
+              const Positioned(left: 4, bottom: 4, child: _VideoBadge()),
 
-              if (item.isVideo)
-                const Positioned(left: 4, bottom: 4, child: _VideoBadge()),
-
-              if (widget.showCheck)
-                Positioned(
-                  top: 4,
-                  left: 4,
-                  child: _Badge(
-                    icon: Icons.check,
-                    colour: scheme.onPrimary,
-                    background: scheme.primary,
-                  ),
+            if (widget.showCheck)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: _Badge(
+                  icon: Icons.check,
+                  colour: scheme.onPrimary,
+                  background: scheme.primary,
                 ),
+              ),
 
-              // Something shared with the user always says so, beside the
-              // heart, so that it is never mistaken for one of the user's own
-              // photos, and so does a photo the user has shared.
-              if (!item.isFolder &&
-                  (item.isShared ||
-                      widget.sharedOut ||
-                      widget.favourite ||
-                      _hovering ||
-                      widget.selected))
-                Positioned(
-                  right: 0,
-                  bottom: 0,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (item.isShared)
-                        SharedBadge(owner: item.sharedBy!)
-                      else if (widget.sharedOut)
-                        const SharedBadge(),
-                      if (widget.onInfo != null &&
-                          (_hovering || widget.selected))
-                        _InfoButton(onPressed: widget.onInfo!),
-                      if (widget.favourite || _hovering || widget.selected)
-                        _HeartButton(
-                          favourite: widget.favourite,
-                          onPressed: widget.onToggleFavourite,
-                        ),
-                    ],
-                  ),
+            // Something shared with the user always says so, beside the
+            // heart, so that it is never mistaken for one of the user's own
+            // photos, and so does a photo the user has shared.
+            if (!item.isFolder &&
+                (item.isShared ||
+                    widget.sharedOut ||
+                    widget.favourite ||
+                    _hovering ||
+                    widget.selected))
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (item.isShared)
+                      SharedBadge(owner: item.sharedBy!)
+                    else if (widget.sharedOut)
+                      const SharedBadge(),
+                    if (widget.onInfo != null && (_hovering || widget.selected))
+                      _InfoButton(onPressed: widget.onInfo!),
+                    if (widget.favourite || _hovering || widget.selected)
+                      _HeartButton(
+                        favourite: widget.favourite,
+                        onPressed: widget.onToggleFavourite,
+                      ),
+                  ],
                 ),
+              ),
 
-              if (!item.isFolder &&
-                  widget.onRemoveFromAlbum != null &&
-                  (_hovering || widget.selected))
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: _RemoveButton(onPressed: widget.onRemoveFromAlbum!),
-                ),
-            ],
-          ),
+            if (!item.isFolder &&
+                widget.onRemoveFromAlbum != null &&
+                (_hovering || widget.selected))
+              Positioned(
+                top: 0,
+                right: 0,
+                child: _RemoveButton(onPressed: widget.onRemoveFromAlbum!),
+              ),
+          ],
         ),
       ),
     );
@@ -458,35 +453,14 @@ class _RemoveButton extends StatelessWidget {
   );
 }
 
-/// What hovering over [item] shows, as Markdown: its name, and who shared it
-/// for anything shared with the user. Both are escaped so that a name such as
-/// `my_photo_1.jpg` is not taken for Markdown.
-
-String mediaTooltipMarkdown(MediaItem item) {
-  final name = '**${escapeMarkdown(item.name)}**';
-  final owner = item.sharedBy;
-  if (owner == null) return name;
-  return '$name\n\n'
-      'Shared by ${escapeMarkdown(webIdLabel(owner))}\n\n'
-      '${escapeMarkdown(owner)}';
-}
-
-/// What hovering over [item] shows, as plain text, for places that use an
-/// ordinary tooltip.
+/// What hovering over [item] on the map shows: its name, and who shared it
+/// for anything shared with the user.
 
 String mediaTooltipText(MediaItem item) {
   final owner = item.sharedBy;
   if (owner == null) return item.name;
   return '${item.name}\nShared by ${webIdLabel(owner)}\n$owner';
 }
-
-/// Escape the characters Markdown gives a meaning to, so that [text] is shown
-/// exactly as it is written.
-
-String escapeMarkdown(String text) => text.replaceAllMapped(
-  RegExp(r'[\\`*_{}\[\]()#+\-.!|<>~]'),
-  (m) => '\\${m[0]}',
-);
 
 class _VideoBadge extends StatelessWidget {
   const _VideoBadge();
