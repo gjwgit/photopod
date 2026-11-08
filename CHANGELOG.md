@@ -30,6 +30,10 @@ then please show some ❤️ and tap on the star at
 This app is authored by Tony Chen and [Graham
 Williams](https://togaware.com/Graham.Williams.html).
 
+## 1.2 Single Photo Store
+
++ Catalog, single photo store, folders become albums [1.2.0 20261108 gjwgit]
+
 ## 1.1 Functional Updates
 
 + Remove face recognition to fix the macOS build [1.1.4 20261108 gjwgit]
