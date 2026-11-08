@@ -31,6 +31,7 @@ import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
+import 'package:photopod/services/media_store.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart';
 
@@ -47,13 +48,13 @@ const int maxScannedFolders = 400;
 
 const int maxScanDepth = 12;
 
-/// The whole album as one flat list, built by walking the folders.
+/// The whole album as one flat list.
 ///
-/// The Favourites, Videos and Maps sections are views over the album rather
-/// than over a folder, so none of them can be answered by a single container
-/// listing. They share this index instead, which is scanned once and then
-/// reused, and which the Library section invalidates whenever it changes
-/// something on the Pod.
+/// Every section is a view over the whole album, so they share this index,
+/// which is scanned once and then reused, and invalidated whenever something
+/// on the Pod changes. The scan lists the [MediaStore], and walks any folders
+/// an earlier build left at the top of the album until they are moved into
+/// the store; see [StoreMigration].
 ///
 /// What other people have shared with the user is part of the album too, so
 /// the index folds in [SharedWithMe] after its own walk: a shared photo shows
@@ -171,7 +172,7 @@ class MediaIndex extends ChangeNotifier {
       _demo = false;
 
       final root = await PodMediaService.rootPath();
-      final found = <MediaItem>[];
+      final found = <MediaItem>[...await MediaStore.list()];
       var scanned = 0;
       var truncated = false;
 

@@ -132,7 +132,7 @@ extension MediaBrowserActions on MediaBrowserState {
     });
   }
 
-  /// Handle a double tap: open a folder, or preview a file.
+  /// Handle a double tap: preview the file.
   ///
   /// The preview can step through [siblings], which defaults to every file
   /// this section shows, across all pages, in the order they are displayed.
@@ -141,11 +141,7 @@ extension MediaBrowserActions on MediaBrowserState {
     MediaItem item, [
     List<MediaItem>? siblings,
   ]) async {
-    if (item.isFolder) {
-      await _goTo(item.path);
-      return;
-    }
-    if (!mounted) return;
+    if (item.isFolder || !mounted) return;
     await showPreviewDialog(context, item, items: siblings ?? _sortedFiles);
   }
 
@@ -165,7 +161,7 @@ extension MediaBrowserActions on MediaBrowserState {
   Future<void> _getInfo(BuildContext context) async {
     final files = _selectedFiles;
     if (files.isEmpty) return;
-    await showInfoDialog(context, files.first, rootPath: _root);
+    await showInfoDialog(context, files.first);
   }
 
   /// Add a heart to [items], or take it away from all of them.
@@ -196,14 +192,14 @@ extension MediaBrowserActions on MediaBrowserState {
     );
   }
 
-  /// Add files from this device to the folder being shown.
+  /// Add files from this device to the album.
   ///
   /// The picker accepts photos and videos alike, since the Library shows both
   /// together. Each file keeps the name it had, in whatever script, and is
   /// stored under a random name of its own.
 
   Future<void> _addFiles(BuildContext context) async {
-    if (!await _folderIsWritable(context)) return;
+    if (await _needsPod(context, 'add photos and videos')) return;
     if (!context.mounted) return;
 
     final List<PlatformFile> picked;
@@ -234,13 +230,13 @@ extension MediaBrowserActions on MediaBrowserState {
 
   /// Add the files dragged from the desktop and dropped onto the Library.
   ///
-  /// A dropped folder is not unpacked: its photos would all land flat in the
-  /// folder being shown, which is rarely what dragging a folder means. It is
-  /// reported instead, along with anything else that could not be added.
+  /// A dropped folder is not unpacked, since what is in it would need an
+  /// album of its own. It is reported instead, along with anything else that
+  /// could not be added.
 
   Future<void> _dropFiles(BuildContext context, List<DropItem> dropped) async {
     if (dropped.isEmpty) return;
-    if (!await _folderIsWritable(context)) return;
+    if (await _needsPod(context, 'add photos and videos')) return;
     if (!context.mounted) return;
 
     final folders = dropped.whereType<DropItemDirectory>().toList();
@@ -264,8 +260,7 @@ extension MediaBrowserActions on MediaBrowserState {
             ? 'A folder was not added'
             : 'Some folders were not added',
         'Only photos and videos can be dropped here. Open the folder and '
-        'drag the files inside it instead, or make a folder here with '
-        'New folder first.\n\n'
+        'drag the files inside it instead, then put them into an album.\n\n'
         '${folders.map((folder) => folder.name).join('\n')}',
       );
     }
@@ -294,8 +289,8 @@ extension MediaBrowserActions on MediaBrowserState {
     }
   }
 
-  /// Write [files] into the folder being shown, then report anything that was
-  /// refused or renamed on the way.
+  /// Write [files] into the store, then report anything that was refused or
+  /// renamed on the way.
   ///
   /// Shared by the Add button and by dropping files onto the Library, so that
   /// both treat names, unsupported files and failures in the same way.
@@ -313,17 +308,15 @@ extension MediaBrowserActions on MediaBrowserState {
 
     await showWorking(context, 'Adding to your Pod...', () async {
       // Every file is stored under a random name, so the name it arrived with
-      // only has to differ from the others in the folder.
+      // is kept as it is, unless a file system would not take it.
 
-      Set<String>? taken;
       for (final file in files) {
         try {
           if (kindOf(file.name) == null) {
             failed[file.name] = 'not a photo or video PhotoPod supports';
             continue;
           }
-          taken ??= await PodMediaOps.namesIn(_path);
-          final name = PodMediaOps.freeName(safeFileName(file.name), taken);
+          final name = safeFileName(file.name);
           final bytes = await file.read();
 
           // The renditions are made before the file goes up, since making a
@@ -335,7 +328,7 @@ extension MediaBrowserActions on MediaBrowserState {
           final renditions = await _makeRenditions(name, bytes);
           final when =
               renditions.photo?.metadata?.taken ?? await _modifiedOf(file);
-          final path = await PodMediaService.newStoredPath(_path, name);
+          final path = await MediaStore.newPath(name);
 
           // The catalog entry goes first: one whose file never arrives is
           // never matched, while a file without its name would show under
@@ -353,7 +346,6 @@ extension MediaBrowserActions on MediaBrowserState {
             bytes: bytes,
             name: name,
           );
-          taken.add(name);
           await _saveRenditions(path, name, renditions);
           if (name != file.name) renamed[file.name] = name;
           added++;
@@ -386,8 +378,8 @@ extension MediaBrowserActions on MediaBrowserState {
         renamed.length == 1
             ? 'One file was renamed'
             : 'Some files were renamed',
-        'A file of the same name was already in this folder, or the name '
-        'held a character no file name can (/ \\ : * ? " < > |).\n\n'
+        'The name held a character no file name can '
+        '(/ \\ : * ? " < > |).\n\n'
         '${renamed.entries.map((e) => '${e.key}  →  ${e.value}').join('\n')}',
       );
     }
@@ -448,30 +440,6 @@ extension MediaBrowserActions on MediaBrowserState {
     } on Object catch (e) {
       debugPrint('PhotoPod: could not store renditions of $name: $e');
     }
-  }
-
-  // Refuse to write into a folder whose own name would have to be escaped in
-  // a URL, since anything put there would lose its encryption key. Such a
-  // folder can only have been made by an earlier build of PhotoPod, and
-  // renaming it puts everything right.
-
-  Future<bool> _folderIsWritable(BuildContext context) async {
-    if (await _needsPod(context, 'add photos and videos')) return false;
-    if (!context.mounted) return false;
-
-    final segment = unsafeSegmentOf(_path);
-    if (segment == null) return true;
-
-    await showErrorDialog(
-      context,
-      'This folder cannot be written to',
-      'The folder "${PodMediaService.decodeName(segment)}" has a name that '
-          'has to be escaped inside a web address, and anything written into '
-          'it would be stored in a way PhotoPod could not read back.\n\n'
-          'Rename the folder — letters, digits and '
-          "- _ . ! ~ ' ( ) only — and then try again.",
-    );
-    return false;
   }
 
   /// Remove the selected items, after checking that is really wanted.

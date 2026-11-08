@@ -382,15 +382,20 @@ class Albums extends ChangeNotifier {
   /// Put [items] into the album called [name]. Folders are left out, and an
   /// item already there is not added twice.
 
-  Future<bool> add(String name, Iterable<MediaItem> items) async {
+  Future<bool> add(String name, Iterable<MediaItem> items) => addPaths(name, [
+    for (final item in items)
+      if (!item.isFolder) item.path,
+  ]);
+
+  /// Put the items at the Pod-relative [added] paths into the album called
+  /// [name]. An item already there is not added twice.
+
+  Future<bool> addPaths(String name, Iterable<String> added) async {
     final paths = _albums[name];
     if (paths == null) return false;
 
     final before = Set<String>.from(paths);
-    paths.addAll([
-      for (final item in items)
-        if (!item.isFolder) item.path,
-    ]);
+    paths.addAll(added);
     if (paths.length == before.length) return true;
     notifyListeners();
     return _save({name: before});

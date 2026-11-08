@@ -30,14 +30,12 @@ import 'package:photopod/constants/media.dart';
 /// The five ways PhotoPod offers to look at an album, one per entry in the
 /// navigation rail down the left hand side.
 ///
-/// Only [library] browses the folders the media actually sits in. The other
-/// four are views over the whole album at once: two filters, the albums and a
-/// map. They therefore read from the album index rather than from a single
-/// container listing, and none of them shows a folder.
+/// Every section is a view over the whole album at once, read from the
+/// album index: everything, two filters, the albums and a map.
 
 enum LibrarySection {
-  /// Every photo and video in the folder being looked at, mixed together as
-  /// tiles, with the subfolders alongside them.
+  /// Every photo and video in the album, and everything shared with the
+  /// user, as a timeline.
 
   library('Library', Icons.photo_library_outlined),
 
@@ -69,10 +67,9 @@ enum LibrarySection {
 
   const LibrarySection(this.label, this.icon);
 
-  /// Whether this section browses folders, rather than presenting the album
-  /// as one flat collection.
+  /// Whether photos and videos can be added from this section.
 
-  bool get browsesFolders => this == LibrarySection.library;
+  bool get acceptsUploads => this == LibrarySection.library;
 
   /// Whether this section is one of the two tiled lists of files.
 

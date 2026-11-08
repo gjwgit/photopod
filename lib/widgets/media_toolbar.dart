@@ -226,7 +226,7 @@ class MediaToolbar extends StatelessWidget {
       alignment: WrapAlignment.end,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        if (section.browsesFolders)
+        if (section.acceptsUploads)
           _button(
             icon: Icons.add,
             label: 'Add photos and videos',
@@ -235,9 +235,9 @@ class MediaToolbar extends StatelessWidget {
 
           **Add photos and videos**
 
-          Choose photos and videos on this device and put them into the folder
-          you are looking at. They are encrypted with your security key on
-          the way into your Pod.
+          Choose photos and videos on this device and add them to your album.
+          They are encrypted with your security key on the way into your
+          Pod.
 
           ''',
           ),

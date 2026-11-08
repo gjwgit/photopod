@@ -31,6 +31,7 @@ import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_envelope.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
+import 'package:photopod/services/media_store.dart';
 import 'package:photopod/services/pod_media_moves.dart';
 import 'package:photopod/services/pod_media_service.dart';
 
@@ -38,33 +39,28 @@ import 'package:photopod/services/pod_media_service.dart';
 ///
 /// Solid has no server-side copy or rename. A file is stored under a random
 /// name and known to the user by the name kept inside it and in
-/// [MediaCatalog], so renaming a file rewrites it in place. A folder is stored
-/// under a random name too, and renaming it changes only [MediaCatalog]. A copy
-/// is a read and a write.
+/// [MediaCatalog], so renaming a file rewrites it in place. A copy is a read
+/// and a write, into the [MediaStore].
 
 class PodMediaOps {
   const PodMediaOps._();
 
-  /// Make a copy of each of [items] beside the original, returning the
+  /// Make a copy of each of [items] in the store, returning the
   /// Pod-relative path of every copy keyed by the path it was copied from.
   ///
   /// The copy is named after the original with `_copy` before the extension,
-  /// or `_copy_1`, `_copy_2` and so on when that is taken, so that nothing is
-  /// ever confused with the original. Folders are left out: a duplicate is a
-  /// photo or a video. Each folder is listed once, however many of its files
-  /// are being duplicated, and the names handed out along the way are
-  /// remembered so two copies made together cannot collide.
+  /// or `_copy_1`, `_copy_2` and so on when that is taken by anything in the
+  /// catalog, so that nothing is ever confused with the original. Folders are
+  /// left out: a duplicate is a photo or a video.
 
   static Future<Map<String, String>> duplicateAll(List<MediaItem> items) async {
     final copies = <String, String>{};
-    final taken = <String, Set<String>>{};
+    final names = {for (final entry in MediaCatalog.entries) ?entry.name};
 
     for (final item in items) {
       if (item.isFolder) continue;
-      final parent = item.parentPath;
-      final names = taken[parent] ??= await namesIn(parent);
       final name = duplicateName(item.name, names);
-      copies[item.path] = await _copyFile(item, parent, name);
+      copies[item.path] = await _copyFile(item, name);
       names.add(name);
     }
     return copies;
@@ -88,26 +84,20 @@ class PodMediaOps {
     }
   }
 
-  /// Rename [item] to [newName] within its own folder, returning every move
-  /// that made, keyed by the old Pod-relative path: nothing, when the item
-  /// kept its path.
+  /// Rename [item] to [newName], returning every move that made, keyed by
+  /// the old Pod-relative path: nothing, when the item kept its path.
   ///
-  /// A file or folder stored under a random name keeps it: the new name is
-  /// written into [MediaCatalog], and for a file into the file itself, which is
-  /// what lets everyone it is shared with see it. One still stored under the
-  /// name it was added with is moved to a random name instead; see
-  /// [PodMediaMoves].
+  /// Every item is stored under a random name, so two may share the name the
+  /// user gives them. A file or folder stored under a random name keeps it:
+  /// the new name is written into [MediaCatalog], and for a file into the
+  /// file itself, which is what lets everyone it is shared with see it. One
+  /// still stored under the name it was added with is moved to a random name
+  /// instead; see [PodMediaMoves].
 
   static Future<Map<String, String>> rename(
     MediaItem item,
     String newName,
   ) async {
-    final parent = item.parentPath;
-    final taken =
-        (item.isFolder ? await folderNamesIn(parent) : await namesIn(parent))
-          ..remove(item.name);
-    if (taken.contains(newName)) throw _clash(newName);
-
     if (item.isFolder) {
       if (!isRandomFolderName(item.rawName)) {
         return PodMediaMoves.moveFolder(item, name: newName);
@@ -221,56 +211,16 @@ class PodMediaOps {
     ],
   );
 
-  /// [wanted], or the first of `wanted (2)`, `wanted (3)` and so on, with the
-  /// number before the extension, that is not among the names already
-  /// [taken], so that a newly added file is never mistaken for one that is
-  /// already in the folder.
-
-  static String freeName(String wanted, Set<String> taken) {
-    if (!taken.contains(wanted)) return wanted;
-
-    final dot = wanted.lastIndexOf('.');
-    final stem = dot <= 0 ? wanted : wanted.substring(0, dot);
-    final suffix = dot <= 0 ? '' : wanted.substring(dot);
-
-    for (var n = 2; ; n++) {
-      final candidate = '$stem ($n)$suffix';
-      if (!taken.contains(candidate)) return candidate;
-    }
-  }
-
-  /// The names the user sees for the files in [podPath].
-
-  static Future<Set<String>> namesIn(String podPath) async => {
-    for (final each in await PodMediaService.listFolder(podPath))
-      if (!each.isFolder) each.name,
-  };
-
-  /// The names the user sees for the folders in [podPath].
-
-  static Future<Set<String>> folderNamesIn(String podPath) async => {
-    for (final each in await PodMediaService.listFolder(podPath))
-      if (each.isFolder) each.name,
-  };
-
-  static PodMediaException _clash(String name) => PodMediaException(
-    'Something called "$name" already exists in this folder.',
-  );
-
-  // Copy the file [item] into [destPodPath] under a new random name, known to
+  // Copy the file [item] into the store under a new random name, known to
   // the user as [name], returning the path of the copy.
   //
   // The name is recorded before the file is written: a name whose file never
   // arrives is never matched, while a file written without its name would
   // show up under the random one.
 
-  static Future<String> _copyFile(
-    MediaItem item,
-    String destPodPath,
-    String name,
-  ) async {
+  static Future<String> _copyFile(MediaItem item, String name) async {
     final bytes = await PodMediaService.readBytes(item);
-    final path = await PodMediaService.newStoredPath(destPodPath, name);
+    final path = await MediaStore.newPath(name);
     await MediaCatalog.set(path, name, taken: item.taken, from: item.path);
     await PodMediaService.writeMedia(path: path, bytes: bytes, name: name);
     await MediaRenditions.copy(item.path, path);

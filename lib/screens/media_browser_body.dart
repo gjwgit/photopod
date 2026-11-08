@@ -83,16 +83,15 @@ extension MediaBrowserBody on MediaBrowserState {
     );
   }
 
-  // Only the Library has a folder to put things in, so it alone takes files
-  // dragged from the desktop, and only once it knows which folder that is.
-  // While a drag hovers the content is outlined and says where the files
-  // will go, so the drop is not a leap of faith.
+  // Only the Library shows everything, so it alone takes files dragged from
+  // the desktop, once it knows where the album is. While a drag hovers the
+  // content is outlined and says where the files will go, so the drop is not
+  // a leap of faith.
 
   Widget _buildDropTarget(BuildContext context, Widget child) {
     final enabled =
         widget.section == LibrarySection.library && _root.isNotEmpty;
     final scheme = Theme.of(context).colorScheme;
-    final folder = _segmentLabels.isEmpty ? 'your album' : _segmentLabels.last;
 
     return DropTarget(
       enable: enabled,
@@ -126,7 +125,7 @@ extension MediaBrowserBody on MediaBrowserState {
                         ),
                         const Gap(12),
                         Text(
-                          'Drop photos and videos to add them to $folder',
+                          'Drop photos and videos to add them to your album',
                           textAlign: TextAlign.center,
                           style: Theme.of(context).textTheme.titleMedium
                               ?.copyWith(color: scheme.onPrimaryContainer),
@@ -142,20 +141,12 @@ extension MediaBrowserBody on MediaBrowserState {
     );
   }
 
-  // The path trail and the toolbar share a row on a wide window and stack on
-  // a narrow one, so neither has to be squeezed or scrolled on a phone.
+  // The title and the toolbar share a row on a wide window and stack on a
+  // narrow one, so neither has to be squeezed or scrolled on a phone.
 
   Widget _buildHeader(BuildContext context) {
     final files = _selectedFiles;
-
-    final leading = widget.section.browsesFolders
-        ? BreadcrumbBar(
-            segments: _segmentLabels,
-            onNavigate: (keep) => _goTo(
-              keep == 0 ? _root : '$_root/${_segments.take(keep).join('/')}',
-            ),
-          )
-        : _buildSectionTitle(context);
+    final leading = _buildSectionTitle(context);
 
     final toolbar = MediaToolbar(
       section: widget.section,
@@ -346,10 +337,8 @@ extension MediaBrowserBody on MediaBrowserState {
     );
   }
 
-  // The folders come first, as one group of their own, and the photos and
-  // videos follow under the day they are dated, the latest day first. The
-  // memories along the top look across the whole album once it has been
-  // walked, and at this folder until then.
+  // The photos and videos are grouped under the day they are dated, the
+  // latest day first, with the memories along the top.
 
   Widget _buildTimeline(
     BuildContext context,
@@ -357,20 +346,11 @@ extension MediaBrowserBody on MediaBrowserState {
     Favourites favourites,
     List<MediaItem> all,
   ) {
-    final folders = all.where((item) => item.isFolder).toList();
     final files = all.where((item) => !item.isFolder).toList();
-    final index = context.read<MediaIndex>();
 
     return MediaTimeline(
-      groups: [
-        if (folders.isNotEmpty) TimelineGroup(label: 'Folders', items: folders),
-        ...groupByDay(files),
-      ],
-      memories: memoriesOf(
-        index.scannedAt == null
-            ? files
-            : index.items.where((item) => !item.isFolder),
-      ),
+      groups: groupByDay(files),
+      memories: memoriesOf(files),
       tileExtent: prefs.tileSize.extent,
       isSelected: (item) => _selected.contains(item.id),
       isFavourite: favourites.contains,

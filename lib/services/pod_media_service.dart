@@ -39,6 +39,7 @@ import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_envelope.dart';
 import 'package:photopod/services/media_names.dart';
+import 'package:photopod/services/media_store.dart';
 import 'package:photopod/services/shared_names.dart';
 
 /// Raised when the Solid server refuses or fails a request. The message is
@@ -104,8 +105,9 @@ class PodMediaService {
     final entries = parseContainerListing(body);
 
     // The album files are PhotoPod's own bookkeeping, filed in a folder of
-    // their own at the top of the album, and never shown as one of the
-    // user's folders.
+    // their own at the top of the album, and the store is listed shard by
+    // shard by [MediaStore], so neither is ever shown as one of the user's
+    // folders.
 
     final atRoot = podPath == await rootPath();
 
@@ -116,7 +118,11 @@ class PodMediaService {
           ? entry.rawName.substring(0, entry.rawName.length - 1)
           : entry.rawName;
       if (raw.isEmpty || raw.startsWith('.')) continue;
-      if (atRoot && isFolder && raw == albumsFolderName) continue;
+      if (atRoot &&
+          isFolder &&
+          (raw == albumsFolderName || raw == storeFolderName)) {
+        continue;
+      }
 
       // A file or folder is shown under the name the user gave it. One added
       // before names were kept apart is shown under its stored name, less

@@ -45,12 +45,14 @@ import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
+import 'package:photopod/services/media_store.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_moves.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart'
     show latestLogLines, podRootOf, sameWebId;
+import 'package:photopod/services/store_migration.dart';
 
 /// The file, hidden at the top of the album, that records how far the album
 /// has been upgraded. It says nothing about the photos, so it is plain JSON.
@@ -62,15 +64,20 @@ const String storageMarkerName = '.storage.json';
 
 const int privateStorageVersion = 2;
 
-/// Moving an album written by an earlier build to the private layout.
+/// The version of the storage layout in which every photo and video is in
+/// the [MediaStore] and folders have become albums.
+
+const int storeStorageVersion = 3;
+
+/// Moving an album written by an earlier build to the current layout.
 ///
 /// Until random names, every photo, video and folder was stored under the
 /// name the user gave it, every album under the album's name, and every
 /// rendition under its item's path, so anyone who could see the server —
 /// its administrator, say — could read `background_pinnacles_winter_2026_
-/// with_fred_and_simon.jpg` straight off it. This moves all of it to random
-/// names, once, carrying along each item's name, renditions, hearts, places
-/// in albums, and everyone it is shared with:
+/// with_fred_and_simon.jpg` straight off it. The private layout moves all of
+/// it to random names, once, carrying along each item's name, renditions,
+/// hearts, places in albums, and everyone it is shared with:
 ///
 /// 1. albums are moved to random file names, with their names inside;
 /// 2. folders and files are moved to random names; see [PodMediaMoves];
@@ -79,8 +86,11 @@ const int privateStorageVersion = 2;
 ///    their names, so their recipients see them;
 /// 5. renditions still filed under their item's path are refiled.
 ///
+/// The store layout then moves every photo and video out of its folder into
+/// the [MediaStore], each folder becoming an album; see [StoreMigration].
+///
 /// Anything that cannot be done is reported and left as it was, and the
-/// whole upgrade is tried again next time, skipping what is already done.
+/// upgrade is tried again next time, skipping what is already done.
 
 class StorageUpgrade {
   const StorageUpgrade._();
@@ -93,21 +103,29 @@ class StorageUpgrade {
 
   static Future<bool> isNeeded() async {
     if (_done) return false;
-    try {
-      final path = await _markerPath();
-      if (await PodMediaService.fileExists(await getFileUrl(path))) {
-        final content = await readPod(path, pathType: PathType.relativeToPod);
-        final decoded = jsonDecode(content);
-        if (decoded is Map && (decoded['version'] as int? ?? 0) >= 2) {
-          _done = true;
-          MediaRenditions.refiled = true;
-          return false;
-        }
-      }
-    } on Object catch (e) {
-      debugPrint('PhotoPod: could not read the storage marker: $e');
+    if (await _version() >= storeStorageVersion) {
+      _done = true;
+      return false;
     }
     return true;
+  }
+
+  // The layout the marker says the album is in: 0 when there is no marker.
+  // A private layout has its renditions filed under random names.
+
+  static Future<int> _version() async {
+    try {
+      final path = await _markerPath();
+      if (!await PodMediaService.fileExists(await getFileUrl(path))) return 0;
+      final content = await readPod(path, pathType: PathType.relativeToPod);
+      final decoded = jsonDecode(content);
+      final version = decoded is Map ? decoded['version'] as int? ?? 0 : 0;
+      if (version >= privateStorageVersion) MediaRenditions.refiled = true;
+      return version;
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not read the storage marker: $e');
+      return 0;
+    }
   }
 
   /// Upgrade the album, returning what could not be done. Callers arriving
@@ -137,7 +155,36 @@ class StorageUpgrade {
     await sharing.load();
 
     final failed = <String>[];
+    if (await _version() < privateStorageVersion) {
+      await _toPrivate(favourites, albums, sharing, failed);
+      if (failed.isNotEmpty) return failed;
+      await _mark(privateStorageVersion);
+    }
 
+    // 6. Every photo and video into the store, and what refers to them.
+
+    final moves = await StoreMigration.run(albums: albums, failed: failed);
+    if (moves.isNotEmpty) {
+      await favourites.retarget(moves);
+      await albums.retarget(moves);
+      await sharing.retarget(moves);
+    }
+
+    if (failed.isEmpty) {
+      await _mark(storeStorageVersion);
+      _done = true;
+    }
+    return failed;
+  }
+
+  // The steps to the private layout, numbered as above.
+
+  static Future<void> _toPrivate(
+    Favourites favourites,
+    Albums albums,
+    AlbumSharing sharing,
+    List<String> failed,
+  ) async {
     // The renditions of files that already have random names are refiled
     // first, so that they need not be copied when their folder moves.
 
@@ -187,20 +234,16 @@ class StorageUpgrade {
     } else {
       MediaRenditions.refiled = true;
     }
-
-    if (failed.isEmpty) {
-      await writePod(
-        await _markerPath(),
-        jsonEncode({'version': privateStorageVersion}),
-        encrypted: false,
-        createAcl: false,
-        overwrite: true,
-        pathType: PathType.relativeToPod,
-      );
-      _done = true;
-    }
-    return failed;
   }
+
+  static Future<void> _mark(int version) async => writePod(
+    await _markerPath(),
+    jsonEncode({'version': version}),
+    encrypted: false,
+    createAcl: false,
+    overwrite: true,
+    pathType: PathType.relativeToPod,
+  );
 
   // Move every folder and file under [podPath] that is stored under its own
   // name. A folder that moves takes everything in it along; one that keeps

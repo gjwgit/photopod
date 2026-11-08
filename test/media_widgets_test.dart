@@ -32,7 +32,6 @@ import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/widgets/album_list.dart';
-import 'package:photopod/widgets/breadcrumb_bar.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
 import 'package:photopod/widgets/media_toolbar.dart';
@@ -853,50 +852,6 @@ void main() {
       await tester.tap(find.byIcon(Icons.chevron_right));
       await tester.pump();
       expect(requested, 1);
-    });
-  });
-
-  group('BreadcrumbBar', () {
-    testWidgets('makes every step but the last one a link', (tester) async {
-      int? kept;
-
-      await tester.pumpWidget(
-        _wrap(
-          BreadcrumbBar(
-            segments: const ['holiday', '2026'],
-            onNavigate: (keep) => kept = keep,
-          ),
-        ),
-      );
-
-      expect(find.text('holiday'), findsOneWidget);
-      expect(find.text('2026'), findsOneWidget);
-
-      await tester.tap(find.text('holiday'));
-      await tester.pump();
-      expect(kept, 1);
-    });
-
-    testWidgets('names the root Library, with no home or up button', (
-      tester,
-    ) async {
-      int? kept;
-
-      await tester.pumpWidget(
-        _wrap(
-          BreadcrumbBar(
-            segments: const ['holiday'],
-            onNavigate: (keep) => kept = keep,
-          ),
-        ),
-      );
-
-      expect(find.byIcon(Icons.home_outlined), findsNothing);
-      expect(find.byIcon(Icons.arrow_upward), findsNothing);
-
-      await tester.tap(find.text('Library'));
-      await tester.pump();
-      expect(kept, 0);
     });
   });
 

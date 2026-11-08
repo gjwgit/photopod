@@ -30,10 +30,12 @@ import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
 import 'package:photopod/constants/media.dart';
+import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/demo_library.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
@@ -44,26 +46,19 @@ import 'package:photopod/widgets/media_thumbnail.dart';
 /// The tiles carry no captions, so this is where the name, the size, the
 /// dates and the camera settings live. Everything the Solid server reports is
 /// already in hand and appears at once; the details that are inside the photo
-/// itself need the file fetched and decoded, so they arrive a moment later.
-///
-/// [rootPath] is the Pod-relative path of the album root, used to show the
-/// folder the way the user navigated to it rather than as the full
-/// `photopod/data/...` path.
+/// itself come from the catalog, or failing that need the thumbnail fetched
+/// and decoded, so they may arrive a moment later.
 
-Future<void> showInfoDialog(
-  BuildContext context,
-  MediaItem item, {
-  String? rootPath,
-}) => showDialog<void>(
-  context: context,
-  builder: (context) => _InfoDialog(item: item, rootPath: rootPath),
-);
+Future<void> showInfoDialog(BuildContext context, MediaItem item) =>
+    showDialog<void>(
+      context: context,
+      builder: (context) => _InfoDialog(item: item),
+    );
 
 class _InfoDialog extends StatefulWidget {
-  const _InfoDialog({required this.item, this.rootPath});
+  const _InfoDialog({required this.item});
 
   final MediaItem item;
-  final String? rootPath;
 
   @override
   State<_InfoDialog> createState() => _InfoDialogState();
@@ -80,6 +75,11 @@ class _InfoDialogState extends State<_InfoDialog> {
   }
 
   Future<void> _read() async {
+    final known = MediaCatalog.metadataOf(widget.item.path);
+    if (known != null) {
+      setState(() => _metadata = known);
+      return;
+    }
     setState(() => _reading = true);
     final metadata = await ThumbnailCache.instance.metadata(widget.item);
     if (mounted) {
@@ -157,12 +157,11 @@ class _InfoDialogState extends State<_InfoDialog> {
 
   List<(String, String)> _podRows() {
     final item = widget.item;
-    final root = widget.rootPath;
-    final parent = item.parentPath;
-
-    final folder = root == null || !parent.startsWith(root)
-        ? parent
-        : parent.substring(root.length).replaceFirst('/', '');
+    final albums = context.read<Albums>();
+    final inAlbums = [
+      for (final name in albums.names)
+        if (albums.contains(name, item)) name,
+    ];
 
     if (DemoLibrary.isDemo(item)) {
       return [
@@ -187,7 +186,7 @@ class _InfoDialogState extends State<_InfoDialog> {
 
     return [
       ('Kind', _kindLabel(item)),
-      ('Folder', folder.isEmpty ? 'Album root' : folder),
+      ('Albums', inAlbums.isEmpty ? 'None' : inAlbums.join(', ')),
       if (item.size != null) ('Size', formatBytes(item.size)),
       ('Modified', formatDateTime(item.modified)),
       (

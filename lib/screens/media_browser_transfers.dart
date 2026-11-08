@@ -118,9 +118,10 @@ extension MediaBrowserTransfers on MediaBrowserState {
   }
 
   /// Move everything an earlier build stored under the name the user gave
-  /// it to a random name; see [StorageUpgrade]. The album is held still
-  /// behind a progress dialogue meanwhile, since an item moved while it is
-  /// being changed could be lost.
+  /// it to a random name, and everything it filed in folders into the
+  /// store, each folder becoming an album; see [StorageUpgrade]. The album
+  /// is held still behind a progress dialogue meanwhile, since an item moved
+  /// while it is being changed could be lost.
 
   Future<void> _upgradeStorage(BuildContext context) async {
     if (!await StorageUpgrade.isNeeded() || !context.mounted) return;
@@ -134,9 +135,9 @@ extension MediaBrowserTransfers on MediaBrowserState {
     try {
       failed = await showWorking(
         context,
-        'Moving your photos, videos, folders and albums to random names on '
-        'the server, so that their names stay private. This happens once, '
-        'and may take a while...',
+        'Moving your photos and videos into one place on your Pod, under '
+        'random names that keep them private, and turning your folders '
+        'into albums. This happens once, and may take a while...',
         () => StorageUpgrade.run(
           favourites: favourites,
           albums: albums,
@@ -161,7 +162,7 @@ extension MediaBrowserTransfers on MediaBrowserState {
 
     await showErrorDialog(
       context,
-      'Some items still carry their own names',
+      'Some items could not be moved',
       'They are as they were, and PhotoPod will try again the next time it '
           'starts.\n\n${failed.join('\n\n')}',
     );

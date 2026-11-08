@@ -53,21 +53,6 @@ final RegExp _unsafeCharacters = RegExp(r"[^A-Za-z0-9\-_.!~'()]");
 bool isSafeResourceName(String name) =>
     name.isNotEmpty && !_unsafeCharacters.hasMatch(name);
 
-/// The first part of [podPath] that PhotoPod could not write into, or null
-/// when the whole path is usable.
-///
-/// A folder created by an earlier build of PhotoPod may carry a
-/// percent-escaped name, and anything written inside it would lose its
-/// encryption key. Finding out before the write beats failing part way
-/// through it.
-
-String? unsafeSegmentOf(String podPath) {
-  for (final segment in podPath.split('/')) {
-    if (segment.isNotEmpty && !isSafeResourceName(segment)) return segment;
-  }
-  return null;
-}
-
 /// The characters a file name the user sees may not hold.
 ///
 /// A file's own name never reaches a URL, since it is stored under a random
