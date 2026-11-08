@@ -30,6 +30,7 @@ import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_catalog.dart';
+import 'package:photopod/services/media_integrity.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/media_store.dart';
@@ -39,6 +40,11 @@ import 'package:photopod/services/pod_media_service.dart';
 /// name of the album the inner folder becomes: `Holiday › Beach`.
 
 const String albumPathSeparator = ' › ';
+
+// What went wrong along the way: what is worth trying again, and what was
+// found damaged and is not.
+
+typedef _Problems = ({List<String> failed, List<String> damaged});
 
 /// How many files are moved before what has been moved is recorded and the
 /// originals removed.
@@ -71,14 +77,20 @@ class StoreMigration {
   /// Move everything outside the store into it, returning every move made,
   /// keyed by the old Pod-relative path, for the favourites, albums and
   /// album sharing to follow. What could not be done is added to [failed].
+  ///
+  /// A file the server kept only part of cannot be read, so cannot be moved
+  /// either, now or ever. It is left where it is and named in [damaged]
+  /// instead, so that it does not hold the migration back for good.
 
   static Future<Map<String, String>> run({
     required Albums albums,
     required List<String> failed,
+    required List<String> damaged,
   }) async {
     final root = await PodMediaService.rootPath();
     final moves = <String, String>{};
-    await _empty(root, root, const [], albums, moves, failed);
+    final problems = (failed: failed, damaged: damaged);
+    await _empty(root, root, const [], albums, moves, problems);
     return moves;
   }
 
@@ -91,8 +103,9 @@ class StoreMigration {
     List<String> labels,
     Albums albums,
     Map<String, String> moves,
-    List<String> failed,
+    _Problems problems,
   ) async {
+    final failed = problems.failed;
     final atRoot = labels.isEmpty;
     final emptied = <String>[];
     final files = <MediaItem>[];
@@ -101,7 +114,7 @@ class StoreMigration {
     for (final child in await PodMediaService.listFolder(path)) {
       if (child.isFolder) {
         final label = [...labels, child.name];
-        if (await _empty(root, child.path, label, albums, moves, failed)) {
+        if (await _empty(root, child.path, label, albums, moves, problems)) {
           emptied.add(child.rawName);
         } else {
           keep = true;
@@ -125,6 +138,9 @@ class StoreMigration {
       for (final file in files.skip(start).take(_filesPerBatch)) {
         try {
           copied[file] = await _copy(root, file, failed);
+        } on IncompleteMediaException {
+          problems.damaged.add(file.name);
+          keep = true;
         } on Object catch (e) {
           failed.add('${file.name}: $e');
           keep = true;

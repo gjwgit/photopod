@@ -263,9 +263,12 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   // Any photo added before the catalog kept its details has them filled in,
   // in the background, and the timeline is rearranged once its dates are
-  // known.
+  // known. It waits until any upgrade of the album has finished, rather than
+  // read thumbnails while their photos are being moved.
 
   Future<void> _fillInDetails() async {
+    if (!_demo) await StorageUpgrade.settled;
+    if (!mounted) return;
     final index = context.read<MediaIndex>();
     if (index.error != null) return;
     final recorded = await MediaMetadataBackfill.run(index.items);

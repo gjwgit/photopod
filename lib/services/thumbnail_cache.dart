@@ -106,6 +106,11 @@ class ThumbnailCache {
   final Map<String, Uint8List> _previews = {};
   final Map<String, Future<PhotoAnalysis?>> _inFlight = {};
   final Map<String, Future<Uint8List?>> _previewsInFlight = {};
+
+  // The photos that could not be read this session, so that a refresh does
+  // not download each of them again only to fail the same way.
+
+  final Set<String> _failed = {};
   final List<Completer<void>> _waiting = [];
   int _active = 0;
 
@@ -120,6 +125,7 @@ class ThumbnailCache {
     final url = item.url;
     final cached = _touch(_analysed, url);
     if (cached != null) return Future.value(cached);
+    if (_failed.contains(url)) return Future.value();
 
     return _inFlight.putIfAbsent(url, () async {
       await _acquire();
@@ -131,6 +137,7 @@ class ThumbnailCache {
         return analysis;
       } on Object catch (e) {
         debugPrint('PhotoPod: could not read $url: $e');
+        _failed.add(url);
         return null;
       } finally {
         _release();
@@ -257,6 +264,7 @@ class ThumbnailCache {
   /// replaced photo is fetched afresh.
 
   void evict(String url) {
+    _failed.remove(url);
     _analysed.remove(url);
     _previews.remove(url);
   }
@@ -264,6 +272,7 @@ class ThumbnailCache {
   /// Forget every photo.
 
   void clear() {
+    _failed.clear();
     _analysed.clear();
     _previews.clear();
   }

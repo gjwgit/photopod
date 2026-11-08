@@ -30,7 +30,7 @@ import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
-import 'package:photopod/services/thumbnail_cache.dart';
+import 'package:photopod/services/media_renditions.dart';
 
 /// How many photos are looked at between two writes of the catalog, so that
 /// a long backfill keeps what it has found if it is cut short.
@@ -45,18 +45,23 @@ const int _photosAtOnce = 4;
 /// added before the catalog kept it.
 ///
 /// The details are read from the EXIF block stored beside each photo's
-/// thumbnail, which is one request a photo, done once: once found, they are
-/// kept in [MediaCatalog] like those of any photo added since, and the map
-/// and the timeline read them from there. A photo with no EXIF date is given
-/// the date the Pod has for it, since the time the file was last changed
-/// before it was uploaded can no longer be learnt. Videos carry no EXIF, so
-/// they keep the Pod's date and cost nothing.
+/// thumbnail, which is one small request a photo, done once: once found,
+/// they are kept in [MediaCatalog] like those of any photo added since, and
+/// the map and the timeline read them from there.
+///
+/// Only stored thumbnails are read, never the photos themselves, which can
+/// be many megabytes each. A photo with no thumbnail yet is passed over: one
+/// is made from the photo the first time it is shown, and the next backfill
+/// finds it. A photo whose thumbnail was stored before the details were kept
+/// with it is given the date the Pod has for it, since nothing better can
+/// be learnt without reading the photo. Videos carry no EXIF, so they keep
+/// the Pod's date and cost nothing.
 
 class MediaMetadataBackfill {
   const MediaMetadataBackfill._();
 
   // Photos already looked at this session without anything being recorded,
-  // such as one that would not decode, so they are not asked for again.
+  // such as one with no thumbnail yet, so they are not asked for again.
 
   static final Set<String> _tried = <String>{};
 
@@ -89,12 +94,10 @@ class MediaMetadataBackfill {
 
       for (var at = 0; at < chunk.length; at += _photosAtOnce) {
         final batch = chunk.skip(at).take(_photosAtOnce).toList();
-        final results = await Future.wait(
-          batch.map(ThumbnailCache.instance.analyse),
-        );
-        for (final (index, analysis) in results.indexed) {
+        final results = await Future.wait(batch.map(_stored));
+        for (final (index, stored) in results.indexed) {
           final item = batch[index];
-          if (analysis == null) {
+          if (stored == null) {
             _tried.add(item.path);
             continue;
           }
@@ -102,7 +105,7 @@ class MediaMetadataBackfill {
           // A photo that says nothing is recorded as saying nothing, so it
           // is not looked at again.
 
-          found[item.path] = analysis.metadata ?? const PhotoMetadata();
+          found[item.path] = stored.metadata ?? const PhotoMetadata();
           final modified = item.modified;
           if (modified != null) dates[item.path] = modified;
         }
@@ -118,5 +121,17 @@ class MediaMetadataBackfill {
       }
     }
     return recorded;
+  }
+
+  // The thumbnail stored for [item], or null when it has none or it cannot
+  // be read.
+
+  static Future<SmallRendition?> _stored(MediaItem item) async {
+    try {
+      return await MediaRenditions.readSmall(item);
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not read the thumbnail of ${item.url}: $e');
+      return null;
+    }
   }
 }

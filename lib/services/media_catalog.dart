@@ -253,8 +253,8 @@ class MediaCatalog {
   static Future<void> setDates(Map<String, DateTime> dates) =>
       _change((entries) {
         for (final date in dates.entries) {
-          final entry = _at(entries, date.key) ?? CatalogEntry(date.key);
-          if (entry.taken != null) continue;
+          final entry = _forUpdate(entries, date.key);
+          if (entry == null || entry.taken != null) continue;
           entries[catalogKeyOf(date.key)] = entry.copyWith(
             taken: encodeDate(date.value),
           );
@@ -270,7 +270,8 @@ class MediaCatalog {
     Map<String, DateTime> dates = const {},
   }) => _change((entries) {
     for (final detail in details.entries) {
-      final entry = _at(entries, detail.key) ?? CatalogEntry(detail.key);
+      final entry = _forUpdate(entries, detail.key);
+      if (entry == null) continue;
       final when = detail.value.taken ?? dates[detail.key];
       entries[catalogKeyOf(detail.key)] = entry.copyWith(
         metadata: detail.value,
@@ -281,18 +282,21 @@ class MediaCatalog {
 
   /// Replace the tags of the item at [path] with [tags].
 
-  static Future<void> setTags(String path, List<PhotoTag> tags) =>
-      _change((entries) {
-        final entry = _at(entries, path) ?? CatalogEntry(path);
-        entries[catalogKeyOf(path)] = entry.copyWith(tags: tags);
-      });
+  static Future<void> setTags(String path, List<PhotoTag> tags) => _change((
+    entries,
+  ) {
+    final entry = _forUpdate(entries, path);
+    if (entry != null) entries[catalogKeyOf(path)] = entry.copyWith(tags: tags);
+  });
 
   /// Replace the faces in the photo at [path] with [faces].
 
   static Future<void> setFaces(String path, List<PhotoFace> faces) =>
       _change((entries) {
-        final entry = _at(entries, path) ?? CatalogEntry(path);
-        entries[catalogKeyOf(path)] = entry.copyWith(faces: faces);
+        final entry = _forUpdate(entries, path);
+        if (entry != null) {
+          entries[catalogKeyOf(path)] = entry.copyWith(faces: faces);
+        }
       });
 
   /// Forget [paths], and everything beneath those that are folders, for items
@@ -318,6 +322,19 @@ class MediaCatalog {
   static CatalogEntry? _at(Map<String, CatalogEntry> entries, String path) {
     final entry = entries[catalogKeyOf(path)];
     return entry?.path == path ? entry : null;
+  }
+
+  // The entry to update for [path], a new one when there is none, or null
+  // when [path] is out of date: its key belongs to an item that has moved
+  // since, whose entry must not be overwritten with the old path.
+
+  static CatalogEntry? _forUpdate(
+    Map<String, CatalogEntry> entries,
+    String path,
+  ) {
+    final entry = entries[catalogKeyOf(path)];
+    if (entry == null) return CatalogEntry(path);
+    return entry.path == path ? entry : null;
   }
 
   static bool _within(String path, String root) =>

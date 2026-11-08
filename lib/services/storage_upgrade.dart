@@ -23,6 +23,7 @@
 
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -97,6 +98,24 @@ class StorageUpgrade {
 
   static bool _done = false;
   static Future<List<String>>? _running;
+  static final List<String> _damaged = [];
+
+  /// The photos and videos the last upgrade found incomplete on the Pod,
+  /// which it left where they were, since no upgrade can move them.
+
+  static List<String> get damaged => List.unmodifiable(_damaged);
+  static final Completer<void> _settled = Completer<void>();
+
+  /// Completes once the album is known to need no upgrade, or this session's
+  /// upgrade has finished, however it went. Work that reads across the whole
+  /// album waits for it, so as not to compete with the upgrade for the
+  /// server, nor read items while they move.
+
+  static Future<void> get settled => _settled.future;
+
+  static void _settle() {
+    if (!_settled.isCompleted) _settled.complete();
+  }
 
   /// Whether the album still needs upgrading. Asks the Pod at most until the
   /// answer is no.
@@ -105,6 +124,7 @@ class StorageUpgrade {
     if (_done) return false;
     if (await _version() >= storeStorageVersion) {
       _done = true;
+      _settle();
       return false;
     }
     return true;
@@ -136,11 +156,10 @@ class StorageUpgrade {
     required Favourites favourites,
     required Albums albums,
     required AlbumSharing sharing,
-  }) => _running ??= _run(
-    favourites,
-    albums,
-    sharing,
-  ).whenComplete(() => _running = null);
+  }) => _running ??= _run(favourites, albums, sharing).whenComplete(() {
+    _running = null;
+    _settle();
+  });
 
   static Future<List<String>> _run(
     Favourites favourites,
@@ -163,7 +182,12 @@ class StorageUpgrade {
 
     // 6. Every photo and video into the store, and what refers to them.
 
-    final moves = await StoreMigration.run(albums: albums, failed: failed);
+    _damaged.clear();
+    final moves = await StoreMigration.run(
+      albums: albums,
+      failed: failed,
+      damaged: _damaged,
+    );
     if (moves.isNotEmpty) {
       await favourites.retarget(moves);
       await albums.retarget(moves);

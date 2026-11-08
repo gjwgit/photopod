@@ -38,6 +38,7 @@ import 'package:photopod/services/container_listing.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_envelope.dart';
+import 'package:photopod/services/media_integrity.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_store.dart';
 import 'package:photopod/services/shared_names.dart';
@@ -55,6 +56,20 @@ class PodMediaException implements Exception {
   @override
   String toString() => message;
 }
+
+/// How many photos and videos are downloaded whole at once.
+
+const int originalsAtOnce = 2;
+
+/// How many times a download of a photo or video that the server cuts short
+/// is tried before giving up.
+
+const int readAttempts = 3;
+
+/// How long to wait before trying a download again; the wait grows with
+/// each attempt.
+
+const Duration retryPause = Duration(seconds: 2);
 
 /// Reading and writing the photo and video files themselves.
 ///
@@ -170,6 +185,13 @@ class PodMediaService {
   /// someone else's Pod is read by its URL, and solidpod decrypts it with the
   /// key its owner shared along with it.
   ///
+  /// A photo or video can be many megabytes, and a server asked for several
+  /// at once may close the connection part way through one. So no more than
+  /// [originalsAtOnce] are downloaded at a time, and a download that is cut
+  /// short is tried again, up to [readAttempts] times in all, with a pause
+  /// between. A file that arrives whole but cannot be decoded is not asked
+  /// for again: it would only arrive the same way.
+  ///
   /// Whatever name is found is remembered: for a shared file in
   /// [SharedNames], which is how the user comes to see the name its owner
   /// gave it, and for one of the user's own that [MediaCatalog] has lost, in
@@ -179,27 +201,90 @@ class PodMediaService {
     if (DemoLibrary.isDemo(item)) {
       return (bytes: await DemoLibrary.read(item), name: null);
     }
-    if (!item.isEncrypted) {
-      return (bytes: await _readRaw(item.url), name: null);
-    }
 
-    final content = item.isShared
-        ? await readPod(item.url, pathType: PathType.absoluteUrl)
-        : await readPod(item.path, pathType: PathType.relativeToPod);
-
-    final MediaContent media;
+    await _acquire();
     try {
-      media = decodeMedia(content);
-    } on FormatException {
+      final media = await _download(item);
+      final name = media.name;
+      if (name != null) _remember(item, name);
+      return media;
+    } finally {
+      _release();
+    }
+  }
+
+  static Future<MediaContent> _download(MediaItem item) async {
+    for (var attempt = 1; ; attempt++) {
+      try {
+        if (!item.isEncrypted) {
+          return (bytes: await _readRaw(item.url), name: null);
+        }
+        final content = item.isShared
+            ? await readPod(item.url, pathType: PathType.absoluteUrl)
+            : await readPod(item.path, pathType: PathType.relativeToPod);
+        return _decode(item, content);
+      } on http.ClientException catch (e) {
+        if (attempt >= readAttempts) {
+          throw PodMediaException(
+            'The server stopped sending "${item.name}" part way through, '
+            '$readAttempts times. Please try again later.',
+          );
+        }
+        debugPrint(
+          'PhotoPod: reading ${item.url} was cut short ($e); '
+          'trying again (attempt ${attempt + 1} of $readAttempts).',
+        );
+        await Future<void>.delayed(retryPause * attempt);
+      }
+    }
+  }
+
+  // What [content], read for [item], holds. A file the server kept only
+  // part of is reported as incomplete, since reading it again cannot help.
+
+  static MediaContent _decode(MediaItem item, String content) {
+    try {
+      return decodeMedia(content);
+    } on FormatException catch (e) {
+      if (isCutShort(content)) {
+        debugPrint(
+          'PhotoPod: ${item.url} is incomplete on the Pod: it stops after '
+          '${content.length} characters.',
+        );
+        throw IncompleteMediaException(item.name);
+      }
+      debugPrint('PhotoPod: ${item.url} could not be decoded: ${e.message}');
       throw PodMediaException(
         'The contents of "${item.name}" are not in the format PhotoPod '
         'stores media in.',
       );
     }
+  }
 
-    final name = media.name;
-    if (name != null) _remember(item, name);
-    return media;
+  // The downloads under way, and those waiting for one to finish.
+
+  static int _active = 0;
+  static final List<Completer<void>> _waiting = [];
+
+  static Future<void> _acquire() async {
+    if (_active < originalsAtOnce) {
+      _active++;
+      return;
+    }
+    final turn = Completer<void>();
+    _waiting.add(turn);
+    await turn.future;
+  }
+
+  // Hand the slot straight to the next download waiting, if there is one,
+  // rather than freeing it for whoever asks first.
+
+  static void _release() {
+    if (_waiting.isEmpty) {
+      _active--;
+    } else {
+      _waiting.removeAt(0).complete();
+    }
   }
 
   static void _remember(MediaItem item, String name) {
@@ -225,6 +310,12 @@ class PodMediaService {
   /// solidpod then encrypts with the key the file already has, so everyone it
   /// is shared with can still read it. The caller must have secured the
   /// security key first, with SolidUI's `getKeyFromUserIfRequired`.
+  ///
+  /// A server that loses the connection part way through may keep what
+  /// arrived, so the end of the stored file is looked at afterwards. A file
+  /// that stops short is written once more, and if it still stops short the
+  /// write fails: a new file is removed, so no broken copy is left, while
+  /// one being replaced is left as it is.
 
   static Future<void> writeMedia({
     required String path,
@@ -232,12 +323,43 @@ class PodMediaService {
     required String name,
     bool overwrite = false,
   }) async {
-    await writePod(
-      path,
-      encodeMedia(name, bytes),
-      overwrite: overwrite,
-      pathType: PathType.relativeToPod,
+    final content = encodeMedia(name, bytes);
+    final url = await getFileUrl(path);
+    for (var attempt = 1; ; attempt++) {
+      await writePod(
+        path,
+        content,
+        overwrite: overwrite || attempt > 1,
+        pathType: PathType.relativeToPod,
+      );
+      if (await _storedWhole(url)) return;
+      debugPrint('PhotoPod: $url was stored incomplete (attempt $attempt).');
+      if (attempt >= 2) break;
+    }
+    if (!overwrite) {
+      try {
+        await deleteFile(fileUrl: url);
+      } on Object catch (e) {
+        debugPrint('PhotoPod: could not remove the incomplete $url: $e');
+      }
+    }
+    throw PodMediaException(
+      'The server kept only part of "$name", so it was not added. Please '
+      'try again; if it keeps happening, the server may limit how large a '
+      'file it will take.',
     );
+  }
+
+  // Whether the file at [url] arrived whole. A server that cannot say
+  // without sending the whole file back is taken at its word.
+
+  static Future<bool> _storedWhole(String url) async {
+    try {
+      return await MediaIntegrity.endsWhole(url) ?? true;
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not check $url was stored whole: $e');
+      return true;
+    }
   }
 
   /// A Pod-relative path inside [podPath], under a random name, for a new

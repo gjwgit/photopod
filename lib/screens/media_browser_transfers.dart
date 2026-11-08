@@ -158,6 +158,22 @@ extension MediaBrowserTransfers on MediaBrowserState {
     if (!context.mounted) return;
     await reload(force: true);
     if (context.mounted) await _syncSharing(context);
+
+    // A file the server kept only part of can never be moved, and is not
+    // tried again, so the user is told what to do about it.
+
+    final damaged = StorageUpgrade.damaged;
+    if (damaged.isNotEmpty && context.mounted) {
+      await showErrorDialog(
+        context,
+        damaged.length == 1
+            ? 'A photo is incomplete on your Pod'
+            : 'Some photos are incomplete on your Pod',
+        'The server kept only part of each of these when it was added, so '
+        'they cannot be opened. Delete them and add them again from the '
+        'originals.\n\n${damaged.join('\n')}',
+      );
+    }
     if (failed.isEmpty || !context.mounted) return;
 
     await showErrorDialog(
