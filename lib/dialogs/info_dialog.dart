@@ -30,7 +30,9 @@ import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
 import 'package:photopod/constants/media.dart';
+import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/models/albums.dart';
+import 'package:photopod/models/catalog_entry.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
@@ -39,6 +41,7 @@ import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
+import 'package:photopod/widgets/label_editor.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 
 /// Describe [item] in a modal dialogue.
@@ -48,6 +51,9 @@ import 'package:photopod/widgets/media_thumbnail.dart';
 /// already in hand and appears at once; the details that are inside the photo
 /// itself come from the catalog, or failing that need the thumbnail fetched
 /// and decoded, so they may arrive a moment later.
+///
+/// It is also where the user tags one of their own photos or videos and
+/// names the people in it. Each change is saved to the catalog at once.
 
 Future<void> showInfoDialog(BuildContext context, MediaItem item) =>
     showDialog<void>(
@@ -67,10 +73,21 @@ class _InfoDialog extends StatefulWidget {
 class _InfoDialogState extends State<_InfoDialog> {
   PhotoMetadata? _metadata;
   bool _reading = false;
+  List<PhotoTag> _tags = const [];
+  List<PhotoFace> _faces = const [];
+
+  /// Whether the item is one of the user's own, and so has a catalog entry
+  /// to tag. The samples and what others share are not the user's to label.
+
+  bool get _labellable =>
+      !widget.item.isShared && !DemoLibrary.isDemo(widget.item);
 
   @override
   void initState() {
     super.initState();
+    final entry = MediaCatalog.entryOf(widget.item.path);
+    _tags = entry?.tags ?? const [];
+    _faces = entry?.faces ?? const [];
     if (widget.item.isPhoto) _read();
   }
 
@@ -134,6 +151,7 @@ class _InfoDialogState extends State<_InfoDialog> {
                 item.isShared ? 'Shared with you' : 'On your Pod',
                 _podRows(),
               ),
+              if (_labellable) ..._buildLabels(context),
               ..._buildPhotoSection(context),
             ],
           ),
@@ -197,6 +215,109 @@ class _InfoDialogState extends State<_InfoDialog> {
       ),
       ('Address', item.url),
     ];
+  }
+
+  // The tags and the people, each a row of chips with a field to add more.
+  // What has been used on other photos is offered while the user types.
+
+  List<Widget> _buildLabels(BuildContext context) {
+    final style = Theme.of(context).textTheme.labelLarge;
+    return [
+      const Gap(16),
+      Text('Tags', style: style),
+      const Gap(8),
+      LabelEditor(
+        labels: [
+          for (final tag in _tags)
+            (text: tag.label, source: tag.source, confidence: tag.confidence),
+        ],
+        suggestions: {
+          for (final entry in MediaCatalog.entries)
+            for (final tag in entry.tags) tag.label,
+        },
+        hint: 'Add a tag',
+        icon: Icons.sell_outlined,
+        onAdd: _addTag,
+        onRemove: (index) => _saveTags([..._tags]..removeAt(index)),
+      ),
+      const Gap(16),
+      Text('People', style: style),
+      const Gap(8),
+      LabelEditor(
+        labels: [
+          for (final face in _faces)
+            (text: face.name, source: face.source, confidence: null),
+        ],
+        suggestions: {
+          for (final entry in MediaCatalog.entries)
+            for (final face in entry.faces) face.name,
+        },
+        hint: 'Add a person',
+        icon: Icons.person_add_alt,
+        onAdd: _addPerson,
+        onRemove: (index) => _saveFaces([..._faces]..removeAt(index)),
+      ),
+      const Gap(20),
+    ];
+  }
+
+  // A tag already there is not added twice, whatever its case. One a
+  // service suggested becomes the user's own, since the user has now said
+  // so too.
+
+  Future<void> _addTag(String label) async {
+    final at = _tags.indexWhere(
+      (tag) => tag.label.toLowerCase() == label.toLowerCase(),
+    );
+    if (at >= 0 && _tags[at].source == userSource) return;
+    await _saveTags(
+      at < 0
+          ? [..._tags, PhotoTag(label)]
+          : ([..._tags]..[at] = PhotoTag(_tags[at].label)),
+    );
+  }
+
+  // As for a tag, and a person a service found keeps the box it found them
+  // in.
+
+  Future<void> _addPerson(String name) async {
+    final at = _faces.indexWhere(
+      (face) => face.name.toLowerCase() == name.toLowerCase(),
+    );
+    if (at >= 0 && _faces[at].source == userSource) return;
+    await _saveFaces(
+      at < 0
+          ? [..._faces, PhotoFace(name)]
+          : ([..._faces]
+              ..[at] = PhotoFace(_faces[at].name, box: _faces[at].box)),
+    );
+  }
+
+  // The change shows at once, and is taken back if the catalog cannot be
+  // saved.
+
+  Future<void> _saveTags(List<PhotoTag> tags) async {
+    final before = _tags;
+    setState(() => _tags = tags);
+    try {
+      await MediaCatalog.setTags(widget.item.path, tags);
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() => _tags = before);
+      await showErrorDialog(context, 'The tags were not saved', '$e');
+    }
+  }
+
+  Future<void> _saveFaces(List<PhotoFace> faces) async {
+    final before = _faces;
+    setState(() => _faces = faces);
+    try {
+      await MediaCatalog.setFaces(widget.item.path, faces);
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() => _faces = before);
+      await showErrorDialog(context, 'The people were not saved', '$e');
+    }
   }
 
   // What the photo says about itself. Videos carry no EXIF block that
@@ -268,6 +389,9 @@ class _InfoDialogState extends State<_InfoDialog> {
     final lines = [
       widget.item.name,
       for (final row in _podRows()) '${row.$1}: ${row.$2}',
+      if (_tags.isNotEmpty) 'Tags: ${_tags.map((tag) => tag.label).join(', ')}',
+      if (_faces.isNotEmpty)
+        'People: ${_faces.map((face) => face.name).join(', ')}',
       if (metadata != null && !metadata.isEmpty) ...[
         if (metadata.width != null) 'Dimensions: ${_dimensions(metadata)}',
         if (metadata.taken != null) 'Taken: ${formatDateTime(metadata.taken)}',
