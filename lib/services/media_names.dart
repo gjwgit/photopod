@@ -1,5 +1,5 @@
-/// The names the user gave each photo and video, kept apart from the random
-/// names they are stored under.
+/// The random names photos, videos and folders are stored under, and the
+/// table of the names the user gave them that came before the catalog.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -24,24 +24,17 @@
 
 library;
 
-import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
-import 'package:flutter/foundation.dart';
-
 import 'package:photopod/constants/media.dart';
-import 'package:photopod/services/encrypted_json_file.dart';
-import 'package:photopod/services/pod_keys.dart';
-import 'package:photopod/services/pod_media_service.dart';
 
-/// The name of the table of names, at the top of the album. It is JSON,
-/// stored encrypted as `names.json.enc.ttl`, since the names the user gives
-/// their photos are as private as the photos; see [EncryptedJsonFile].
+/// The name of the table of names, at the top of the album, stored encrypted
+/// as `names.json.enc.ttl`. It kept the name and date of each item until the
+/// catalog took over, and is now only read, once, to build the catalog; see
+/// `MediaCatalog`.
 
 const String namesFileName = 'names.json';
-
-const EncryptedJsonFile _file = EncryptedJsonFile(namesFileName);
 
 /// How many random bytes go into a stored name: 128 bits, written as 32
 /// hexadecimal digits.
@@ -67,7 +60,7 @@ String randomStoredName(String displayName) {
 
 /// A fresh random name for a folder, which is nothing but the hexadecimal
 /// digits: a folder has no extension to keep, and the name the user gave it
-/// lives in [MediaNames] like a file's.
+/// lives in `MediaCatalog` like a file's.
 
 String randomFolderName() => _randomHex();
 
@@ -157,229 +150,3 @@ Map<String, String> _decodeTable(String text, String key) {
 /// real instant, and is kept in UTC.
 
 String encodeDate(DateTime when) => when.toIso8601String();
-
-/// The name the user knows each photo, video and folder by, keyed by its
-/// Pod-relative path.
-///
-/// Every file and folder PhotoPod makes is stored under a random name of its
-/// own, from [randomStoredName] and [randomFolderName], so a name in any
-/// script, with spaces or anything else in it, never has to pass through a
-/// URL and never reaches the server. A file also carries its name inside
-/// itself, encrypted, which is what someone it is shared with sees; this
-/// table is what lets a folder be listed without reading every file in it.
-///
-/// An item with no entry is shown under its stored name, less the encryption
-/// suffix, which is how anything added before random names keeps the name
-/// it had until [StorageUpgrade] moves it.
-///
-/// The table also keeps the date each photo and video belongs under: when it
-/// was taken, from its EXIF block, or failing that when the file itself was
-/// last changed before it was added. The Pod only knows when the file was
-/// uploaded, and keeping the date here, beside the name, means the Library
-/// learns it from the one read it makes anyway.
-
-class MediaNames {
-  const MediaNames._();
-
-  static final Map<String, String> _names = <String, String>{};
-  static final Map<String, String> _dates = <String, String>{};
-
-  // The URL the table was read from, so that logging in as someone else reads
-  // theirs, and the read in progress, so that the many listings a screen
-  // starts at once share one request.
-
-  static String? _loadedFrom;
-  static Future<void>? _loading;
-
-  // Writes are chained, as for the favourites, so two quick changes cannot
-  // race and leave the Pod holding the older table.
-
-  static Future<void> _writes = Future<void>.value();
-
-  /// The name the user gave the file at Pod-relative [path], or null when it
-  /// was never given one.
-
-  static String? nameOf(String path) => _names[path];
-
-  /// When the photo or video at Pod-relative [path] was taken, or failing
-  /// that when the file was last changed before it was added; null for a file
-  /// added before dates were kept.
-
-  static DateTime? takenOf(String path) {
-    final text = _dates[path];
-    return text == null ? null : DateTime.tryParse(text);
-  }
-
-  /// Whether the table is on the Pod but cannot be read until the user enters
-  /// their security key, which is worth asking for before listing a folder.
-
-  static Future<bool> needsKey() async =>
-      !PodKeys.isPrimed &&
-      _loadedFrom != await _file.url() &&
-      await _file.exists();
-
-  /// Read the table from the Pod, unless it has already been read for the
-  /// user who is logged in.
-  ///
-  /// Without the security key the table is left unread, to be read by the
-  /// next call once the key has been entered, and every file shows under its
-  /// stored name meanwhile.
-
-  static Future<void> ensureLoaded() async {
-    final url = await _file.url();
-    if (_loadedFrom == url) return;
-
-    final loading = _loading ??= _load(url);
-    try {
-      await loading;
-    } on SecurityKeyNeeded catch (e) {
-      debugPrint('PhotoPod: file names not read yet: $e');
-    } finally {
-      if (identical(_loading, loading)) _loading = null;
-    }
-  }
-
-  /// Read the table again next time it is needed, in case another device has
-  /// changed it.
-
-  static void invalidate() => _loadedFrom = null;
-
-  /// Record that the file at [path] is called [name], and, when [taken] is
-  /// given, the date it belongs under, then store the table. A date already
-  /// recorded is kept when [taken] is left out, so renaming a photo does not
-  /// move it to another day.
-  ///
-  /// Throws [PodMediaException] when the Pod refuses the write, leaving the
-  /// table as it was.
-
-  static Future<void> set(String path, String name, {DateTime? taken}) =>
-      _change((names, dates) {
-        names[path] = name;
-        if (taken != null) dates[path] = encodeDate(taken);
-      });
-
-  /// Record every name in [names], keyed by path, in a single write, for a
-  /// whole folder of files that have just been given new paths. Each path
-  /// [moves] names as the new place of an old one takes over the old one's
-  /// date, so that a moved photo stays on its day.
-
-  static Future<void> setAll(
-    Map<String, String> names, {
-    Map<String, String> moves = const {},
-  }) async {
-    if (names.isEmpty && moves.isEmpty) return;
-    await _change((table, dates) {
-      table.addAll(names);
-      for (final move in moves.entries) {
-        final date = dates[move.key];
-        if (date != null) dates[move.value] = date;
-      }
-    });
-  }
-
-  /// Record the date each path in [dates] belongs under, leaving alone any
-  /// path that already has one, and store the table once for them all.
-
-  static Future<void> setDates(Map<String, DateTime> dates) =>
-      _change((names, stored) {
-        for (final entry in dates.entries) {
-          stored.putIfAbsent(entry.key, () => encodeDate(entry.value));
-        }
-      });
-
-  /// Copy the names and dates of everything at or beneath each old path in
-  /// [moves] to the matching new path, for files and folders that have been
-  /// copied.
-
-  static Future<void> copy(Map<String, String> moves) =>
-      _change((names, dates) {
-        names.addAll(_moved(names, moves));
-        dates.addAll(_moved(dates, moves));
-      });
-
-  /// Forget [paths], and everything beneath those that are folders, for items
-  /// that have been deleted. Nothing that goes wrong is reported: a name left
-  /// behind belongs to a path no file will ever have again.
-
-  static Future<void> forget(Iterable<String> paths) async {
-    final gone = paths.toList();
-    if (gone.isEmpty) return;
-    try {
-      bool isGone(String path, _) => gone.any((each) => _within(path, each));
-      await _change((names, dates) {
-        names.removeWhere(isGone);
-        dates.removeWhere(isGone);
-      });
-    } on Object catch (e) {
-      debugPrint('PhotoPod: could not forget the names of deleted files: $e');
-    }
-  }
-
-  // The entries of [names] at or beneath an old path of [moves], keyed by
-  // where they now are.
-
-  static Map<String, String> _moved(
-    Map<String, String> names,
-    Map<String, String> moves,
-  ) => {
-    for (final entry in names.entries)
-      for (final move in moves.entries)
-        if (_within(entry.key, move.key))
-          '${move.value}${entry.key.substring(move.key.length)}': entry.value,
-  };
-
-  static bool _within(String path, String root) =>
-      path == root || path.startsWith('$root/');
-
-  // Apply [edit] to a copy of the table, store it, and only then adopt it.
-
-  static Future<void> _change(
-    void Function(Map<String, String> names, Map<String, String> dates) edit,
-  ) {
-    final write = _writes.then((_) async {
-      // A table that could not be read must not be written over with only
-      // the change.
-
-      await ensureLoaded();
-      if (_loadedFrom != await _file.url()) {
-        throw SecurityKeyNeeded(namesFileName);
-      }
-
-      final updated = Map<String, String>.from(_names);
-      final dated = Map<String, String>.from(_dates);
-      edit(updated, dated);
-      if (mapEquals(updated, _names) && mapEquals(dated, _dates)) return;
-
-      try {
-        await _file.write(encodeNames(updated, dated));
-      } on PodMediaException {
-        rethrow;
-      } on Object catch (e) {
-        throw PodMediaException('The file names could not be saved: $e');
-      }
-      _names
-        ..clear()
-        ..addAll(updated);
-      _dates
-        ..clear()
-        ..addAll(dated);
-    });
-
-    // The chain itself never carries a failure forward, or one refused write
-    // would fail every write after it.
-
-    _writes = write.then((_) {}, onError: (_) {});
-    return write;
-  }
-
-  static Future<void> _load(String url) async {
-    final content = await _file.read();
-    _names
-      ..clear()
-      ..addAll(content == null ? const {} : decodeNames(content));
-    _dates
-      ..clear()
-      ..addAll(content == null ? const {} : decodeDates(content));
-    _loadedFrom = url;
-  }
-}

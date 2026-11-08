@@ -42,6 +42,7 @@ import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/pod_keys.dart';
@@ -129,8 +130,8 @@ class StorageUpgrade {
     AlbumSharing sharing,
   ) async {
     await PodKeys.unlocked();
-    MediaNames.invalidate();
-    await MediaNames.ensureLoaded();
+    MediaCatalog.invalidate();
+    await MediaCatalog.ensureLoaded();
     await favourites.load();
     await albums.load();
     await sharing.load();
@@ -174,7 +175,7 @@ class StorageUpgrade {
       } on ResourceNotExistException {
         // Shared once, and deleted since.
       } on Object catch (e) {
-        failed.add('${MediaNames.nameOf(path) ?? stored}: $e');
+        failed.add('${MediaCatalog.nameOf(path) ?? stored}: $e');
       }
     }
 

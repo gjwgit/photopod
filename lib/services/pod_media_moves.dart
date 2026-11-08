@@ -27,6 +27,7 @@ import 'package:solidpod/solidpod.dart' show deleteItems, getFileUrl;
 
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/pod_media_ops.dart';
@@ -62,7 +63,7 @@ class PodMediaMoves {
     final display = name ?? item.name;
     final media = await PodMediaService.readMedia(item);
     final path = await PodMediaService.newStoredPath(item.parentPath, display);
-    await MediaNames.set(path, display, taken: item.taken);
+    await MediaCatalog.set(path, display, taken: item.taken, from: item.path);
     await PodMediaService.writeMedia(
       path: path,
       bytes: media.bytes,
@@ -106,7 +107,7 @@ class PodMediaMoves {
     // The names go in before the original goes, so that nothing is ever on
     // the Pod without one, and each file takes its date along.
 
-    await MediaNames.setAll(names, moves: moves);
+    await MediaCatalog.setAll(names, moves: moves);
 
     final result = await deleteItems(
       parentPath: item.parentPath,
@@ -124,7 +125,7 @@ class PodMediaMoves {
     // paths; the others are filed under names that did not change.
 
     await MediaRenditions.forget([item], inside: renamedFiles);
-    await MediaNames.forget([item.path]);
+    await MediaCatalog.forget([item.path]);
     return moves;
   }
 

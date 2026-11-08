@@ -23,6 +23,8 @@
 
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:flutter_map/flutter_map.dart';
@@ -38,6 +40,7 @@ import 'package:photopod/models/map_source.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/demo_library.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
@@ -142,18 +145,33 @@ class _MapViewState extends State<MapView> {
       if (index.isDemo) ...DemoLibrary.placedVideos,
     ].take(maxMappedPhotos).toList();
 
+    // Whatever the catalog already says about a photo needs no reading at
+    // all; only the photos it knows nothing about yet are fetched.
+
+    final located = <MediaItem, PhotoMetadata>{};
+    final unknown = <MediaItem>[];
+    for (final photo in photos) {
+      final known = MediaCatalog.metadataOf(photo.path);
+      if (known == null) {
+        unknown.add(photo);
+      } else if (known.hasLocation) {
+        located[photo] = known;
+      }
+    }
+    final alreadyRead = photos.length - unknown.length;
+
     setState(() {
       _scanning = true;
       _error = null;
-      _read = 0;
+      _read = alreadyRead;
       _toRead = photos.length;
-      if (force) _places = const [];
+      _places = force && located.isEmpty ? const [] : _group(located);
     });
 
     // Every photo PhotoPod wrote is encrypted, so the security key has to be
     // in hand before the first one can be decoded.
 
-    if (photos.any((photo) => photo.isEncrypted)) {
+    if (unknown.any((photo) => photo.isEncrypted)) {
       try {
         await getKeyFromUserIfRequired(
           context,
@@ -178,34 +196,44 @@ class _MapViewState extends State<MapView> {
       }
     }
 
-    final located = <MediaItem, PhotoMetadata>{};
-
     // A few at a time, which is what the Pod answers best, and which lets the
-    // map fill in as the photos come back rather than all at the end.
+    // map fill in as the photos come back rather than all at the end. What
+    // is learnt about the user's own photos goes into the catalog, so the
+    // next visit need not read them.
 
-    for (var start = 0; start < photos.length; start += thumbnailConcurrency) {
-      if (_disposed) return;
+    final learnt = <String, PhotoMetadata>{};
+    for (var start = 0; start < unknown.length; start += thumbnailConcurrency) {
+      if (_disposed) break;
 
-      final batch = photos.skip(start).take(thumbnailConcurrency).toList();
+      final batch = unknown.skip(start).take(thumbnailConcurrency).toList();
       final results = await Future.wait(
         batch.map(ThumbnailCache.instance.metadata),
       );
 
       for (var i = 0; i < batch.length; i++) {
         final metadata = results[i];
-        if (metadata != null && metadata.hasLocation) {
-          located[batch[i]] = metadata;
-        }
+        if (metadata == null) continue;
+        final photo = batch[i];
+        if (!photo.isShared && !index.isDemo) learnt[photo.path] = metadata;
+        if (metadata.hasLocation) located[photo] = metadata;
       }
 
-      if (_disposed || !mounted) return;
+      if (_disposed || !mounted) break;
       setState(() {
-        _read = start + batch.length;
+        _read = alreadyRead + start + batch.length;
         _places = _group(located);
       });
     }
 
-    if (!mounted) return;
+    if (learnt.isNotEmpty) {
+      unawaited(
+        MediaCatalog.setMetadata(learnt).catchError(
+          (Object e) => debugPrint('PhotoPod: could not record places: $e'),
+        ),
+      );
+    }
+
+    if (_disposed || !mounted) return;
     setState(() {
       _scanning = false;
       _scannedAt = index.scannedAt;

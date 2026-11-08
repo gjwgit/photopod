@@ -36,6 +36,7 @@ import 'package:photopod/models/albums.dart' show albumsFolderName;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/container_listing.dart';
 import 'package:photopod/services/demo_library.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_envelope.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/shared_names.dart';
@@ -61,7 +62,7 @@ class PodMediaException implements Exception {
 /// Turtle and writes an accompanying `.acl`. Each file is stored under a
 /// random name of its own, such as `3f9c…e1.jpg.enc.ttl`, and the name the
 /// user gave it is kept inside the file, encrypted with the photo (see
-/// [encodeMedia]), and in [MediaNames], which lets a folder be listed without
+/// [encodeMedia]), and in [MediaCatalog], which lets a folder be listed without
 /// reading every file in it. Files added before that keep the name they were
 /// stored under, `beach.jpg.enc.ttl`, and PhotoPod shows it without the
 /// suffix.
@@ -99,7 +100,7 @@ class PodMediaService {
   }) async {
     final url = await folderUrl(podPath);
     final body = await _get(url, 'listing the folder');
-    await MediaNames.ensureLoaded();
+    await MediaCatalog.ensureLoaded();
     final entries = parseContainerListing(body);
 
     // The album files are PhotoPod's own bookkeeping, filed in a folder of
@@ -126,7 +127,7 @@ class PodMediaService {
       final path = '$podPath/$raw';
       final storedName = decodeName(raw);
       final name =
-          MediaNames.nameOf(path) ??
+          MediaCatalog.nameOf(path) ??
           (isFolder ? storedName : displayNameOf(storedName));
       if (!isFolder && kinds != null && !kinds.contains(kindOf(name))) {
         continue;
@@ -141,7 +142,7 @@ class PodMediaService {
           isFolder: isFolder,
           isEncrypted: !isFolder && storedName.endsWith(encryptedSuffix),
           modified: entry.modified,
-          taken: isFolder ? null : MediaNames.takenOf(path),
+          taken: isFolder ? null : MediaCatalog.takenOf(path),
           size: isFolder ? null : entry.size,
         ),
       );
@@ -165,8 +166,8 @@ class PodMediaService {
   ///
   /// Whatever name is found is remembered: for a shared file in
   /// [SharedNames], which is how the user comes to see the name its owner
-  /// gave it, and for one of the user's own that [MediaNames] has lost, in
-  /// [MediaNames].
+  /// gave it, and for one of the user's own that [MediaCatalog] has lost, in
+  /// [MediaCatalog].
 
   static Future<MediaContent> readMedia(MediaItem item) async {
     if (DemoLibrary.isDemo(item)) {
@@ -200,9 +201,9 @@ class PodMediaService {
       SharedNames.instance.learn(item.url, name);
       return;
     }
-    if (MediaNames.nameOf(item.path) == null) {
+    if (MediaCatalog.nameOf(item.path) == null) {
       unawaited(
-        MediaNames.set(item.path, name).catchError(
+        MediaCatalog.set(item.path, name).catchError(
           (Object e) => debugPrint('PhotoPod: could not restore a name: $e'),
         ),
       );

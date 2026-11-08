@@ -36,7 +36,7 @@ class MediaItem {
   /// Display name, including the extension for files.
   ///
   /// For a file this is the name the user gave it, in any script, which
-  /// `MediaNames` keeps apart from the random name it is stored under. A file
+  /// `MediaCatalog` keeps apart from the random name it is stored under. A file
   /// with no recorded name, such as one added before names were kept, shows
   /// its stored name with the escapes decoded and the encryption suffix
   /// removed, so `my%20photo.jpg.enc.ttl` reads as `my photo.jpg`.

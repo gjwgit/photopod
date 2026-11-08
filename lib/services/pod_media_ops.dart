@@ -27,6 +27,7 @@ import 'package:solidpod/solidpod.dart';
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_envelope.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_renditions.dart';
@@ -37,8 +38,8 @@ import 'package:photopod/services/pod_media_service.dart';
 ///
 /// Solid has no server-side copy or rename. A file is stored under a random
 /// name and known to the user by the name kept inside it and in
-/// [MediaNames], so renaming a file rewrites it in place. A folder is stored
-/// under a random name too, and renaming it changes only [MediaNames]. A copy
+/// [MediaCatalog], so renaming a file rewrites it in place. A folder is stored
+/// under a random name too, and renaming it changes only [MediaCatalog]. A copy
 /// is a read and a write.
 
 class PodMediaOps {
@@ -92,7 +93,7 @@ class PodMediaOps {
   /// kept its path.
   ///
   /// A file or folder stored under a random name keeps it: the new name is
-  /// written into [MediaNames], and for a file into the file itself, which is
+  /// written into [MediaCatalog], and for a file into the file itself, which is
   /// what lets everyone it is shared with see it. One still stored under the
   /// name it was added with is moved to a random name instead; see
   /// [PodMediaMoves].
@@ -111,7 +112,7 @@ class PodMediaOps {
       if (!isRandomFolderName(item.rawName)) {
         return PodMediaMoves.moveFolder(item, name: newName);
       }
-      await MediaNames.set(item.path, newName);
+      await MediaCatalog.set(item.path, newName);
       return const {};
     }
 
@@ -129,7 +130,7 @@ class PodMediaOps {
       name: newName,
       overwrite: true,
     );
-    await MediaNames.set(item.path, newName);
+    await MediaCatalog.set(item.path, newName);
     return const {};
   }
 
@@ -147,7 +148,7 @@ class PodMediaOps {
     await PodMediaService.writeMedia(
       path: path,
       bytes: media.bytes,
-      name: MediaNames.nameOf(path) ?? displayNameOf(stored),
+      name: MediaCatalog.nameOf(path) ?? displayNameOf(stored),
       overwrite: true,
     );
   }
@@ -181,7 +182,7 @@ class PodMediaOps {
         .where((item) => !result.failed.containsKey(item.rawName))
         .toList();
     await MediaRenditions.forget(gone, inside: inside);
-    await MediaNames.forget(gone.map((item) => item.path));
+    await MediaCatalog.forget(gone.map((item) => item.path));
     return result;
   }
 
@@ -270,7 +271,7 @@ class PodMediaOps {
   ) async {
     final bytes = await PodMediaService.readBytes(item);
     final path = await PodMediaService.newStoredPath(destPodPath, name);
-    await MediaNames.set(path, name, taken: item.taken);
+    await MediaCatalog.set(path, name, taken: item.taken, from: item.path);
     await PodMediaService.writeMedia(path: path, bytes: bytes, name: name);
     await MediaRenditions.copy(item.path, path);
     return path;

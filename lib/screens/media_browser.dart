@@ -52,9 +52,9 @@ import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/demo_library.dart';
-import 'package:photopod/services/media_dates_backfill.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_index.dart';
-import 'package:photopod/services/media_names.dart';
+import 'package:photopod/services/media_metadata_backfill.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
@@ -234,7 +234,7 @@ class MediaBrowserState extends State<MediaBrowser> {
   Future<void> reload({bool force = false}) async {
     // Another device may have renamed something since the names were read.
 
-    if (force && !_demo) MediaNames.invalidate();
+    if (force && !_demo) MediaCatalog.invalidate();
 
     // The samples are in the app bundle: there is no key to ask for, no
     // folder to list and nothing shared to fold in.
@@ -257,7 +257,7 @@ class MediaBrowserState extends State<MediaBrowser> {
     // the folder is listed rather than after, when the tiles would already
     // be showing the names they are stored under.
 
-    if (!_demo && await MediaNames.needsKey() && mounted) {
+    if (!_demo && await MediaCatalog.needsKey() && mounted) {
       await _ensureSecurityKey(context);
     }
     if (!mounted) return;
@@ -352,14 +352,14 @@ class MediaBrowserState extends State<MediaBrowser> {
     await index.refresh();
     if (!mounted || index.error != null) return;
 
-    final recorded = await MediaDatesBackfill.run(index.items);
+    final recorded = await MediaMetadataBackfill.run(index.items);
     if (!mounted || recorded == 0) return;
 
     index.applyDates();
     setState(
       () => _items = [
         for (final item in _items)
-          item.withTaken(MediaNames.takenOf(item.path)),
+          item.withTaken(MediaCatalog.takenOf(item.path)),
       ],
     );
   }
@@ -406,7 +406,7 @@ class MediaBrowserState extends State<MediaBrowser> {
     final segments = _segments;
     return [
       for (var i = 0; i < segments.length; i++)
-        MediaNames.nameOf('$_root/${segments.take(i + 1).join('/')}') ??
+        MediaCatalog.nameOf('$_root/${segments.take(i + 1).join('/')}') ??
             PodMediaService.decodeName(segments[i]),
     ];
   }

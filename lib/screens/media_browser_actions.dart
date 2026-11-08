@@ -337,11 +337,17 @@ extension MediaBrowserActions on MediaBrowserState {
               renditions.photo?.metadata?.taken ?? await _modifiedOf(file);
           final path = await PodMediaService.newStoredPath(_path, name);
 
-          // The name goes first: one whose file never arrives is never
-          // matched, while a file without its name would show under the
-          // random one.
+          // The catalog entry goes first: one whose file never arrives is
+          // never matched, while a file without its name would show under
+          // the random one. The EXIF details go in with it, so the map need
+          // not read the photo back.
 
-          await MediaNames.set(path, name, taken: when);
+          await MediaCatalog.set(
+            path,
+            name,
+            taken: when,
+            metadata: renditions.photo?.metadata,
+          );
           await PodMediaService.writeMedia(
             path: path,
             bytes: bytes,
