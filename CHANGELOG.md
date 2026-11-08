@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.1 Functional Updates
 
++ Remove face recognition to fix the macOS build [1.1.4 20261108 gjwgit]
 + Add sample photos when not logged in [1.1.3 20261108 tonypioneer]
 + Skip login. [1.1.2 20261105 tonypioneer]
 + Initial face recognition. [1.1.1 20261105 tonypioneer]
