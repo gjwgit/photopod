@@ -83,4 +83,11 @@ void main() {
   test('formatMonthYear names the month in full', () {
     expect(formatMonthYear(DateTime(2025, 9, 14)), 'September 2025');
   });
+
+  test('formatCount separates the thousands', () {
+    expect(formatCount(0), '0');
+    expect(formatCount(999), '999');
+    expect(formatCount(1000), '1,000');
+    expect(formatCount(1234567), '1,234,567');
+  });
 }

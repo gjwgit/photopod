@@ -182,7 +182,7 @@ extension MediaBrowserBody on MediaBrowserState {
     );
 
     return LayoutBuilder(
-      builder: (context, constraints) => constraints.maxWidth >= 860
+      builder: (context, constraints) => constraints.maxWidth >= wideHeaderWidth
           ? Row(
               children: [
                 Expanded(child: leading),
@@ -217,6 +217,15 @@ extension MediaBrowserBody on MediaBrowserState {
             widget.section.label,
             style: Theme.of(context).textTheme.titleSmall,
           ),
+          if (!index.isLoading) ...[
+            const Gap(8),
+            Text(
+              _countLabel(),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+              ),
+            ),
+          ],
           if (context.read<SharedWithMe>().error != null) ...[
             const Gap(8),
             Tooltip(
@@ -257,6 +266,27 @@ extension MediaBrowserBody on MediaBrowserState {
         ],
       ),
     );
+  }
+
+  // How many photos and videos the section holds, whatever the filter bar
+  // is searching for, which says for itself how many of them it shows.
+
+  String _countLabel() {
+    final files = _unfiltered.where((item) => !item.isFolder).toList();
+    final videos = files.where((item) => item.isVideo).length;
+    final photos = files.length - videos;
+    String count(int n, String noun) =>
+        '${formatCount(n)} $noun${n == 1 ? '' : 's'}';
+    if (photos == 0 && videos == 0) {
+      return count(
+        0,
+        widget.section == LibrarySection.videos ? 'video' : 'photo',
+      );
+    }
+    return [
+      if (photos > 0) count(photos, 'photo'),
+      if (videos > 0) count(videos, 'video'),
+    ].join(', ');
   }
 
   Widget _buildContent(

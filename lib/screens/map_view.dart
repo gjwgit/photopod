@@ -35,8 +35,10 @@ import 'package:provider/provider.dart';
 import 'package:solidpod/solidpod.dart' show KeyManager;
 import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 
+import 'package:photopod/constants/app.dart';
 import 'package:photopod/dialogs/map_settings_dialog.dart';
 import 'package:photopod/dialogs/preview_dialog.dart';
+import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/map_source.dart';
 import 'package:photopod/models/media_filter.dart';
 import 'package:photopod/models/media_item.dart';
@@ -46,6 +48,7 @@ import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
+import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/demo_banner.dart';
 import 'package:photopod/widgets/filter_bar.dart';
 import 'package:photopod/widgets/media_grid.dart' show mediaTooltipMarkdown;
@@ -319,57 +322,102 @@ class _MapViewState extends State<MapView> {
         ? 'Reading your photos...  $_read of $_toRead'
         : photos == 0
         ? 'No photos with a location yet'
-        : '$photos ${photos == 1 ? 'photo' : 'photos'} in '
-              '${_shown.length} ${_shown.length == 1 ? 'place' : 'places'}';
+        : '${formatCount(photos)} ${photos == 1 ? 'photo' : 'photos'} in '
+              '${formatCount(_shown.length)} '
+              '${_shown.length == 1 ? 'place' : 'places'}';
+    final theme = Theme.of(context);
+
+    // Headed like the other sections: its icon, its name, then the count.
+
+    final title = Row(
+      children: [
+        Icon(
+          LibrarySection.maps.icon,
+          size: 20,
+          color: theme.colorScheme.primary,
+        ),
+        const Gap(8),
+        Text(LibrarySection.maps.label, style: theme.textTheme.titleSmall),
+        const Gap(8),
+        if (busy)
+          const Padding(
+            padding: EdgeInsets.only(right: 12),
+            child: SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          ),
+        Expanded(
+          child: Text(
+            summary,
+            overflow: TextOverflow.ellipsis,
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final buttons = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          icon: const Icon(Icons.fit_screen_outlined),
+          tooltip: 'Show every place',
+          onPressed: _shown.isEmpty
+              ? null
+              : () {
+                  _fitted = false;
+                  _fit();
+                },
+        ),
+        IconButton(
+          icon: const Icon(Icons.layers_outlined),
+          tooltip: 'Map Settings',
+          onPressed: source == null
+              ? null
+              : () => showMapSettingsDialog(
+                  context,
+                  current: source,
+                  onChanged: _setSource,
+                ),
+        ),
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          tooltip: 'Read the album again',
+          onPressed: busy
+              ? null
+              : () async {
+                  await index.refresh(force: true);
+                  if (mounted) await _readLocations(force: true);
+                },
+        ),
+      ],
+    );
+
+    // As in the other sections, the buttons share the line on a wide window
+    // and go beneath the title on a narrow one.
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-      child: Row(
-        children: [
-          if (busy)
-            const Padding(
-              padding: EdgeInsets.only(right: 12),
-              child: SizedBox(
-                width: 14,
-                height: 14,
-                child: CircularProgressIndicator(strokeWidth: 2),
+      child: LayoutBuilder(
+        builder: (context, constraints) =>
+            constraints.maxWidth >= wideHeaderWidth
+            ? Row(
+                children: [
+                  Expanded(child: title),
+                  buttons,
+                ],
+              )
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  title,
+                  Align(alignment: Alignment.centerRight, child: buttons),
+                ],
               ),
-            ),
-          Expanded(
-            child: Text(summary, style: Theme.of(context).textTheme.bodySmall),
-          ),
-          IconButton(
-            icon: const Icon(Icons.fit_screen_outlined),
-            tooltip: 'Show every place',
-            onPressed: _shown.isEmpty
-                ? null
-                : () {
-                    _fitted = false;
-                    _fit();
-                  },
-          ),
-          IconButton(
-            icon: const Icon(Icons.layers_outlined),
-            tooltip: 'Map Settings',
-            onPressed: source == null
-                ? null
-                : () => showMapSettingsDialog(
-                    context,
-                    current: source,
-                    onChanged: _setSource,
-                  ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Read the album again',
-            onPressed: busy
-                ? null
-                : () async {
-                    await index.refresh(force: true);
-                    if (mounted) await _readLocations(force: true);
-                  },
-          ),
-        ],
       ),
     );
   }

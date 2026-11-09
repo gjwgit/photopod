@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.2 Single Photo Store
 
++ Photo counts in each section heading, Maps headed alike [1.2.6 20261109 gjwgit]
 + Type a place in Get Info, looked up to save its location [1.2.5 20261109 gjwgit]
 + Filter bar to search by person, tag, title, date or location [1.2.4 20261109 gjwgit]
 + Show the photo title in the preview [1.2.3 20261109 gjwgit]

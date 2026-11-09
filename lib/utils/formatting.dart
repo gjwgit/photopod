@@ -87,3 +87,10 @@ String formatDayHeading(DateTime day, {DateTime? now}) {
 
 String formatMonthYear(DateTime when) =>
     '${_months[when.month - 1]} ${when.year}';
+
+/// [count] with its thousands separated by commas, such as `12,345`.
+
+String formatCount(int count) => count.toString().replaceAllMapped(
+  RegExp(r'\B(?=(\d{3})+(?!\d))'),
+  (_) => ',',
+);

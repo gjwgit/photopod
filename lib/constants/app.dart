@@ -72,3 +72,8 @@ and videos privately in your own Pod and share them with other Solid users.
 
   ''',
 );
+
+/// How wide a section must be for its toolbar to share a line with its
+/// title. Narrower, the toolbar goes on a line of its own beneath.
+
+const double wideHeaderWidth = 860;

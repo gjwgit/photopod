@@ -36,6 +36,7 @@ import 'package:provider/provider.dart';
 import 'package:solidpod/solidpod.dart' show KeyManager, isUserLoggedIn;
 import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 
+import 'package:photopod/constants/app.dart';
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/album_name_dialog.dart';
 import 'package:photopod/dialogs/download_media.dart';
@@ -326,10 +327,10 @@ class MediaBrowserState extends State<MediaBrowser> {
             .where(favourites.contains)
             .toList();
       case LibrarySection.albums:
-        final favourites = context.read<Favourites>();
+        // Favourites has its own section and is not listed among the albums.
+
         final albums = context.read<Albums>();
         final paths = {
-          ...favourites.paths,
           for (final name in albums.names) ...albums.pathsOf(name),
           for (final album in context.read<SharedWithMe>().albums)
             ...album.itemUrls,
