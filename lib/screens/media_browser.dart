@@ -48,6 +48,7 @@ import 'package:photopod/dialogs/view_options_dialog.dart';
 import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
+import 'package:photopod/models/media_filter.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
@@ -68,6 +69,7 @@ import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/utils/resource_name.dart';
 import 'package:photopod/widgets/album_list.dart';
 import 'package:photopod/widgets/demo_banner.dart';
+import 'package:photopod/widgets/filter_bar.dart';
 import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
 import 'package:photopod/widgets/media_timeline.dart';
@@ -143,6 +145,11 @@ class MediaBrowserState extends State<MediaBrowser> {
   /// Whether files are being dragged over the Library right now.
 
   bool _dragging = false;
+
+  /// The search the items were last filtered by, so that a new one can go
+  /// back to the first page.
+
+  String _filterText = '';
 
   @override
   void initState() {
@@ -287,12 +294,27 @@ class MediaBrowserState extends State<MediaBrowser> {
     await _ensureSecurityKey(context);
   }
 
-  /// Everything this section shows, before sorting.
+  /// Everything this section shows, before sorting, narrowed to what the
+  /// filter bar is searching for.
+
+  List<MediaItem> get _source => _filtered(_unfiltered);
+
+  /// The items of [items] that match the filter bar's search.
+
+  List<MediaItem> _filtered(List<MediaItem> items) {
+    final search = context.read<MediaFilter>().search;
+    if (search.isEmpty) return items;
+    return items
+        .where((item) => search.matches(item, MediaCatalog.entryOf(item.path)))
+        .toList();
+  }
+
+  /// Everything this section shows, before filtering and sorting.
   ///
   /// The Library shows the whole album, with what other people have shared
   /// with the user among it, marked as shared. The other sections filter it.
 
-  List<MediaItem> get _source {
+  List<MediaItem> get _unfiltered {
     switch (widget.section) {
       case LibrarySection.library:
         return context.read<MediaIndex>().items;

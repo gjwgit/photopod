@@ -42,6 +42,19 @@ extension MediaBrowserBody on MediaBrowserState {
     context.watch<MediaIndex>();
     context.watch<SharedWithMe>();
     context.watch<AlbumSharing>();
+    final filter = context.watch<MediaFilter>();
+
+    // A new search starts from the first page, and lets go of anything
+    // selected that it hides, so that no action reaches what is not shown.
+
+    if (filter.text != _filterText) {
+      _filterText = filter.text;
+      _page = 0;
+      if (filter.isActive) {
+        final shown = {for (final item in _source) item.id};
+        _selected.removeWhere((id) => !shown.contains(id));
+      }
+    }
 
     // The timeline scrolls through everything at once, the way a camera
     // roll does, so it has no pages, and nor does the Albums section, where
@@ -59,6 +72,12 @@ extension MediaBrowserBody on MediaBrowserState {
         Padding(
           padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
           child: _buildHeader(context),
+        ),
+        FilterBar(
+          shown: widget.section == LibrarySection.albums ? null : sorted.length,
+          total: widget.section == LibrarySection.albums
+              ? null
+              : _unfiltered.length,
         ),
         const Divider(height: 1),
         Expanded(
@@ -281,6 +300,7 @@ extension MediaBrowserBody on MediaBrowserState {
           message: _emptyMessage(),
         );
       }
+      if (_albumEntries(context).isEmpty) return _buildNoMatches(context);
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {
@@ -288,6 +308,10 @@ extension MediaBrowserBody on MediaBrowserState {
         },
         child: _buildAlbums(context, prefs, favourites),
       );
+    }
+
+    if (all.isEmpty && context.read<MediaFilter>().isActive) {
+      return _buildNoMatches(context);
     }
 
     if (all.isEmpty) {
@@ -404,6 +428,22 @@ extension MediaBrowserBody on MediaBrowserState {
       onDecline: (album) => _declineSharedAlbum(context, album),
     );
   }
+
+  // The search hides everything, which says so, and offers to clear it,
+  // rather than claim the section is empty.
+
+  Widget _buildNoMatches(BuildContext context) => _buildMessage(
+    context,
+    icon: Icons.search_off,
+    title: 'Nothing matches',
+    message:
+        'Nothing here matches "${context.read<MediaFilter>().text.trim()}".',
+    action: FilledButton.icon(
+      onPressed: context.read<MediaFilter>().clear,
+      icon: const Icon(Icons.clear),
+      label: const Text('Clear the filter'),
+    ),
+  );
 
   String _emptyMessage() => switch (widget.section) {
     LibrarySection.library =>

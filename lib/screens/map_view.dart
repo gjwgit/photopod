@@ -38,6 +38,7 @@ import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 import 'package:photopod/dialogs/map_settings_dialog.dart';
 import 'package:photopod/dialogs/preview_dialog.dart';
 import 'package:photopod/models/map_source.dart';
+import 'package:photopod/models/media_filter.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/demo_library.dart';
@@ -46,6 +47,7 @@ import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/widgets/demo_banner.dart';
+import 'package:photopod/widgets/filter_bar.dart';
 import 'package:photopod/widgets/media_grid.dart' show mediaTooltipMarkdown;
 import 'package:photopod/widgets/media_thumbnail.dart';
 
@@ -93,6 +95,25 @@ class _MapViewState extends State<MapView> {
   /// The photos that turned out to carry coordinates, grouped by place.
 
   List<_Place> _places = const [];
+
+  /// The places as shown, holding only the photos that match the filter
+  /// bar's search, and leaving out any place where none do.
+
+  List<_Place> get _shown {
+    final search = context.read<MediaFilter>().search;
+    if (search.isEmpty) return _places;
+    return [
+      for (final place in _places)
+        if (place.items
+                .where(
+                  (item) =>
+                      search.matches(item, MediaCatalog.entryOf(item.path)),
+                )
+                .toList()
+            case final items when items.isNotEmpty)
+          _Place(point: place.point, items: items),
+    ];
+  }
 
   /// How many photos have been read so far, and how many there are to read.
 
@@ -245,14 +266,14 @@ class _MapViewState extends State<MapView> {
   /// Bring every marker into view, once, when the first ones arrive.
 
   void _fit() {
-    if (_fitted || _places.isEmpty) return;
+    if (_fitted || _shown.isEmpty) return;
     _fitted = true;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _map.fitCamera(
         CameraFit.coordinates(
-          coordinates: _places.map((place) => place.point).toList(),
+          coordinates: _shown.map((place) => place.point).toList(),
           padding: const EdgeInsets.all(56),
           maxZoom: 15,
         ),
@@ -263,11 +284,13 @@ class _MapViewState extends State<MapView> {
   @override
   Widget build(BuildContext context) {
     final index = context.watch<MediaIndex>();
+    context.watch<MediaFilter>();
 
     return Column(
       children: [
         if (index.isDemo) const DemoBanner(),
         _buildStatusBar(context, index),
+        const FilterBar(),
         const Divider(height: 1),
         Expanded(child: _buildMap(context, index)),
       ],
@@ -275,7 +298,7 @@ class _MapViewState extends State<MapView> {
   }
 
   Widget _buildStatusBar(BuildContext context, MediaIndex index) {
-    final photos = _places.fold(0, (sum, place) => sum + place.items.length);
+    final photos = _shown.fold(0, (sum, place) => sum + place.items.length);
     final busy = _scanning || index.isLoading;
     final source = _source;
 
@@ -284,7 +307,7 @@ class _MapViewState extends State<MapView> {
         : photos == 0
         ? 'No photos with a location yet'
         : '$photos ${photos == 1 ? 'photo' : 'photos'} in '
-              '${_places.length} ${_places.length == 1 ? 'place' : 'places'}';
+              '${_shown.length} ${_shown.length == 1 ? 'place' : 'places'}';
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
@@ -305,7 +328,7 @@ class _MapViewState extends State<MapView> {
           IconButton(
             icon: const Icon(Icons.fit_screen_outlined),
             tooltip: 'Show every place',
-            onPressed: _places.isEmpty
+            onPressed: _shown.isEmpty
                 ? null
                 : () {
                     _fitted = false;
@@ -359,8 +382,11 @@ class _MapViewState extends State<MapView> {
     // map rather than in place of it.
 
     final source = _source;
-    final empty = _places.isEmpty && !_scanning && !index.isLoading;
-    final emptyMessage = index.photos.isEmpty
+    final empty = _shown.isEmpty && !_scanning && !index.isLoading;
+    final emptyMessage = _places.isNotEmpty
+        ? 'None of the photos on the map match '
+              '"${context.read<MediaFilter>().text.trim()}".'
+        : index.photos.isEmpty
         ? 'Nothing to map yet. Add photos to your album and any that were '
               'taken with location services switched on will appear here.'
         : 'None of the photos currently in your album carry GPS '
@@ -393,7 +419,7 @@ class _MapViewState extends State<MapView> {
               ),
             MarkerLayer(
               markers: [
-                for (final place in _places)
+                for (final place in _shown)
                   Marker(
                     point: place.point,
                     width: 54,

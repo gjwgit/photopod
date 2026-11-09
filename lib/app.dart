@@ -33,6 +33,7 @@ import 'package:photopod/app_scaffold.dart';
 import 'package:photopod/constants/app.dart';
 import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/favourites.dart';
+import 'package:photopod/models/media_filter.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_index.dart';
@@ -71,6 +72,7 @@ class App extends StatelessWidget {
         ChangeNotifierProvider<MediaIndex>(
           create: (context) => MediaIndex(context.read<SharedWithMe>()),
         ),
+        ChangeNotifierProvider<MediaFilter>(create: (context) => MediaFilter()),
       ],
       child: SolidThemeApp(
         title: appTitle,

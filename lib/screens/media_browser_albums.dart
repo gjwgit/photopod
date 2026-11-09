@@ -40,7 +40,8 @@ extension MediaBrowserAlbums on MediaBrowserState {
   /// Every album as the Albums section lists it: the user's own albums in
   /// alphabetical order, then those shared with the user. Favourites is left
   /// out as it has its own section. Each holds only what is still in the Pod,
-  /// sorted as the user has chosen.
+  /// sorted as the user has chosen, and narrowed to what the filter bar is
+  /// searching for.
 
   List<AlbumEntry> _albumEntries(BuildContext context) {
     final option = context.read<ViewPrefs>().sortOption;
@@ -50,12 +51,19 @@ extension MediaBrowserAlbums on MediaBrowserState {
     final all = context.read<MediaIndex>().items;
 
     List<MediaItem> resolve(Set<String> paths) {
-      final items = all.where((item) => paths.contains(item.path)).toList();
+      final items = _filtered(
+        all.where((item) => paths.contains(item.path)).toList(),
+      );
       MediaBrowserState._sortInPlace(items, option);
       return items;
     }
 
     final titles = sharedAlbumTitles(shared.albums, albums.names);
+
+    // While the filter bar is searching, an album with nothing that matches
+    // is left out rather than shown empty.
+
+    final searching = context.read<MediaFilter>().isActive;
 
     return [
       for (final name in albums.names)
@@ -72,7 +80,7 @@ extension MediaBrowserAlbums on MediaBrowserState {
           items: resolve(album.itemUrls),
           sharedBy: album.ownerWebId,
         ),
-    ];
+    ].where((entry) => !searching || entry.items.isNotEmpty).toList();
   }
 
   /// Handle a tap on [item] in the album whose [AlbumEntry.id] is [album].
