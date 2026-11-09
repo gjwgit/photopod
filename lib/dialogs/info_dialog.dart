@@ -43,6 +43,7 @@ import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/label_editor.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
+import 'package:photopod/widgets/place_editor.dart';
 import 'package:photopod/widgets/title_editor.dart';
 
 /// Describe [item] in a modal dialogue.
@@ -78,6 +79,7 @@ class _InfoDialogState extends State<_InfoDialog> {
   PhotoTitle? _title;
   List<PhotoTag> _tags = const [];
   List<PhotoFace> _faces = const [];
+  PhotoPlace? _place;
 
   /// Whether the item is one of the user's own, and so has a catalog entry
   /// to tag. The samples and what others share are not the user's to label.
@@ -92,6 +94,7 @@ class _InfoDialogState extends State<_InfoDialog> {
     _title = MediaCatalog.titleOf(widget.item.path);
     _tags = entry?.tags ?? const [];
     _faces = entry?.faces ?? const [];
+    _place = entry?.place;
     if (widget.item.isPhoto) _read();
   }
 
@@ -266,6 +269,14 @@ class _InfoDialogState extends State<_InfoDialog> {
         onAdd: _addPerson,
         onRemove: (index) => _saveFaces([..._faces]..removeAt(index)),
       ),
+      const Gap(16),
+      Text('Place', style: style),
+      const Gap(8),
+      PlaceEditor(
+        place: _place,
+        photoLocation: _metadata?.coordinates,
+        onChanged: _savePlace,
+      ),
       const Gap(20),
     ];
   }
@@ -346,6 +357,18 @@ class _InfoDialogState extends State<_InfoDialog> {
     }
   }
 
+  Future<void> _savePlace(PhotoPlace? place) async {
+    final before = _place;
+    setState(() => _place = place);
+    try {
+      await MediaCatalog.setPlace(widget.item.path, place);
+    } on Object catch (e) {
+      if (!mounted) return;
+      setState(() => _place = before);
+      await showErrorDialog(context, 'The place was not saved', '$e');
+    }
+  }
+
   // What the photo says about itself. Videos carry no EXIF block that
   // PhotoPod can read without decoding the whole file, so they get nothing
   // here rather than an empty heading.
@@ -419,6 +442,8 @@ class _InfoDialogState extends State<_InfoDialog> {
       if (_tags.isNotEmpty) 'Tags: ${_tags.map((tag) => tag.label).join(', ')}',
       if (_faces.isNotEmpty)
         'People: ${_faces.map((face) => face.name).join(', ')}',
+      if (_place != null)
+        'Place: ${_place!.name} (${_place!.latitude}, ${_place!.longitude})',
       if (metadata != null && !metadata.isEmpty) ...[
         if (metadata.width != null) 'Dimensions: ${_dimensions(metadata)}',
         if (metadata.taken != null) 'Taken: ${formatDateTime(metadata.taken)}',

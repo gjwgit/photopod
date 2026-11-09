@@ -159,20 +159,33 @@ class _MapViewState extends State<MapView> {
     if (_scanning) return;
     if (!force && _scannedAt != null && _scannedAt == index.scannedAt) return;
 
-    // Videos say nothing about where they were taken, except the sample
-    // video, whose place is known; see DemoLibrary.
+    // Videos say nothing about where they were taken, except those the user
+    // has given a place, and the sample video, whose place is known; see
+    // DemoLibrary.
 
     final photos = [
       ...index.photos,
+      ...index.videos.where(
+        (video) => MediaCatalog.placeOf(video.path) != null,
+      ),
       if (index.isDemo) ...DemoLibrary.placedVideos,
     ].take(maxMappedPhotos).toList();
 
     // Whatever the catalog already says about a photo needs no reading at
-    // all; only the photos it knows nothing about yet are fetched.
+    // all; only the photos it knows nothing about yet are fetched. A place
+    // the user gave stands in for whatever the photo says.
 
     final located = <MediaItem, PhotoMetadata>{};
     final unknown = <MediaItem>[];
     for (final photo in photos) {
+      final place = MediaCatalog.placeOf(photo.path);
+      if (place != null) {
+        located[photo] = PhotoMetadata(
+          latitude: place.latitude,
+          longitude: place.longitude,
+        );
+        continue;
+      }
       final known = MediaCatalog.metadataOf(photo.path);
       if (known == null) {
         unknown.add(photo);

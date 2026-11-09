@@ -35,7 +35,7 @@ import 'package:photopod/models/media_filter.dart';
 const String filterHelp = '''
 **Filter** the photos and videos shown. Every term must match.
 
-- `beach` — a word in the name, title, tags or people
+- `beach` — a word in the name, title, tags, people or place
 - `person:jane` or `person:"Jane Doe"` — someone in the photo
 - `tag:sunset` — a tag
 - `title:harbour` — a word in the title
@@ -45,6 +45,7 @@ const String filterHelp = '''
 - `location:yes` or `location:no` — whether it says where it was taken
 - `location:-35.28,149.13` — within 10 km of a point, or
   `location:-35.28,149.13,2` within 2 km
+- `location:canberra` — given a place of that name in Get Info
 
 Put `-` in front of a term to leave out what it matches, as in `-tag:work`.
 ''';

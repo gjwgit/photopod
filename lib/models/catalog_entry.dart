@@ -165,8 +165,58 @@ class PhotoTitle {
   }
 }
 
+/// Where a photo was taken, as the user named it, and the point that name
+/// was found at. It stands in for any location in the photo's EXIF block,
+/// which is left as the camera wrote it.
+
+class PhotoPlace {
+  /// The place as shown, such as `Canberra, Australian Capital Territory`.
+
+  final String name;
+
+  final double latitude;
+
+  final double longitude;
+
+  /// Who gave it: [userSource], or the service that suggested it.
+
+  final String source;
+
+  const PhotoPlace(
+    this.name, {
+    required this.latitude,
+    required this.longitude,
+    this.source = userSource,
+  });
+
+  Map<String, Object> toJson() => {
+    'name': name,
+    'latitude': latitude,
+    'longitude': longitude,
+    'source': source,
+  };
+
+  /// The place [toJson] wrote, or null when [json] is not one.
+
+  static PhotoPlace? fromJson(Object? json) {
+    if (json is! Map<String, dynamic>) return null;
+    final name = json['name'];
+    final latitude = json['latitude'];
+    final longitude = json['longitude'];
+    final source = json['source'];
+    if (name is! String || latitude is! num || longitude is! num) return null;
+    if (latitude.abs() > 90 || longitude.abs() > 180) return null;
+    return PhotoPlace(
+      name,
+      latitude: latitude.toDouble(),
+      longitude: longitude.toDouble(),
+      source: source is String && source.isNotEmpty ? source : userSource,
+    );
+  }
+}
+
 /// One entry in the catalog: where an item is stored, the name the user
-/// knows it by, its title, when it was taken, what its EXIF block says, and
+/// knows it by, its title, when and where it was taken, what its EXIF block says, and
 /// the tags and faces the user, or a service, has given it.
 ///
 /// Every field but [path] is optional, since an entry is filled in piece by
@@ -186,6 +236,10 @@ class CatalogEntry {
 
   final PhotoTitle? title;
 
+  /// Where it was taken, as the user named it.
+
+  final PhotoPlace? place;
+
   /// When it was taken, as ISO 8601 text; see [encodeDate].
 
   final String? taken;
@@ -203,6 +257,7 @@ class CatalogEntry {
     this.path, {
     this.name,
     this.title,
+    this.place,
     this.taken,
     this.metadata,
     this.tags = const [],
@@ -222,6 +277,7 @@ class CatalogEntry {
     path ?? this.path,
     name: name ?? this.name,
     title: title,
+    place: place,
     taken: taken ?? this.taken,
     metadata: metadata ?? this.metadata,
     tags: tags ?? this.tags,
@@ -234,16 +290,41 @@ class CatalogEntry {
     path,
     name: name,
     title: title,
+    place: place,
     taken: taken,
     metadata: metadata,
     tags: tags,
     faces: faces,
   );
 
+  /// The same entry with [place] in place of its place, or none.
+
+  CatalogEntry withPlace(PhotoPlace? place) => CatalogEntry(
+    path,
+    name: name,
+    title: title,
+    place: place,
+    taken: taken,
+    metadata: metadata,
+    tags: tags,
+    faces: faces,
+  );
+
+  /// Where the item was taken, as latitude and longitude: the place the user
+  /// gave, or else where the photo itself says.
+
+  (double, double)? get location {
+    if (place != null) return (place!.latitude, place!.longitude);
+    final latitude = metadata?.latitude;
+    final longitude = metadata?.longitude;
+    return latitude == null || longitude == null ? null : (latitude, longitude);
+  }
+
   Map<String, Object> toJson() => {
     'path': path,
     'name': ?name,
     'title': ?title?.toJson(),
+    'place': ?place?.toJson(),
     'taken': ?taken,
     'exif': ?metadata?.toJson(),
     if (tags.isNotEmpty) 'tags': [for (final tag in tags) tag.toJson()],
@@ -267,6 +348,7 @@ class CatalogEntry {
       path,
       name: name is String && name.isNotEmpty ? name : null,
       title: PhotoTitle.fromJson(json['title']),
+      place: PhotoPlace.fromJson(json['place']),
       taken: taken is String && DateTime.tryParse(taken) != null ? taken : null,
       metadata: exif is Map<String, dynamic>
           ? PhotoMetadata.fromJson(exif)

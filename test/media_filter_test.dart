@@ -129,9 +129,29 @@ void main() {
     expect(_matches('location:-33.87,151.21,300', _beach, _beachEntry), isTrue);
   });
 
+  test('a place given by the user is found by name and stands in for EXIF', () {
+    final entry = _officeEntry.withPlace(
+      const PhotoPlace(
+        'Sydney, New South Wales',
+        latitude: -33.87,
+        longitude: 151.21,
+      ),
+    );
+    expect(_matches('location:sydney', _office, entry), isTrue);
+    expect(_matches('sydney', _office, entry), isTrue);
+    expect(_matches('location:canberra', _office, entry), isFalse);
+    expect(_matches('location:yes', _office, entry), isTrue);
+    expect(_matches('location:-33.9,151.2,5', _office, entry), isTrue);
+
+    final moved = _beachEntry.withPlace(
+      const PhotoPlace('Sydney', latitude: -33.87, longitude: 151.21),
+    );
+    expect(_matches('location:-35.3,149.1', _beach, moved), isFalse);
+  });
+
   test('terms that cannot be understood are reported and left out', () {
-    final search = MediaSearch.parse('date:soon location:canberra beach');
-    expect(search.problems, hasLength(2));
+    final search = MediaSearch.parse('date:soon beach');
+    expect(search.problems, hasLength(1));
     expect(search.terms.single.value, 'beach');
   });
 

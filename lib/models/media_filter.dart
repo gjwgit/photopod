@@ -90,8 +90,8 @@ class SearchTerm {
 /// A search typed into the filter bar.
 ///
 /// Terms are separated by spaces and an item must match every one of them.
-/// A term on its own is a keyword, found in the item's name, title, tags or
-/// people. A term can instead name what it looks at:
+/// A term on its own is a keyword, found in the item's name, title, tags,
+/// people or place. A term can instead name what it looks at:
 ///
 /// * `person:jane`, the people named in the photo;
 /// * `tag:beach`, its tags;
@@ -101,8 +101,9 @@ class SearchTerm {
 ///   range such as `date:2025-12..2026-02`, either end of which can be left
 ///   open;
 /// * `location:` or `location:yes` for photos that say where they were
-///   taken, `location:no` for those that do not, and `location:lat,lon` or
-///   `location:lat,lon,km` for those taken near a point.
+///   taken, `location:no` for those that do not, `location:lat,lon` or
+///   `location:lat,lon,km` for those taken near a point, and anything else,
+///   such as `location:canberra`, for those given a place of that name.
 ///
 /// Quotes keep spaces in a term, as in `person:"Jane Doe"`, and a leading
 /// `-` leaves out what a term matches.
@@ -132,11 +133,6 @@ class MediaSearch {
         problems.add(
           'Dates look like 2026, 2026-10, 2026-10-17 or october, or a range '
           'such as 2025..2026',
-        );
-      } else if (field == SearchField.location && !_isLocation(value)) {
-        problems.add(
-          'Locations look like yes, no, or latitude,longitude with an '
-          'optional distance in km, such as -35.28,149.13,5',
         );
       } else if (field != null || value.isNotEmpty) {
         terms.add(
@@ -173,11 +169,13 @@ class MediaSearch {
     final tags = entry?.tags ?? const <PhotoTag>[];
     final faces = entry?.faces ?? const <PhotoFace>[];
     final title = entry?.title?.text;
+    final place = entry?.place?.name;
 
     switch (term.field) {
       case SearchField.keyword:
         return has(item.name) ||
             has(title) ||
+            has(place) ||
             tags.any((tag) => has(tag.label)) ||
             faces.any((face) => has(face.name));
       case SearchField.name:
@@ -194,11 +192,7 @@ class MediaSearch {
         final date = item.date;
         return date != null && _dateRange(value)!.contains(date);
       case SearchField.location:
-        return _nearby(
-          value,
-          entry?.metadata?.latitude,
-          entry?.metadata?.longitude,
-        );
+        return _nearby(value, entry?.location) ?? has(place);
     }
   }
 
@@ -210,19 +204,19 @@ class MediaSearch {
 
   static String _unquote(String text) => text.replaceAll('"', '').trim();
 
-  static bool _isLocation(String value) =>
-      _yes.contains(value) || _no.contains(value) || _point(value) != null;
-
   static const Set<String> _yes = {'', 'yes', 'any'};
   static const Set<String> _no = {'no', 'none'};
 
-  static bool _nearby(String value, double? latitude, double? longitude) {
-    final known = latitude != null && longitude != null;
-    if (_yes.contains(value)) return known;
-    if (_no.contains(value)) return !known;
-    final point = _point(value)!;
-    return known &&
-        _distanceKm(point.$1, point.$2, latitude, longitude) <= point.$3;
+  // Whether [location] is known, or near the point [value] names, or null
+  // when [value] is neither and so is the name of a place.
+
+  static bool? _nearby(String value, (double, double)? location) {
+    if (_yes.contains(value)) return location != null;
+    if (_no.contains(value)) return location == null;
+    final point = _point(value);
+    if (point == null) return null;
+    return location != null &&
+        _distanceKm(point.$1, point.$2, location.$1, location.$2) <= point.$3;
   }
 
   // A point as `lat,lon` or `lat,lon,km`.

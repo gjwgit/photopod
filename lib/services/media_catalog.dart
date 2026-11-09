@@ -297,6 +297,22 @@ class MediaCatalog {
 
   static PhotoTitle? titleOf(String path) => entryOf(path)?.title;
 
+  /// Say the item at [path] was taken at [place], or with null that the
+  /// user has not said where.
+
+  static Future<void> setPlace(String path, PhotoPlace? place) =>
+      _change((entries) {
+        final entry = _forUpdate(entries, path);
+        if (entry != null) {
+          entries[catalogKeyOf(path)] = entry.withPlace(place);
+        }
+      });
+
+  /// Where the user said the item at Pod-relative [path] was taken, if they
+  /// have.
+
+  static PhotoPlace? placeOf(String path) => entryOf(path)?.place;
+
   /// Replace the tags of the item at [path] with [tags].
 
   static Future<void> setTags(String path, List<PhotoTag> tags) => _change((
