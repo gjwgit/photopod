@@ -8,6 +8,7 @@ http://localhost:3000/
 http://localhost:4400/
 http://localhost:8000/
 http://localhost:11434/
+https://solid.dev.empwr.au/photopod-faces
 
 # Used by oidc through solid_auth
 
@@ -152,3 +153,9 @@ https://snapcraft.io/
 # 20261029 gjw rolopod
 
 https://www.google.com/maps/
+
+# 20261110 tc Made-up Pod addresses in the face analyser tests, and the
+# web build's <base href="/photopod/">, which lychee resolves as a file.
+
+^https://server/
+^file://.*/photopod/photopod$
