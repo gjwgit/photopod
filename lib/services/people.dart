@@ -36,8 +36,8 @@ import 'package:photopod/models/face_book.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
-import 'package:photopod/services/face_engine.dart';
 import 'package:photopod/services/face_inbox.dart';
+import 'package:photopod/services/face_results.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
@@ -87,13 +87,13 @@ class PersonEntry {
 /// portrait and the photos they are in; for each face where it is, a small
 /// picture of it and its embedding).
 ///
-/// The faces themselves are found by the Analyser, through the user's Pod
-/// rather than through the app: each photo not yet in the faces file is
-/// left in the face inbox ([FaceInbox]), which only the Analyser is given,
-/// and the Analyser shares back what it found ([FaceEngine]). That is filed
-/// here and saved to the faces file before the Analyser is told it can
-/// forget it. Photos added while People is on are left in the inbox as they
-/// are added, and the Analyser asked to look straight away.
+/// The faces themselves are found by the Analyser, entirely between Pods on
+/// the Solid server: each photo not yet in the faces file is left in the
+/// face inbox ([FaceInbox]), a folder of the user's Pod shared only with the
+/// Analyser, and the Analyser writes what it found back into the same
+/// folder. Each answer is filed here and saved to the faces file before it
+/// is deleted. Photos added while People is on are left in the inbox as
+/// they are added, and their answers looked out for.
 ///
 /// Deleting a photo deletes its faces from the file too ([forget]), and
 /// takes it out of the inbox if it is still waiting there.
@@ -127,10 +127,6 @@ class People extends ChangeNotifier {
   final Map<String, String> _pathOf = {};
   final Map<String, String> _urlOf = {};
 
-  // The results filed and saved, for the next run to acknowledge.
-
-  final Set<String> _ack = {};
-
   // Whether [_pathOf] holds every photo in the album, as during a scan of a
   // complete album index.
 
@@ -142,7 +138,6 @@ class People extends ChangeNotifier {
   int _waiting = 0;
   String? _status;
   String? _error;
-  bool _needsLogin = false;
   bool _needsConsent = false;
 
   bool get isScanning => _scanning;
@@ -152,7 +147,7 @@ class People extends ChangeNotifier {
   int get done => _done;
   int get toDo => _toDo;
 
-  /// How many photos the Analyser still has to look at.
+  /// How many photos are waiting in the inbox for the Analyser.
 
   int get waiting => _waiting;
 
@@ -165,10 +160,6 @@ class People extends ChangeNotifier {
   String? get status => _status;
 
   String? get error => _error;
-
-  /// Whether the last error was the Analyser refusing the login.
-
-  bool get needsLogin => _needsLogin;
 
   /// Whether People has to be turned on, sharing the face inbox with the
   /// Analyser, before any photo can be looked at.
@@ -267,7 +258,6 @@ class People extends ChangeNotifier {
     _cancelled = false;
     _forgotten.clear();
     _error = null;
-    _needsLogin = false;
     _needsConsent = false;
     _failed = 0;
     _done = 0;
@@ -297,8 +287,6 @@ class People extends ChangeNotifier {
       }
     } on Object catch (e) {
       _error = '$e';
-      _needsLogin = e is FaceServiceException && e.unauthorised;
-      _needsConsent = e is FaceServiceException && e.notShared;
       debugPrint('PhotoPod: face scan stopped: $e');
     } finally {
       _status = null;
@@ -405,13 +393,10 @@ class People extends ChangeNotifier {
     _book = FaceBook();
     _loaded = false;
     _error = null;
-    _needsLogin = false;
     _needsConsent = false;
     _pathOf.clear();
     _urlOf.clear();
-    _ack.clear();
     _waiting = 0;
-    FaceEngine.stop();
     FaceInbox.reset();
     notifyListeners();
   }

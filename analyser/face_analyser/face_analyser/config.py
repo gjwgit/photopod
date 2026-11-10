@@ -31,8 +31,8 @@ Authors: Tony Chen
 #     PHOTOPOD_FACE_ANALYSER_CLIENT_ID      client credentials issued by the
 #     PHOTOPOD_FACE_ANALYSER_CLIENT_SECRET  server for the Analyser account
 #
-# The section and field names the modules shared with HealthPod's analyser
-# read (`analyser`, `sharing`) are kept as they are there.
+# The `analyser` section and its field names are those of HealthPod's
+# analyser, whose key and client modules read them.
 
 from __future__ import annotations
 
@@ -44,7 +44,6 @@ from typing import Any
 import yaml
 
 from . import pod_paths as paths
-from .auth import AuthConfig
 from .engine import EngineConfig
 
 ENV_SECURITY_KEY = 'PHOTOPOD_FACE_ANALYSER_SECURITY_KEY'
@@ -92,8 +91,8 @@ class InboxConfig:
 
     folder: str = '.faces-inbox'
 
-    # The most photos analysed in one run for one Pod, so that one large
-    # backlog cannot hold up everybody else. The rest wait for the next run.
+    # The most photos analysed per Pod in one look, so that one large
+    # backlog cannot hold up everybody else. The rest wait for the next look.
 
     max_per_run: int = 40
 
@@ -105,59 +104,22 @@ class InboxConfig:
 
 
 @dataclass
-class SharingConfig:
-    """How results are written back to the contributing Pods."""
+class WatchConfig:
+    """How often the shared inboxes are looked at."""
 
-    # The folder inside the Analyser Pod's data folder holding one results
-    # file per Pod.
+    # Seconds between looks. Each look reads the Analyser's shared-keys file
+    # and lists every shared inbox, all on the same server, so a short
+    # interval costs little and is what makes a new photo be analysed
+    # moments after it is added.
 
-    results_dir: str = 'faces'
-
-    # A line in the recipient's permission log is how solidpod lists what was
-    # shared with someone. PhotoPod finds the results by their address, and a
-    # line there would only put the results file among the user's shared
-    # photos, so it is off.
-
-    write_permission_log: bool = False
-    encrypt_results: bool = True
-
-
-@dataclass
-class ServiceConfig:
-    """The HTTP interface PhotoPod calls to ask for a run."""
-
-    host: str = '127.0.0.1'
-    port: int = 8765
-
-    # The URL PhotoPod calls the service at, as seen from outside, without
-    # /v1/... The DPoP proof on each request names it, so it must be right
-    # behind a reverse proxy. Blank: worked out from each request's headers.
-
-    public_url: str = ''
-
-    # Browser origins allowed to call the service, for PhotoPod's web build.
-
-    cors_origins: list[str] = field(default_factory=lambda: ['*'])
-
-    # How often, in seconds, every shared inbox is looked at for photos left
-    # by an app that closed before asking. 0 turns the sweep off, leaving
-    # only the runs apps ask for.
-
-    poll_seconds: int = 300
-
-    # The longest request body accepted, which only ever carries a list of
-    # names.
-
-    max_body_bytes: int = 256 * 1024
+    poll_seconds: float = 10.0
 
 
 @dataclass
 class Config:
     analyser: AnalyserConfig
     inbox: InboxConfig
-    sharing: SharingConfig
-    service: ServiceConfig
-    auth: AuthConfig
+    watch: WatchConfig
     engine: EngineConfig
     source_path: Path | None = None
     warnings: list[str] = field(default_factory=list)
@@ -231,17 +193,10 @@ def load(path: Path) -> Config:
     config = Config(
         analyser=_build(AnalyserConfig, analyser, 'analyser'),
         inbox=_build(InboxConfig, _section(data, 'inbox'), 'inbox'),
-        sharing=_build(SharingConfig, _section(data, 'sharing'), 'sharing'),
-        service=_build(ServiceConfig, _section(data, 'service'), 'service'),
-        auth=_build(AuthConfig, _section(data, 'auth'), 'auth'),
+        watch=_build(WatchConfig, _section(data, 'watch'), 'watch'),
         engine=_build(EngineConfig, engine, 'engine'),
         source_path=path.resolve(),
     )
-    if config.auth.required and not config.auth.issuers:
-        raise ConfigError(
-            'auth.issuers is empty, so no app could ask for a run. List the '
-            'Solid servers whose users the analyser serves.')
-
     # A file holding the security key must not be readable by others.
     if config.analyser.security_key and not os.environ.get(ENV_SECURITY_KEY):
         mode = path.stat().st_mode & 0o777

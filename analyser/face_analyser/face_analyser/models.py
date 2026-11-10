@@ -22,46 +22,54 @@ this program. If not, see https://opensource.org/license/gpl-3-0.
 Authors: Tony Chen
 """
 
+# The models are InsightFace's `buffalo_l` pack, the set Immich also uses:
+#
+#   det_10g.onnx     SCRFD-10GF, the face detector, with five landmarks
+#   w600k_r50.onnx   ArcFace ResNet-50 trained on WebFace600K, the recogniser
+#
+# InsightFace publishes them only as one archive, with three more models this
+# service has no use for, so the archive is fetched once, checked, and only
+# the two kept.
+#
+# Licence: InsightFace's code is MIT, but its pretrained models are released
+# "for non-commercial research purposes only". See README.md, section
+# "Models and licence", before any commercial deployment.
+
 from __future__ import annotations
 
 import hashlib
+import io
 import logging
 import os
 import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-_ZOO = 'https://github.com/opencv/opencv_zoo/raw/main/models'
+PACK_URL = ('https://github.com/deepinsight/insightface/releases/download/'
+            'v0.7/buffalo_l.zip')
+PACK_SHA256 = '80ffe37d8a5940d59a7384c201a2a38d4741f2f3c51eef46ebb28218a7b0ca2f'
 
 
 @dataclass(frozen=True)
 class Model:
-    """One model file: where it comes from, and the SHA-256 it must have, so
-    that a truncated or tampered download is never loaded."""
+    """One model file and the SHA-256 it must have, so that a truncated or
+    tampered file is never loaded."""
 
     file_name: str
-    url: str
     sha256: str
 
 
-# YuNet, OpenCV's face detector (MIT licence, 0.2 MB). It finds each face and
-# the five landmarks the recogniser aligns it by.
-
 DETECTOR = Model(
-    'face_detection_yunet_2023mar.onnx',
-    f'{_ZOO}/face_detection_yunet/face_detection_yunet_2023mar.onnx',
-    '8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4',
+    'det_10g.onnx',
+    '5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91',
 )
 
-# SFace, OpenCV's face recogniser (Apache 2.0 licence, 37 MB). It turns an
-# aligned face into 128 numbers that lie close together for one person.
-
 RECOGNISER = Model(
-    'face_recognition_sface_2021dec.onnx',
-    f'{_ZOO}/face_recognition_sface/face_recognition_sface_2021dec.onnx',
-    '0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79',
+    'w600k_r50.onnx',
+    '4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43',
 )
 
 
@@ -69,7 +77,11 @@ class ModelError(Exception):
     """Raised when a model cannot be found, fetched or verified."""
 
 
-def _digest(path: Path) -> str:
+def _digest(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _file_digest(path: Path) -> str:
     h = hashlib.sha256()
     with path.open('rb') as f:
         for chunk in iter(lambda: f.read(1 << 20), b''):
@@ -77,46 +89,50 @@ def _digest(path: Path) -> str:
     return h.hexdigest()
 
 
-def ensure(model: Model, folder: Path, *, download: bool = True) -> Path:
-    """The local path of [model] in [folder], fetching it when it is missing.
-
-    A file that is there but does not have the pinned digest is fetched
-    again rather than loaded.
-    """
-
-    folder.mkdir(parents=True, exist_ok=True)
+def _intact(model: Model, folder: Path) -> bool:
     path = folder / model.file_name
-    if path.exists() and _digest(path) == model.sha256:
-        return path
-    if not download:
-        raise ModelError(
-            f'{path} is missing or damaged. Run ./run.sh fetch-models.'
-        )
+    return path.exists() and _file_digest(path) == model.sha256
 
-    log.info('Downloading %s', model.url)
-    partial = path.with_suffix(path.suffix + '.part')
+
+def _fetch_pack(folder: Path) -> None:
+    log.info('Downloading %s (275 MB)', PACK_URL)
     try:
-        with urllib.request.urlopen(model.url, timeout=120) as response:
-            partial.write_bytes(response.read())
+        with urllib.request.urlopen(PACK_URL, timeout=600) as response:
+            data = response.read()
     except OSError as e:
-        partial.unlink(missing_ok=True)
-        raise ModelError(f'Could not download {model.file_name}: {e}') from e
+        raise ModelError(f'Could not download {PACK_URL}: {e}') from e
+    if _digest(data) != PACK_SHA256:
+        raise ModelError('buffalo_l.zip did not download intact.')
 
-    if _digest(partial) != model.sha256:
-        partial.unlink(missing_ok=True)
-        raise ModelError(f'{model.file_name} did not download intact.')
+    with zipfile.ZipFile(io.BytesIO(data)) as pack:
+        names = {Path(n).name: n for n in pack.namelist()}
+        for model in (DETECTOR, RECOGNISER):
+            member = names.get(model.file_name)
+            if member is None:
+                raise ModelError(f'buffalo_l.zip holds no {model.file_name}.')
+            content = pack.read(member)
+            if _digest(content) != model.sha256:
+                raise ModelError(f'{model.file_name} in buffalo_l.zip is not '
+                                 'the one expected.')
 
-    # Written beside the final name and then renamed, so that an interrupted
-    # download never leaves a partial model to be loaded next time.
+            # Written beside the final name and then renamed, so that an
+            # interrupted write never leaves a partial model to be loaded.
 
-    os.replace(partial, path)
-    return path
+            path = folder / model.file_name
+            partial = path.with_suffix(path.suffix + '.part')
+            partial.write_bytes(content)
+            os.replace(partial, path)
 
 
 def ensure_all(folder: Path, *, download: bool = True) -> tuple[Path, Path]:
-    """The paths of the detector and the recogniser, in that order."""
+    """The paths of the detector and the recogniser, in that order,
+    fetching them when either is missing or damaged."""
 
-    return (
-        ensure(DETECTOR, folder, download=download),
-        ensure(RECOGNISER, folder, download=download),
-    )
+    folder.mkdir(parents=True, exist_ok=True)
+    if not (_intact(DETECTOR, folder) and _intact(RECOGNISER, folder)):
+        if not download:
+            raise ModelError(
+                f'The face models in {folder} are missing or damaged. Run '
+                './run.sh fetch-models.')
+        _fetch_pack(folder)
+    return folder / DETECTOR.file_name, folder / RECOGNISER.file_name

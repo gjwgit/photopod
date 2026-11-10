@@ -1,12 +1,9 @@
-# The PhotoPod face analyser: answers PhotoPod's requests for a run, and
-# sweeps every shared face inbox every few minutes.
+# The PhotoPod face analyser: looks at every face inbox shared with the
+# Analyser Pod every few seconds, and answers into it. It listens on no port.
 #
 # Paths follow the HealthPod analyser's layout: the project root is the working
 # directory, deployed OUTSIDE the Solid server's storage root so that none of
 # it becomes a Pod resource.
-#
-# Bind the service to 127.0.0.1 (the default) and reverse-proxy it over HTTPS;
-# see README.md, section "Deploying".
 #
 # Install:
 #   sudo cp systemd/photopod-face-analyser.service /etc/systemd/system/
@@ -33,7 +30,7 @@ WorkingDirectory=/opt/solid/analyser/face_analyser
 # Optional, so that a deployment keeping its secrets in config.yaml starts.
 EnvironmentFile=-/etc/photopod-face-analyser.env
 ExecStart=/opt/solid/analyser/face_analyser/.venv/bin/python -m face_analyser \
-    --config /opt/solid/analyser/face_analyser/config.yaml serve
+    --config /opt/solid/analyser/face_analyser/config.yaml watch
 
 Restart=always
 RestartSec=15s

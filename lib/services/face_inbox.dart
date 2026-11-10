@@ -40,11 +40,13 @@ import 'package:solidpod/solidpod.dart'
         getResourcesInContainer,
         getWebId,
         grantPermission,
+        readPod,
         revokePermission,
         setInheritKeyDir,
         writePod;
 
 import 'package:photopod/constants/face_analyser.dart';
+import 'package:photopod/services/face_results.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/pod_media_service.dart';
 
@@ -54,11 +56,22 @@ import 'package:photopod/services/pod_media_service.dart';
 
 const String faceInboxFolderName = '.faces-inbox';
 
-/// What each inbox file holds, inside its encryption.
+/// What each photo left in the inbox holds, inside its encryption.
 
 const String faceRequestFormat = 'photopod-face-request';
 
-/// The name a photo is known by in the inbox and in the Analyser's results:
+/// The end of the name of a photo left in the inbox, and of the answer the
+/// Analyser writes beside it.
+
+const String _photoSuffix = '.enc.ttl';
+const String _resultSuffix = '.faces.enc.ttl';
+
+/// What the inbox holds: the photos still waiting for the Analyser, and the
+/// answers it has written, each by [faceKeyOf] key.
+
+typedef FaceInboxListing = ({Set<String> waiting, Set<String> answered});
+
+/// The name a photo is known by in the inbox and in the Analyser's answers:
 /// the random part of its stored name, which says nothing about it, or, for
 /// a photo stored before random names, a digest of its path.
 
@@ -72,13 +85,18 @@ String faceKeyOf(String path) {
 ///
 /// Face recognition runs in the Analyser, a service beside the Solid server
 /// with a Pod of its own ([FaceAnalyser.webId]), as HealthPod's blood
-/// pressure analyser does. Turning People on makes `.faces-inbox/` in the
-/// PhotoPod data folder and shares it with the Analyser, for reading and
-/// writing, once. Every photo added is then left there as its large
-/// rendition, encrypted with the folder's key ([leave]); the share is what
-/// gives the Analyser that key. The Analyser reads each photo on the server,
-/// shares what it found back to this Pod, and removes the photo from the
-/// inbox, so a photo stays there only until it has been looked at.
+/// pressure analyser does. PhotoPod never talks to the service: the two Pods
+/// share a folder, and the server does the rest.
+///
+/// Turning People on makes `.faces-inbox/` in the PhotoPod data folder and
+/// shares it with the Analyser, for reading and writing, once. Every photo
+/// added is then left there as its large rendition, `<key>.enc.ttl`,
+/// encrypted with the folder's key ([leave]); the share is what gives the
+/// Analyser that key. The Analyser, which looks at every shared inbox every
+/// few seconds, reads the photo on the server, writes the faces it found
+/// beside it as `<key>.faces.enc.ttl`, encrypted with the same key, and
+/// removes the photo. PhotoPod files each answer in the faces file and
+/// deletes it ([readAnswer], [deleteAnswer]).
 ///
 /// Only the inbox is shared: the photos themselves, their small renditions
 /// with the place they were taken, and everything else stay as private as
@@ -98,7 +116,7 @@ class FaceInbox {
       StreamController<void>.broadcast();
 
   /// Fires each time a photo is left in the inbox as it is added, so that
-  /// [People] can ask the Analyser to look.
+  /// [People] can look out for the answer.
 
   static Stream<void> get added => _added.stream;
 
@@ -178,8 +196,12 @@ class FaceInbox {
       granterWebId: webId,
       recipientType: RecipientType.individual,
     );
-    for (final key in await queued()) {
-      await _delete('$url$key.enc.ttl');
+    final listing = await list();
+    for (final key in listing.waiting) {
+      await _delete('$url$key$_photoSuffix');
+    }
+    for (final key in listing.answered) {
+      await _delete('$url$key$_resultSuffix');
     }
     await _delete('$url.acl');
     await _delete(url, ResourceContentType.directory);
@@ -193,7 +215,7 @@ class FaceInbox {
   static Future<void> leave(String photoPath, Uint8List jpeg) async {
     final inbox = await path();
     await writePod(
-      '$inbox/${faceKeyOf(photoPath)}.enc.ttl',
+      '$inbox/${faceKeyOf(photoPath)}$_photoSuffix',
       jsonEncode({
         'format': faceRequestFormat,
         'version': 1,
@@ -223,28 +245,52 @@ class FaceInbox {
     });
   }
 
-  /// The keys of the photos waiting in the inbox.
+  /// What the inbox holds.
 
-  static Future<Set<String>> queued() async {
+  static Future<FaceInboxListing> list() async {
     final listing = await getResourcesInContainer(await url());
-    return {
-      for (final file in listing.files)
-        if (file.endsWith('.enc.ttl'))
-          file
-              .substring(file.lastIndexOf('/') + 1)
-              .replaceFirst(RegExp(r'\.enc\.ttl$'), ''),
-    };
+    final waiting = <String>{};
+    final answered = <String>{};
+    for (final file in listing.files) {
+      final name = file.substring(file.lastIndexOf('/') + 1);
+      if (name.endsWith(_resultSuffix)) {
+        answered.add(name.substring(0, name.length - _resultSuffix.length));
+      } else if (name.endsWith(_photoSuffix)) {
+        waiting.add(name.substring(0, name.length - _photoSuffix.length));
+      }
+    }
+    return (waiting: waiting, answered: answered);
   }
 
-  /// Take the photos at [paths] out of the inbox, if they are still waiting
-  /// there, as when they are deleted before the Analyser got to them.
+  /// The Analyser's answer for the photo known by [key], or null when it is
+  /// not one this app can use.
+
+  static Future<FaceResult?> readAnswer(String key) async => FaceResult.parse(
+    await readPod(
+      '${await path()}/$key$_resultSuffix',
+      pathType: PathType.relativeToPod,
+    ),
+  );
+
+  /// Delete the answer for [key], once it is filed in the faces file.
+
+  static Future<void> deleteAnswer(String key) async =>
+      _delete('${await url()}$key$_resultSuffix');
+
+  /// Take the photos at [paths] out of the inbox, and any answers for them,
+  /// as when they are deleted before the Analyser or the app got to them.
 
   static Future<void> remove(Iterable<String> paths) async {
     if (!await isEnabled()) return;
     final url = await FaceInbox.url();
-    final waiting = await queued();
-    for (final key in paths.map(faceKeyOf).where(waiting.contains)) {
-      await _delete('$url$key.enc.ttl');
+    final listing = await list();
+    for (final key in paths.map(faceKeyOf)) {
+      if (listing.waiting.contains(key)) {
+        await _delete('$url$key$_photoSuffix');
+      }
+      if (listing.answered.contains(key)) {
+        await _delete('$url$key$_resultSuffix');
+      }
     }
   }
 

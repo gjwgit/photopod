@@ -69,10 +69,10 @@ class EngineTest(unittest.TestCase):
         faces = self.faces('john_mather_2012.jpg')
         self.assertEqual(len(faces), 1)
         face = faces[0]
-        self.assertGreaterEqual(face['score'], 0.9)
+        self.assertGreaterEqual(face['score'], 0.6)
         self.assertTrue(all(0 <= v <= 1 for v in face['box']))
         embedding = _embedding(face)
-        self.assertEqual(embedding.shape, (128,))
+        self.assertEqual(embedding.shape, (512,))
         self.assertAlmostEqual(float(np.linalg.norm(embedding)), 1.0, places=4)
         jpeg = base64.b64decode(face['image'])
         self.assertEqual(jpeg[:2], b'\xff\xd8')
@@ -80,13 +80,19 @@ class EngineTest(unittest.TestCase):
     def test_no_face_in_a_landscape(self):
         self.assertEqual(self.faces('matterhorn.jpg'), [])
 
+    def test_every_portrait_has_its_face_found(self):
+        for name in sorted(p.name for p in SAMPLES.glob('*_20*.jpg')
+                           if not p.stem.endswith('_poster')):
+            with self.subTest(name):
+                self.assertEqual(len(self.faces(name)), 1)
+
     def test_same_person_is_closer_than_strangers(self):
-        # 0.363 is the threshold PhotoPod files faces by.
+        # 0.40 is the threshold PhotoPod files faces by.
         mather = [_embedding(self.faces(n)[0])
                   for n in ('john_mather_2012.jpg', 'john_mather_2016.jpg')]
         riess = _embedding(self.faces('adam_riess_2008.jpg')[0])
-        self.assertGreater(float(mather[0] @ mather[1]), 0.363)
-        self.assertLess(float(mather[0] @ riess), 0.363)
+        self.assertGreater(float(mather[0] @ mather[1]), 0.55)
+        self.assertLess(float(mather[0] @ riess), 0.25)
 
     def test_refuses_what_is_not_a_picture(self):
         with self.assertRaises(ImageError):

@@ -21,8 +21,7 @@ analyser:
 
   web_id: https://solid.dev.empwr.au/Analyser/profile/card#me
 
-  # The Solid server. Derived from web_id when left blank. On the same host
-  # this can be the server's own address; everything stays on the machine.
+  # The Solid server. Derived from web_id when left blank.
 
   server_url: https://solid.dev.empwr.au
 
@@ -55,76 +54,38 @@ inbox:
 
   folder: .faces-inbox
 
-  # The most photos analysed per Pod in one run; the rest wait for the next.
+  # The most photos analysed per Pod in one look; the rest wait for the next.
 
   max_per_run: 40
 
 # ---------------------------------------------------------------------------
-# The results shared back.
+# How often the shared inboxes are looked at.
 # ---------------------------------------------------------------------------
 
-sharing:
+watch:
 
-  # The folder in the Analyser Pod's data folder holding one results file
-  # per Pod: <results_dir>/<pod-id>/faces-results.json.enc.ttl
+  # Seconds between looks. A photo is usually analysed within this long of
+  # being added. Everything stays on this server, so a short interval is
+  # cheap.
 
-  results_dir: faces
-
-  # Off: PhotoPod finds the results by their address, and a permission log
-  # line would list the results file among the user's shared photos.
-
-  write_permission_log: false
-  encrypt_results: true
+  poll_seconds: 10
 
 # ---------------------------------------------------------------------------
-# The HTTP interface PhotoPod calls to ask for a run. It carries no photos.
-# ---------------------------------------------------------------------------
-
-service:
-
-  # Bind to the loopback address and reverse-proxy over HTTPS.
-
-  host: 127.0.0.1
-  port: 8765
-
-  # The address PhotoPod calls, as seen from outside, without /v1/analyse.
-  # Must equal FaceAnalyser.serviceUrl in lib/constants/face_analyser.dart.
-
-  public_url: https://solid.dev.empwr.au/photopod-faces
-
-  cors_origins:
-    - '*'
-
-  # How often every shared inbox is swept for photos left by an app that
-  # closed before asking. 0 turns the sweep off.
-
-  poll_seconds: 300
-
-# ---------------------------------------------------------------------------
-# Who may ask for a run: users logged in to these Solid servers, each only
-# for their own Pod.
-# ---------------------------------------------------------------------------
-
-auth:
-
-  required: true
-
-  issuers:
-    - https://solid.dev.empwr.au/
-
-  web_id_prefixes: []
-
-  clock_skew: 300
-
-# ---------------------------------------------------------------------------
-# The analysis. The defaults are those PhotoPod used on the device.
+# The analysis: InsightFace's buffalo_l models (SCRFD-10GF + ArcFace R50).
+# The defaults are in face_analyser/engine.py; uncomment a line only to
+# change it, so that a later version's defaults are not pinned here.
 # ---------------------------------------------------------------------------
 
 engine:
 
+  # Where the two ONNX models are kept, relative to this file.
+
   models_dir: var/models
-  min_score: 0.9
-  min_face_side: 32
-  max_side: 2048
-  face_image_side: 96
-  face_image_margin: 1.6
+
+  # min_score: 0.6          # how sure SCRFD must be that it is a face
+  # min_face_side: 24       # the smallest face, in pixels, worth recognising
+  # detect_side: 640        # the square SCRFD looks at
+  # max_side: 2048          # the longest side a picture is kept at
+  # face_image_side: 96     # the portrait kept of each face
+  # face_image_margin: 1.6
+  # threads: 0              # ONNX Runtime threads per photo; 0 = automatic

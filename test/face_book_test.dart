@@ -35,9 +35,9 @@ import 'package:photopod/models/face_book.dart';
 /// along the next one, so that two calls with the same axis are one person.
 
 Float32List _face(int axis, [double jitter = 0]) {
-  final values = Float32List(128);
+  final values = Float32List(512);
   values[axis] = 1;
-  values[(axis + 1) % 128] = jitter;
+  values[(axis + 1) % 512] = jitter;
   final norm = math.sqrt(1 + jitter * jitter);
   for (var i = 0; i < values.length; i++) {
     values[i] /= norm;

@@ -1,4 +1,4 @@
-"""One run of the face analyser for one Pod.
+"""Watching the shared face inboxes, and answering into them.
 
 Copyright (C) 2026, Software Innovation Institute, ANU.
 
@@ -22,28 +22,30 @@ this program. If not, see https://opensource.org/license/gpl-3-0.
 Authors: Tony Chen
 """
 
-# A run, for the Pod of one WebID:
+# The service has no interface of its own: no port, nothing an app calls. It
+# talks only to the Solid server it sits beside, as the Analyser, and finds its
+# work by looking.
 #
-#   1. find that Pod's face inbox among the resources shared with the Analyser;
-#   2. read the results already published for it, and drop whatever the app
-#      says it has taken into its own faces file (`ack`);
-#   3. read, decrypt and analyse up to `inbox.max_per_run` photos from the
-#      inbox, in memory;
-#   4. publish the results in the Analyser Pod, encrypted, and share them with
-#      that Pod (the same protocol HealthPod's analyser uses);
-#   5. only then remove the photos analysed from the inbox, so a run that
-#      fails part way loses nothing.
+# Every few seconds it reads the Analyser's shared-keys file, which lists the
+# face inboxes users have shared with it, and lists each inbox. For every photo
+# waiting there (`<key>.enc.ttl`) it
 #
-# Everything travels between this service and the Solid server it sits beside.
-# No photo is written to this host's disk, and once the app has taken its
-# results the Analyser Pod keeps nothing of them either.
+#   1. reads and decrypts it with the inbox's folder key, in memory;
+#   2. finds the faces in it;
+#   3. writes what it found into the same inbox, as `<key>.faces.enc.ttl`,
+#      encrypted with the same folder key, so the answer lands in the user's
+#      own Pod and only the user (and the Analyser) can read it;
+#   4. only then removes the photo.
+#
+# PhotoPod files each answer in the user's faces file and deletes it. Nothing
+# about any user is kept by the Analyser, in its Pod or on this host.
 
 from __future__ import annotations
 
 import base64
 import json
 import logging
-import threading
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -51,226 +53,208 @@ from typing import Any
 from . import MODEL_ID, crypto, inbox, pod_paths as paths, turtle
 from .config import Config
 from .engine import FaceEngine, ImageError
-from .keys import PodKeys
-from .publisher import Publisher
+from .keys import PodKeys, SharedResource
 from .solid_client import ForbiddenError, NotFoundError, SolidClient, SolidError
 
 log = logging.getLogger(__name__)
 
-RESULTS_FORMAT = 'photopod-face-results'
-RESULTS_FILE = 'faces-results.json'
+RESULT_FORMAT = 'photopod-face-result'
 
 
 class NotShared(Exception):
-    """Raised when the caller's Pod has not shared its face inbox."""
+    """Raised when a Pod has not shared its face inbox with the Analyser."""
 
 
 @dataclass
-class RunReport:
-    """What one run did, as the app is told."""
+class InboxReport:
+    """What one look at one inbox did."""
 
     web_id: str
-    result_url: str | None = None
-    generated: str | None = None
     analysed: int = 0
     failed: int = 0
     pending: int = 0
-    waiting: int = 0
     errors: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
-        return {
-            'web_id': self.web_id,
-            'model': MODEL_ID,
-            'result_url': self.result_url,
-            'generated': self.generated,
-            'analysed': self.analysed,
-            'failed': self.failed,
-            'pending': self.pending,
-            'waiting': self.waiting,
-            'errors': self.errors,
-        }
+        return {'web_id': self.web_id, 'analysed': self.analysed,
+                'failed': self.failed, 'pending': self.pending,
+                'errors': self.errors}
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec='milliseconds')
 
 
-def empty_results() -> dict[str, Any]:
-    return {'format': RESULTS_FORMAT, 'version': 1, 'model': MODEL_ID,
-            'generated': None, 'items': {}, 'failed': {}}
-
-
 class FaceService:
-    """Runs analyses, one at a time, against the Solid server."""
+    """Looks at the shared face inboxes and answers into them."""
 
     def __init__(self, config: Config, client: SolidClient, keys: PodKeys,
-                 engine: FaceEngine, publisher: Publisher | None = None):
+                 engine: FaceEngine):
         self.config = config
         self.client = client
         self.keys = keys
         self.engine = engine
-        self.publisher = publisher or Publisher(client, keys, config)
-        self._lock = threading.Lock()
 
-    # -- Addresses ---------------------------------------------------------
+    # -- Looking -----------------------------------------------------------
 
-    def result_url(self, web_id: str) -> str:
-        """Where the results for [web_id]'s Pod are published."""
+    def sweep(self) -> list[InboxReport]:
+        """One look at every shared inbox, reporting those that held photos."""
 
-        suffix = '.enc.ttl' if self.config.sharing.encrypt_results else ''
-        return paths.data_url(
-            self.config.analyser.web_id, self.config.analyser.app_dir_name,
-            self._relative_path(web_id) + suffix)
-
-    def _relative_path(self, web_id: str) -> str:
-        return (f'{self.config.sharing.results_dir.strip("/")}/'
-                f'{paths.pod_slug(web_id)}/{RESULTS_FILE}')
-
-    # -- Runs --------------------------------------------------------------
-
-    def run(self, web_id: str, ack: list[str] | tuple[str, ...] = ()) -> RunReport:
-        """Analyse what [web_id]'s Pod has left in its inbox, after
-        forgetting the results named in [ack]."""
-
-        with self._lock:
-            return self._run(web_id, set(ack))
-
-    def sweep(self) -> list[RunReport]:
-        """A run for every Pod whose inbox holds photos, for apps that left
-        photos and closed before asking."""
-
+        shared = self.keys.shared_resources()
         reports = []
-        with self._lock:
-            shared = inbox.shared_inboxes(self.keys.shared_resources(), self.config)
-        for url in sorted(shared):
-            web_id = paths.web_id_of(
-                paths.owner_pod_root(url, self.config.analyser.app_dir_name))
+        for url, share in sorted(inbox.shared_inboxes(shared, self.config).items()):
             try:
-                if not inbox.items_in(self.client.list_container(url)):
-                    continue
-                reports.append(self.run(web_id))
-            except (SolidError, NotShared) as e:
-                log.warning('sweep of %s: %s', url, e)
+                report = self._look(url, share)
+            except (ForbiddenError, NotFoundError) as e:
+                # Shared once, since unshared or removed: the entry stays in
+                # the shared-keys file, but there is nothing to do.
+                log.debug('%s: %s', url, e)
+                continue
+            except SolidError as e:
+                log.warning('%s: %s', url, e)
+                continue
+            if report.analysed or report.failed or report.errors:
+                reports.append(report)
         return reports
 
-    def _run(self, web_id: str, ack: set[str]) -> RunReport:
-        report = RunReport(web_id=web_id)
-        url = inbox.inbox_url(web_id, self.config)
-        shared = self.keys.shared_resources()
-        if url not in inbox.shared_inboxes(shared, self.config):
-            raise NotShared(f'{url} has not been shared with the Analyser')
-        key_index = {item.resource_url: item.key for item in shared}
+    def run(self, web_id: str) -> InboxReport:
+        """One look at the inbox of [web_id]'s Pod."""
 
-        results = self._read_results(web_id)
-        changed = False
-        for key in ack:
-            if results['items'].pop(key, None) is not None:
-                changed = True
-            if results['failed'].pop(key, None) is not None:
-                changed = True
+        url = inbox.inbox_url(web_id, self.config)
+        share = inbox.shared_inboxes(
+            self.keys.shared_resources(), self.config).get(url)
+        if share is None:
+            raise NotShared(f'{url} has not been shared with the Analyser')
+        return self._look(url, share)
+
+    def forget_old_results(self) -> int:
+        """Delete what an earlier version of this service published in the
+        Analyser Pod, returning how many files went.
+
+        That version kept each Pod's faces in
+        `<analyser>/photopod/data/faces/<pod-id>/faces-results.json.enc.ttl`
+        and shared them back. This one writes answers into the user's own
+        inbox, so nothing about any user belongs in the Analyser Pod.
+        """
+
+        root = paths.data_url(self.config.analyser.web_id,
+                              self.config.analyser.app_dir_name, 'faces') + '/'
+        try:
+            folders = self.client.list_container(root)
+        except NotFoundError:
+            return 0
+        removed = 0
+        for folder in folders:
+            files = self.client.list_container(folder) if folder.endswith('/') else [folder]
+            for url in files:
+                self.client.delete(f'{url}.acl')
+                removed += self.client.delete(url)
+            if folder.endswith('/'):
+                self.client.delete(folder)
+        self.client.delete(root)
+        log.info('Deleted %d result file(s) left in the Analyser Pod by an '
+                 'earlier version', removed)
+        return removed
+
+    def watch(self) -> None:
+        """Look at every shared inbox, again and again, until stopped."""
 
         try:
-            members = inbox.items_in(self.client.list_container(url))
-        except ForbiddenError as e:
-            raise NotShared(f'{url} cannot be listed: {e}') from e
-        batch = members[: max(1, self.config.inbox.max_per_run)]
-        report.pending = len(members) - len(batch)
+            self.forget_old_results()
+        except SolidError as e:
+            log.warning('Could not delete the results an earlier version '
+                        'left in the Analyser Pod: %s', e)
 
-        done: list[inbox.InboxItem] = []
+        interval = max(1.0, self.config.watch.poll_seconds)
+        log.info('Watching the face inboxes shared with %s every %.0f s',
+                 self.config.analyser.web_id, interval)
+        while True:
+            started = time.monotonic()
+            try:
+                self.sweep()
+            except Exception:  # noqa: BLE001 - the next look tries again
+                log.exception('Looking at the face inboxes failed')
+            time.sleep(max(0.0, interval - (time.monotonic() - started)))
+
+    # -- One inbox -----------------------------------------------------------
+
+    def _look(self, url: str, share: SharedResource) -> InboxReport:
+        owner = paths.web_id_of(
+            paths.owner_pod_root(url, self.config.analyser.app_dir_name))
+        report = InboxReport(web_id=owner)
+
+        requests = inbox.items_in(self.client.list_container(url))
+        batch = requests[: max(1, self.config.inbox.max_per_run)]
+        report.pending = len(requests) - len(batch)
+        keys = {url: share.key}
+
         for item in batch:
             try:
-                text = self.client.get_text(item.url)
-                image = inbox.decode_request(inbox.decrypt_document(
-                    text, item.url, key_index, self.config))
-                found = self.engine.analyse(image)
-                del image
-                results['items'][item.key] = {
-                    'width': found['width'],
-                    'height': found['height'],
-                    'faces': found['faces'],
-                    'analysed': _now(),
-                }
-                results['failed'].pop(item.key, None)
-                report.analysed += 1
+                answer = self._analyse(item, keys)
             except NotFoundError:
                 continue
-            except (inbox.RequestError, crypto.DecryptionError, ImageError,
-                    ValueError) as e:
-                # Analysing it again would fail the same way, so it is
-                # reported and taken out of the inbox like the rest.
-                results['failed'][item.key] = str(e)
-                results['items'].pop(item.key, None)
-                report.failed += 1
-                log.info('%s: %s', item.url, e)
             except SolidError as e:
                 report.errors.append(f'{item.key}: {e}')
                 log.warning('cannot read %s: %s', item.url, e)
                 continue
-            done.append(item)
-            changed = True
 
-        report.waiting = len(results['items']) + len(results['failed'])
-        if changed:
-            results['generated'] = _now()
-            published = self.publisher.publish(
-                payload=results,
-                relative_path=self._relative_path(web_id),
-                recipients=[web_id],
-            )
-            if web_id in published.failures:
-                # Without the key the app cannot read the results, so the
-                # photos stay in the inbox to be tried again.
-                report.errors.append(published.failures[web_id])
-                done = []
-
-        for item in done:
             try:
+                self._answer(url, item, share.key, answer)
                 self.client.delete(item.url)
             except SolidError as e:
-                report.errors.append(f'{item.key}: not removed: {e}')
-                log.warning('cannot remove %s: %s', item.url, e)
+                report.errors.append(f'{item.key}: {e}')
+                log.warning('cannot answer %s: %s', item.url, e)
+                continue
+            if 'failed' in answer:
+                report.failed += 1
+            else:
+                report.analysed += 1
 
-        report.result_url = self.result_url(web_id)
-        report.generated = results['generated']
-        log.info('%s: %d analysed, %d failed, %d pending, %d waiting for the '
-                 'app', paths.pod_slug(web_id), report.analysed, report.failed,
-                 report.pending, report.waiting)
+        if report.analysed or report.failed or report.errors:
+            log.info('%s: %d analysed, %d failed, %d pending%s',
+                     paths.pod_slug(owner), report.analysed, report.failed,
+                     report.pending,
+                     f', {len(report.errors)} error(s)' if report.errors else '')
         return report
 
-    def _read_results(self, web_id: str) -> dict[str, Any]:
-        """The results published for [web_id] by an earlier run, or empty
-        ones. Results from other models are dropped: their embeddings
-        cannot be compared with these."""
+    def _analyse(self, item: inbox.InboxItem,
+                 keys: dict[str, bytes]) -> dict[str, Any]:
+        """The answer for one photo: its faces, or why it could not be read.
+        A photo that cannot be read would fail the same way again, so it is
+        answered rather than left in the inbox."""
 
-        url = self.result_url(web_id)
+        answer: dict[str, Any] = {'format': RESULT_FORMAT, 'version': 1,
+                                  'model': MODEL_ID, 'analysed': _now()}
+        text = self.client.get_text(item.url)
         try:
-            text = self.client.get_text_or_none(url)
-        except SolidError as e:
-            log.warning('cannot read %s, starting afresh: %s', url, e)
-            return empty_results()
-        if text is None:
-            return empty_results()
+            image = inbox.decode_request(
+                inbox.decrypt_document(text, item.url, keys, self.config))
+            found = self.engine.analyse(image)
+            del image
+        except (inbox.RequestError, crypto.DecryptionError, ImageError,
+                ValueError) as e:
+            log.info('%s: %s', item.url, e)
+            answer['failed'] = str(e)
+            return answer
+        answer.update(width=found['width'], height=found['height'],
+                      faces=found['faces'])
+        return answer
 
-        try:
-            if self.config.sharing.encrypt_results:
-                key = self.keys.individual_key(url)
-                if key is None:
-                    return empty_results()
-                record = turtle.triple_map(text, base=url).get(url) or {}
-                text = crypto.aes_ctr_decrypt(
-                    turtle.single(record.get(paths.APPS_TERMS + 'encData')),
-                    key,
-                    base64.b64decode(
-                        turtle.single(record.get(paths.APPS_TERMS + 'iv'))),
-                )
-            data = json.loads(text)
-        except Exception as e:  # noqa: BLE001 - unreadable means start again
-            log.warning('cannot open %s, starting afresh: %s', url, e)
-            return empty_results()
+    def _answer(self, inbox_url: str, item: inbox.InboxItem, key: bytes,
+                answer: dict[str, Any]) -> None:
+        """Write [answer] beside the photo, encrypted with the inbox's key, in
+        the form solidpod's `writePod(inheritKeyFrom:)` writes, so that
+        PhotoPod reads it with `readPod()` like any file of its own."""
 
-        if data.get('format') != RESULTS_FORMAT or data.get('model') != MODEL_ID:
-            return empty_results()
-        data.setdefault('items', {})
-        data.setdefault('failed', {})
-        return data
+        url = f'{inbox_url}{item.key}{inbox.RESULT_SUFFIX}'
+        owner = paths.web_id_of(
+            paths.owner_pod_root(inbox_url, self.config.analyser.app_dir_name))
+        iv = crypto.random_iv()
+        self.client.put_text(url, turtle.encrypted_document(
+            file_url=url,
+            resource_path=paths.resource_path_in_pod(url, owner),
+            iv_b64=base64.b64encode(iv).decode('ascii'),
+            enc_data_b64=crypto.aes_ctr_encrypt(
+                json.dumps(answer, separators=(',', ':')), key, iv),
+            inherit_key_from=paths.resource_path_in_pod(inbox_url, owner),
+        ))

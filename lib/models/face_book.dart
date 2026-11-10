@@ -27,17 +27,21 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-/// The cosine similarity at or above which two SFace embeddings are taken to
-/// be the same person. 0.363 is the threshold OpenCV publishes for SFace; on
-/// the sample photos a person matched themselves at about 0.5 to 0.9 and
-/// strangers at about 0.15.
+/// The cosine similarity at or above which two ArcFace embeddings are taken
+/// to be the same person. On the sample photos a person matched themselves
+/// at 0.64 to 0.84 and strangers at no more than 0.07; 0.40 leaves room for
+/// the same face years apart or turned away, while staying well clear of
+/// strangers (InsightFace's own verification thresholds for this model lie
+/// between about 0.3 and 0.45).
 
-const double faceMatchThreshold = 0.363;
+const double faceMatchThreshold = 0.40;
 
-/// Which models produced the embeddings. Embeddings from different models
-/// cannot be compared, so a book written with others is started afresh.
+/// Which models produced the embeddings: InsightFace's buffalo_l, SCRFD-10GF
+/// and ArcFace ResNet-50, run by analyser/face_analyser. Embeddings from
+/// different models cannot be compared, so a book written with others is
+/// started afresh. It must match `MODEL_ID` in the analyser.
 
-const String faceModelId = 'yunet-2023mar+sface-2021dec';
+const String faceModelId = 'buffalo_l:scrfd-10g+arcface-w600k-r50';
 
 /// The version of the faces file this build writes. Version 1 kept no
 /// picture of each face and no link to its photo; its photos are looked at
@@ -87,7 +91,7 @@ class FaceRecord {
 
   final double score;
 
-  /// The SFace embedding, scaled to unit length.
+  /// The ArcFace embedding, scaled to unit length.
 
   final Float32List embedding;
 
@@ -187,9 +191,9 @@ class Person {
   }
 }
 
-/// SFace embeddings have 128 values.
+/// ArcFace embeddings have 512 values.
 
-const int _dimensions = 128;
+const int _dimensions = 512;
 
 /// Every face found so far, every person they were filed under, and which
 /// photos have been looked at.

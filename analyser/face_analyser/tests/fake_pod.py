@@ -113,8 +113,12 @@ class FakeSolidClient:
         return url in self.resources
 
     def list_container(self, url: str) -> list[str]:
+        from face_analyser.solid_client import ForbiddenError
+
         if not url.endswith('/'):
             url += '/'
+        if self._is_private(url):
+            raise ForbiddenError(f'read {url}: access denied', 403)
         members = set()
         for key in self.resources:
             if not key.startswith(url) or key == url:

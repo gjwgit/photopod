@@ -196,12 +196,7 @@ class _PeopleViewState extends State<PeopleView> {
 
     final error = _keyError ?? people.error ?? index.error;
     if (error != null && entries.isEmpty) {
-      return _message(
-        context,
-        people.needsLogin ? Icons.lock_outline : Icons.cloud_off,
-        'Could not find people',
-        error,
-      );
+      return _message(context, Icons.cloud_off, 'Could not find people', error);
     }
 
     if (entries.isEmpty) {
@@ -212,8 +207,8 @@ class _PeopleViewState extends State<PeopleView> {
         people.isScanning
             ? 'People appear here as their faces are found. Each new photo '
                   'waits in your Pod for the ${FaceAnalyser.displayName}, '
-                  'which removes it once it has looked; what describes each '
-                  'face comes back, encrypted, to your Pod.'
+                  'which looks at it on the server and writes what describes '
+                  'each face back, encrypted, into your Pod.'
             : 'Someone is listed once they are in at least '
                   '$minPhotosPerPerson of your photos.',
       );
@@ -263,9 +258,9 @@ class _PeopleViewState extends State<PeopleView> {
               'on the same server as your Pod. Turning People on shares one '
               'folder of your Pod with it, the face inbox. Each photo is '
               'left there, encrypted, until the Analyser has looked at it '
-              'and removed it, and what it found is shared back to your '
-              'Pod. Your photos, their details and everything else stay as '
-              'private as they are now. You can turn People off at any '
+              'on the server and written the faces it found back into the '
+              'same folder. Your photos, their details and everything else '
+              'stay as private as they are now. You can turn People off at any '
               'time.',
               textAlign: TextAlign.center,
             ),

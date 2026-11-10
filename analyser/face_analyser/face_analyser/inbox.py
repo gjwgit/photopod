@@ -22,9 +22,11 @@ this program. If not, see https://opensource.org/license/gpl-3-0.
 Authors: Tony Chen
 """
 
-# PhotoPod leaves each photo to be looked at as one file in the user's own Pod:
+# PhotoPod leaves each photo to be looked at as one file in the user's own Pod,
+# and the Analyser answers beside it:
 #
-#     <pod>/photopod/data/.faces-inbox/<key>.enc.ttl
+#     <pod>/photopod/data/.faces-inbox/<key>.enc.ttl         the photo
+#     <pod>/photopod/data/.faces-inbox/<key>.faces.enc.ttl   the faces in it
 #
 # where <key> is the random part of the photo's stored name, so the name says
 # nothing about the photo. Every file in the folder is encrypted with the
@@ -32,11 +34,12 @@ Authors: Tony Chen
 # the Analyser once, for reading and writing: the share puts the folder key in
 # the Analyser's shared-keys.ttl, which is how this service can read every
 # photo left there, and writing is what lets it remove each one once it has
-# been analysed. Inside the encryption is
+# been analysed and to write its answer. Inside the photo's encryption is
 #
 #     {"format": "photopod-face-request", "version": 1, "image": "<base64 JPEG>"}
 #
-# the photo's large rendition, which carries no EXIF block.
+# the photo's large rendition, which carries no EXIF block. The answer is
+# encrypted with the same folder key; see service.py for what it holds.
 
 from __future__ import annotations
 
@@ -49,6 +52,7 @@ from .config import Config
 from .keys import SharedResource
 
 REQUEST_FORMAT = 'photopod-face-request'
+RESULT_SUFFIX = '.faces.enc.ttl'
 _SUFFIX = '.enc.ttl'
 
 
@@ -84,12 +88,14 @@ def shared_inboxes(shared: list[SharedResource],
 
 
 def items_in(members: list[str]) -> list[InboxItem]:
-    """The requests among the URLs listed in an inbox, oldest name first."""
+    """The photos waiting among the URLs listed in an inbox, by name. The
+    answers beside them are not photos."""
 
     found = []
     for url in members:
         name = url.rsplit('/', 1)[-1]
-        if url.endswith('/') or not name.endswith(_SUFFIX) or name.startswith('.'):
+        if (url.endswith('/') or not name.endswith(_SUFFIX)
+                or name.endswith(RESULT_SUFFIX) or name.startswith('.')):
             continue
         found.append(InboxItem(url=url, key=name[: -len(_SUFFIX)]))
     return sorted(found, key=lambda item: item.key)

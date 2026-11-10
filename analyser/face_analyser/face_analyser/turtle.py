@@ -104,14 +104,24 @@ def escape_literal(value: str) -> str:
 
 def encrypted_document(
     *, file_url: str, resource_path: str, iv_b64: str, enc_data_b64: str,
+    inherit_key_from: str | None = None,
 ) -> str:
-    """The encrypted-resource wrapper written by solidpod's `getEncTTLStr()`."""
+    """The encrypted-resource wrapper written by solidpod's `getEncTTLStr()`.
 
+    [inherit_key_from] is the Pod-relative path of the folder whose key the
+    content is encrypted with, as solidpod's `writePod(inheritKeyFrom:)`
+    records it; `readPod()` looks the key up by it.
+    """
+
+    inherit = (
+        f'    solidTerms:inheritKeyFrom "{escape_literal(inherit_key_from)}";\n'
+        if inherit_key_from else '')
     return (
         f'@prefix solidTerms: <{paths.APPS_TERMS}> .\n'
         f'<{file_url}>\n'
         f'    solidTerms:path "{escape_literal(resource_path)}";\n'
         f'    solidTerms:iv "{escape_literal(iv_b64)}";\n'
+        + inherit +
         f'    solidTerms:encData "{escape_literal(enc_data_b64)}".\n'
     )
 

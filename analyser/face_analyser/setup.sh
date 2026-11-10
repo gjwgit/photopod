@@ -67,15 +67,14 @@ if [ ! -f config.yaml ]; then
   cp config.example.yaml config.yaml
   chmod 600 config.yaml
   echo "    Edit config.yaml: the Analyser's security key and client"
-  echo "    credentials are required (or set them in the environment), and"
-  echo "    service.public_url must be the address PhotoPod calls."
+  echo "    credentials are required (or set them in the environment)."
 fi
 
 # The models are fetched now rather than on the first request, so that the
 # service never has to reach GitHub while a user waits, and so that systemd's
 # read-only sandbox has nothing to write.
 
-echo "==> Fetching the face models into var/models"
+echo "==> Fetching the face models into var/models (a 275 MB download, once)"
 mkdir -p var/models
 ./.venv/bin/python -m face_analyser --config config.yaml fetch-models
 

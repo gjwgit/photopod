@@ -23,9 +23,9 @@
 #
 # Authors: Tony Chen
 #
-#   ./run.sh check            verify the models, the Analyser Pod and issuers
-#   ./run.sh serve            answer PhotoPod and sweep the inboxes (systemd)
-#   ./run.sh run-once [WEBID] one run for a Pod, or for every shared inbox
+#   ./run.sh check            verify the models and the Analyser Pod
+#   ./run.sh watch            look at the shared inboxes, for ever (systemd)
+#   ./run.sh run-once [WEBID] one look at a Pod's inbox, or at every one
 #   ./run.sh fetch-models     download the two models into var/models
 #   ./run.sh analyse PHOTO... the faces in local photos, as JSON
 #   ./run.sh test             the offline test suite

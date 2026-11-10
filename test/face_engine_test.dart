@@ -29,7 +29,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:photopod/models/face_book.dart';
-import 'package:photopod/services/face_engine.dart';
+import 'package:photopod/services/face_results.dart';
 
 void main() {
   // assets/demo/faces.json is what analyser/face_analyser answered for the
@@ -50,8 +50,8 @@ void main() {
     final face = found.single;
     expect(face.box, hasLength(4));
     expect(face.box.every((v) => v >= 0 && v <= 1), isTrue);
-    expect(face.score, greaterThanOrEqualTo(0.9));
-    expect(face.embedding, hasLength(128));
+    expect(face.score, greaterThanOrEqualTo(0.6));
+    expect(face.embedding, hasLength(512));
     final norm = face.embedding.fold<double>(0, (sum, v) => sum + v * v);
     expect(norm, closeTo(1, 1e-4));
     expect(face.image!.sublist(0, 2), [0xff, 0xd8]);

@@ -97,6 +97,12 @@ class PodKeys:
         self._kdf_version: int | None = None
         self._public_keys: dict[str, RSAPublicKey] = {}
 
+        # The shared-keys file as last read and what it opened to. The face
+        # analyser reads it every few seconds, and opening each entry takes
+        # three RSA decryptions, so an unchanged file is not opened again.
+
+        self._shared_cache: tuple[str, list[SharedResource]] | None = None
+
     # -- Unlocking ---------------------------------------------------------
 
     @property
@@ -190,6 +196,8 @@ class PodKeys:
             log.info('no shared-keys file yet at %s; nothing has been shared',
                      url)
             return []
+        if self._shared_cache and self._shared_cache[0] == document:
+            return list(self._shared_cache[1])
 
         shared: list[SharedResource] = []
         for subject, record in turtle.triple_map(document, base=url).items():
@@ -224,7 +232,8 @@ class PodKeys:
             ))
 
         log.info('%d resource(s) are shared with the Analyser', len(shared))
-        return shared
+        self._shared_cache = (document, shared)
+        return list(shared)
 
     # -- The Analyser's own individual keys --------------------------------
 

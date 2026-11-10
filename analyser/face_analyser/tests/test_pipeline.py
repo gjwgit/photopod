@@ -1,4 +1,4 @@
-"""A full run against an in-memory Pod: inbox in, results shared back.
+"""A full look at a shared inbox, against an in-memory Pod.
 
 Copyright (C) 2026, Software Innovation Institute, ANU.
 
@@ -31,25 +31,21 @@ Authors: Tony Chen
 from __future__ import annotations
 
 import base64
-import http.client
 import json
-import threading
 import unittest
 from pathlib import Path
 
 from face_analyser import MODEL_ID, crypto, pod_paths as paths, turtle
-from face_analyser.auth import AuthConfig, Authenticator
 from face_analyser.config import (
     AnalyserConfig,
     Config,
     InboxConfig,
-    ServiceConfig,
-    SharingConfig,
+    WatchConfig,
 )
 from face_analyser.engine import EngineConfig, ImageError
-from face_analyser.inbox import REQUEST_FORMAT
+from face_analyser.inbox import REQUEST_FORMAT, RESULT_SUFFIX
 from face_analyser.keys import PodKeys
-from face_analyser.service import FaceService, NotShared
+from face_analyser.service import RESULT_FORMAT, FaceService, NotShared
 
 from tests.fake_pod import FakePod, FakeSolidClient, encrypted_resource
 
@@ -62,7 +58,7 @@ INBOX_PATH = f'{APP}/data/.faces-inbox/'
 
 
 class FakeEngine:
-    """One face per picture, its score taken from the picture's bytes."""
+    """One face per picture, its embedding the picture's own bytes."""
 
     def __init__(self):
         self.seen: list[bytes] = []
@@ -80,14 +76,9 @@ class FakeEngine:
 class PipelineTest(unittest.TestCase):
     def setUp(self):
         self.analyser = FakePod(ANALYSER_WEB_ID, 'analyser-key')
-        self.alice = FakePod(ALICE, 'alice-key')
-        self.bob = FakePod(BOB, 'bob-key')
         self.client = FakeSolidClient()
-        for pod in (self.analyser, self.alice, self.bob):
+        for pod in (self.analyser, FakePod(ALICE), FakePod(BOB)):
             self._seed_keys(pod)
-        ind_url = paths.ind_key_url(ANALYSER_WEB_ID, APP)
-        self.client.resources[ind_url] = turtle.individual_keys_document(
-            ind_url, {})
 
         self.inbox = paths.data_url(ALICE, APP, '.faces-inbox') + '/'
         self.folder_key = crypto.random_key()
@@ -99,9 +90,7 @@ class PipelineTest(unittest.TestCase):
                                     security_key='analyser-key',
                                     client_id='id', client_secret='secret'),
             inbox=InboxConfig(),
-            sharing=SharingConfig(),
-            service=ServiceConfig(port=0, poll_seconds=0),
-            auth=AuthConfig(required=False),
+            watch=WatchConfig(),
             engine=EngineConfig(models_dir=Path('.')),
         )
         self.engine = FakeEngine()
@@ -123,12 +112,6 @@ class PipelineTest(unittest.TestCase):
             f'    solidTerms:keyVersion "2";\n'
             f'    solidTerms:prvKey '
             f'"{crypto.aes_cbc_encrypt(pod.private_pem, pod.master_key, iv)}".\n'
-        )
-        pub_url = paths.pub_key_url(pod.web_id, APP)
-        self.client.resources[pub_url] = (
-            f'@prefix solidTerms: <{paths.APPS_TERMS}> .\n'
-            f'<{pub_url}>\n'
-            f'    solidTerms:pubKey "{pod.public_body}".\n'
         )
         shared_url = paths.shared_key_url(pod.web_id, APP)
         self.client.resources[shared_url] = (
@@ -164,75 +147,71 @@ class PipelineTest(unittest.TestCase):
         )
         return url
 
-    def results_as_alice(self, url: str) -> dict:
-        """Open the published results the way PhotoPod's readExternalPod()
-        does: with the key the Analyser left in Alice's sharing inbox."""
+    def answer(self, key: str) -> dict:
+        """Open the answer for [key] as PhotoPod's readPod() does: by the
+        folder its inheritKeyFrom names, with Alice's own folder key."""
 
-        shared_url = paths.shared_key_url(ALICE, APP)
-        record = turtle.triple_map(
-            self.client.resources[shared_url], base=shared_url)[
-            paths.APPS_RES_ID + crypto.unique_resource_id(url, ALICE)]
-        key = base64.b64decode(crypto.rsa_decrypt(
-            self.alice.private_key,
-            turtle.single(record[paths.APPS_DATA + 'sharedKey'])))
+        url = f'{self.inbox}{key}{RESULT_SUFFIX}'
         fields = turtle.triple_map(self.client.resources[url], base=url)[url]
+        self.assertEqual(
+            turtle.single(fields[paths.APPS_TERMS + 'inheritKeyFrom']),
+            INBOX_PATH)
+        self.assertEqual(turtle.single(fields[paths.APPS_TERMS + 'path']),
+                         f'{INBOX_PATH}{key}{RESULT_SUFFIX}')
         return json.loads(crypto.aes_ctr_decrypt(
-            turtle.single(fields[paths.APPS_TERMS + 'encData']), key,
+            turtle.single(fields[paths.APPS_TERMS + 'encData']),
+            self.folder_key,
             base64.b64decode(turtle.single(fields[paths.APPS_TERMS + 'iv']))))
 
-    def shares_to_alice(self) -> int:
-        shared_url = paths.shared_key_url(ALICE, APP)
-        return sum(1 for url, _ in self.client.patched if url == shared_url)
+    # -- Looks -------------------------------------------------------------
 
-    # -- Runs --------------------------------------------------------------
-
-    def test_analyses_the_inbox_and_shares_the_results_back(self):
+    def test_answers_each_photo_in_the_users_own_inbox(self):
         a = self.leave('a' * 32, b'photo a')
         b = self.leave('b' * 32, b'photo b')
 
-        report = self.service.run(ALICE)
+        reports = self.service.sweep()
 
-        self.assertEqual((report.analysed, report.failed, report.pending),
-                         (2, 0, 0))
-        self.assertEqual(report.result_url,
-                         f'{SERVER}/Analyser/{APP}/data/faces/server-alice/'
-                         'faces-results.json.enc.ttl')
-        results = self.results_as_alice(report.result_url)
-        self.assertEqual(results['model'], MODEL_ID)
-        self.assertEqual(set(results['items']), {'a' * 32, 'b' * 32})
-        face = results['items']['a' * 32]['faces'][0]
-        self.assertEqual(base64.b64decode(face['embedding']), b'photo a')
+        self.assertEqual([(r.web_id, r.analysed, r.failed, r.pending)
+                          for r in reports], [(ALICE, 2, 0, 0)])
+        answer = self.answer('a' * 32)
+        self.assertEqual(answer['format'], RESULT_FORMAT)
+        self.assertEqual(answer['model'], MODEL_ID)
+        self.assertEqual(base64.b64decode(answer['faces'][0]['embedding']),
+                         b'photo a')
 
-        # The photos leave the inbox once their results are safely out.
+        # The photos leave the inbox once their answers are written.
         self.assertNotIn(a, self.client.resources)
         self.assertNotIn(b, self.client.resources)
         self.assertEqual(self.engine.seen, [b'photo a', b'photo b'])
 
-    def test_results_are_kept_until_the_app_takes_them(self):
+        # Nothing about Alice is written into the Analyser's own Pod.
+        analyser_root = paths.pod_root(ANALYSER_WEB_ID)
+        written = [url for url, _ in self.client.patched]
+        written += [u for u in self.client.resources if u.startswith(analyser_root)
+                    and 'faces' in u]
+        self.assertEqual(written, [])
+
+    def test_an_answer_is_not_mistaken_for_a_photo(self):
         self.leave('a' * 32, b'photo a')
-        url = self.service.run(ALICE).result_url
-        self.leave('b' * 32, b'photo b')
+        self.service.sweep()
+        self.assertEqual(self.service.sweep(), [])
+        self.assertEqual(self.engine.seen, [b'photo a'])
 
-        report = self.service.run(ALICE)
-        self.assertEqual(report.waiting, 2)
-        self.assertEqual(set(self.results_as_alice(url)['items']),
-                         {'a' * 32, 'b' * 32})
-
-        report = self.service.run(ALICE, ack=['a' * 32, 'b' * 32])
-        self.assertEqual(report.waiting, 0)
-        self.assertEqual(self.results_as_alice(url)['items'], {})
-
-    def test_a_picture_that_cannot_be_read_is_reported_and_removed(self):
+    def test_a_picture_that_cannot_be_read_is_answered_and_removed(self):
         bad = self.leave('c' * 32, b'not a picture')
         report = self.service.run(ALICE)
         self.assertEqual(report.failed, 1)
-        results = self.results_as_alice(report.result_url)
-        self.assertIn('c' * 32, results['failed'])
+        self.assertIn('failed', self.answer('c' * 32))
         self.assertNotIn(bad, self.client.resources)
 
     def test_a_pod_that_shared_nothing_is_refused(self):
         with self.assertRaises(NotShared):
             self.service.run(BOB)
+
+    def test_an_inbox_closed_to_the_analyser_is_passed_over(self):
+        self.leave('a' * 32, b'photo a')
+        self.client.private_urls.add(self.inbox)
+        self.assertEqual(self.service.sweep(), [])
 
     def test_a_large_inbox_is_worked_through_in_batches(self):
         self.config.inbox.max_per_run = 2
@@ -243,88 +222,23 @@ class PipelineTest(unittest.TestCase):
         self.assertEqual(self.service.run(ALICE).pending, 0)
         self.assertEqual(len(self.engine.seen), 5)
 
-    def test_the_key_is_handed_over_once(self):
-        self.leave('a' * 32, b'photo a')
-        self.service.run(ALICE)
-        first = self.shares_to_alice()
-        self.leave('b' * 32, b'photo b')
-        self.service.run(ALICE)
-        self.assertEqual(self.shares_to_alice(), first)
+    def test_results_left_by_the_earlier_version_are_deleted(self):
+        old = paths.data_url(ANALYSER_WEB_ID, APP,
+                             'faces/server-alice/faces-results.json.enc.ttl')
+        self.client.resources[old] = 'encrypted faces'
+        self.client.resources[old + '.acl'] = 'acl'
+        self.assertEqual(self.service.forget_old_results(), 1)
+        self.assertNotIn(old, self.client.resources)
+        self.assertNotIn(old + '.acl', self.client.resources)
+        self.assertEqual(self.service.forget_old_results(), 0)
 
-    def test_nothing_new_writes_nothing(self):
-        self.leave('a' * 32, b'photo a')
-        url = self.service.run(ALICE).result_url
-        before = self.client.resources[url]
-        self.service.run(ALICE)
-        self.assertEqual(self.client.resources[url], before)
+    def test_the_shared_keys_are_opened_once_while_unchanged(self):
+        from unittest import mock
 
-    def test_the_sweep_runs_only_for_inboxes_with_photos(self):
-        self.assertEqual(self.service.sweep(), [])
-        self.leave('a' * 32, b'photo a')
-        reports = self.service.sweep()
-        self.assertEqual([r.web_id for r in reports], [ALICE])
-        self.assertEqual(reports[0].analysed, 1)
-
-
-class ServerTest(unittest.TestCase):
-    """The HTTP interface, with authentication off: test_auth.py covers what
-    it checks, and with it off the WebID comes in the body."""
-
-    @classmethod
-    def setUpClass(cls):
-        from face_analyser.server import FaceServer
-
-        cls.pipeline = PipelineTest('test_nothing_new_writes_nothing')
-        cls.pipeline.setUp()
-        config = cls.pipeline.config
-        cls.server = FaceServer(config, cls.pipeline.service,
-                                Authenticator(config.auth))
-        cls.port = cls.server.server_address[1]
-        threading.Thread(target=cls.server.serve_forever, daemon=True).start()
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.server.shutdown()
-        cls.server.server_close()
-
-    def request(self, method, path, body=None):
-        conn = http.client.HTTPConnection('127.0.0.1', self.port, timeout=30)
-        payload = None if body is None else json.dumps(body).encode()
-        conn.request(method, path, body=payload,
-                     headers={'Content-Type': 'application/json'})
-        response = conn.getresponse()
-        data = json.loads(response.read() or b'{}')
-        conn.close()
-        return response.status, data
-
-    def test_health(self):
-        status, body = self.request('GET', '/v1/health')
-        self.assertEqual(status, 200)
-        self.assertEqual(body['model'], MODEL_ID)
-        self.assertEqual(body['analyser'], ANALYSER_WEB_ID)
-
-    def test_analyse(self):
-        self.pipeline.leave('d' * 32, b'photo d')
-        status, body = self.request('POST', '/photopod-faces/v1/analyse',
-                                    {'web_id': ALICE})
-        self.assertEqual(status, 200)
-        self.assertEqual(body['analysed'], 1)
-        self.assertTrue(body['result_url'].endswith('.enc.ttl'))
-
-    def test_not_shared(self):
-        status, body = self.request('POST', '/v1/analyse', {'web_id': BOB})
-        self.assertEqual(status, 409)
-        self.assertEqual(body['code'], 'not_shared')
-
-    def test_bad_ack(self):
-        status, _ = self.request('POST', '/v1/analyse',
-                                 {'web_id': ALICE, 'ack': 'everything'})
-        self.assertEqual(status, 400)
-
-    def test_no_photo_route(self):
-        status, _ = self.request('POST', '/v1/faces', {})
-        self.assertEqual(status, 404)
-
+        self.service.keys.shared_resources()
+        with mock.patch('face_analyser.keys.crypto.rsa_decrypt') as decrypt:
+            self.service.keys.shared_resources()
+        decrypt.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()

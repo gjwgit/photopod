@@ -1,4 +1,4 @@
-/// People through the Analyser: the face inbox out, the results back.
+/// People through the Analyser: photos into the face inbox, answers back.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -23,25 +23,30 @@
 
 part of 'people.dart';
 
-/// How many photos are left in the inbox between asking the Analyser to
-/// look, so that people start to appear while a long backlog is still being
-/// sent.
+/// How often the inbox is looked at while photos are waiting in it. The
+/// Analyser looks at it every ten seconds or so.
 
-const int _askEvery = 20;
+const Duration _lookEvery = Duration(seconds: 5);
 
-/// The most runs one scan asks for, a guard against a run that keeps
-/// reporting work it never finishes.
+/// How long the inbox may go without a single answer coming back before the
+/// app stops waiting. The photos stay in the inbox, and the answers are
+/// collected the next time People is opened.
 
-const int _maxRuns = 200;
+const Duration _patience = Duration(minutes: 2);
 
-/// How long after a photo is added the Analyser is asked to look, so that
-/// adding a batch of photos asks once rather than once a photo.
+/// How many photos are left in the inbox between looks for answers, so that
+/// people start to appear while a long backlog is still being left.
 
-const Duration _addedDelay = Duration(seconds: 5);
+const int _lookAfter = 20;
+
+/// How long after a photo is added the inbox is first looked at, so that a
+/// batch of photos is waited for once.
+
+const Duration _addedDelay = Duration(seconds: 10);
 
 extension _PeopleAnalyser on People {
-  /// Leave every photo in [todo] the Analyser has not seen in the face inbox,
-  /// then ask it to look until everything left there has come back.
+  /// Leave every photo in [todo] not yet in the inbox there, then wait for
+  /// the Analyser's answers.
 
   Future<void> _scanWithAnalyser(List<MediaItem> todo) async {
     if (!await FaceInbox.isEnabled()) {
@@ -49,21 +54,17 @@ extension _PeopleAnalyser on People {
       return;
     }
 
-    // Whatever earlier runs found, as for photos added on another device or
-    // left before the app closed, comes back first. Asking also starts a
-    // run on anything already waiting in the inbox.
+    // Answers left from before, as for photos added on another device or
+    // answered after the app closed, are filed first.
 
-    _status = 'Asking the ${FaceAnalyser.displayName}...';
+    _status = 'Collecting what the ${FaceAnalyser.displayName} found...';
     _changed();
-    await _collect();
+    final listing = await _collect();
 
-    // What that filed is not sent again, nor is what is already waiting.
-
-    final queued = await FaceInbox.queued();
     final toSend = [
       for (final item in todo)
         if (!_book.hasScanned(item.path) &&
-            !queued.contains(faceKeyOf(item.path)))
+            !listing.waiting.contains(faceKeyOf(item.path)))
           item,
     ];
     _toDo = toSend.length;
@@ -86,78 +87,82 @@ extension _PeopleAnalyser on People {
       }
       _done++;
       _changed();
-      if (_done % _askEvery == 0) await _collect();
+      if (_done % _lookAfter == 0) await _collect();
     }
 
-    await _collectAll();
+    await _waitForAnswers();
   }
 
-  /// Ask the Analyser to look until the inbox is empty and everything it
-  /// found has been filed and acknowledged.
+  /// Look at the inbox every few seconds while photos are waiting in it,
+  /// until they have all been answered or none has been for a while.
 
-  Future<void> _collectAll() async {
-    for (var runs = 0; runs < _maxRuns && !_cancelled; runs++) {
-      final run = await _collect();
-      if (run.pending == 0 && _ack.isEmpty) break;
+  Future<void> _waitForAnswers() async {
+    var lastAnswer = DateTime.now();
+    while (!_cancelled) {
+      final listing = await _collect();
+      if (listing.waiting.isEmpty) break;
+      if (listing.answered.isNotEmpty) lastAnswer = DateTime.now();
+      if (DateTime.now().difference(lastAnswer) > _patience) {
+        _status =
+            '${listing.waiting.length} photos are waiting for the '
+            '${FaceAnalyser.displayName}';
+        _changed();
+        return;
+      }
+      await Future<void>.delayed(_lookEvery);
     }
     _status = null;
   }
 
-  /// One run: acknowledge what was filed since the last, then file what this
-  /// one found, saving it to the faces file before it is acknowledged.
+  /// File every answer in the inbox in the faces file, save it, and only
+  /// then delete the answers, returning what the inbox held.
 
-  Future<FaceAnalyserRun> _collect() async {
-    final run = await FaceEngine.run(ack: _ack.toList());
-    _ack.clear();
-    _waiting = run.pending;
-    _status = run.pending > 0
-        ? 'The ${FaceAnalyser.displayName} has ${run.pending} '
-              '${run.pending == 1 ? 'photo' : 'photos'} still to look at'
+  Future<FaceInboxListing> _collect() async {
+    final listing = await FaceInbox.list();
+    _waiting = listing.waiting.length;
+    _status = _waiting > 0
+        ? 'The ${FaceAnalyser.displayName} has $_waiting '
+              '${_waiting == 1 ? 'photo' : 'photos'} still to look at'
         : null;
     _changed();
 
-    final url = run.resultUrl;
-    if (run.waiting == 0 || url == null) return run;
-
-    final results = await FaceEngine.readResults(url);
-    final filed = <String>{};
-    for (final entry in results.faces.entries) {
-      if (_file(entry.key, entry.value)) filed.add(entry.key);
-    }
-    for (final key in results.failed.keys) {
-      // A photo the Analyser could not read would fail again, so it counts
-      // as looked at, with no faces.
-      if (_file(key, const [])) {
+    final filed = <String>[];
+    for (final key in listing.answered) {
+      final path = _pathOf[key];
+      try {
+        final answer = await FaceInbox.readAnswer(key);
+        if (path == null) {
+          // A photo this session does not know of waits for a scan of
+          // People, which knows every photo, unless the album is complete
+          // and the photo is gone.
+          if (_knowsAll) filed.add(key);
+          continue;
+        }
+        if (answer != null && !_forgotten.contains(path)) {
+          _book.addPhoto(path, answer.faces, url: _urlOf[path]);
+          if (answer.failed != null) _failed++;
+        }
         filed.add(key);
-        _failed++;
+      } on Object catch (e) {
+        debugPrint('PhotoPod: could not read the answer for $key: $e');
       }
     }
-    if (filed.isNotEmpty) await _save();
 
-    // A result for a photo the album no longer has is acknowledged as well
-    // once the whole album is known, so that it does not wait for ever.
-
-    _ack.addAll(_knowsAll ? results.keys : filed);
-    _changed();
-    return run;
-  }
-
-  // File the faces found in the photo known by [key], returning whether
-  // there was a photo to file them under. A photo this session does not
-  // know of, as one added on another device, waits for the next scan of
-  // People, which knows every photo.
-
-  bool _file(String key, List<FoundFace> faces) {
-    final path = _pathOf[key];
-    if (path == null) return false;
-    if (!_forgotten.contains(path)) {
-      _book.addPhoto(path, faces, url: _urlOf[path]);
+    if (filed.isEmpty) return listing;
+    await _save();
+    for (final key in filed) {
+      try {
+        await FaceInbox.deleteAnswer(key);
+      } on Object catch (e) {
+        debugPrint('PhotoPod: could not delete the answer for $key: $e');
+      }
     }
-    return true;
+    _changed();
+    return listing;
   }
 
-  // A photo has just been left in the inbox as it was added: ask the
-  // Analyser to look once the batch it came with is in.
+  // A photo has just been left in the inbox as it was added: wait for its
+  // answer once the batch it came with is in.
 
   void _soon() {
     _debounce?.cancel();
@@ -170,9 +175,9 @@ extension _PeopleAnalyser on People {
     _changed();
     try {
       await load();
-      await _collectAll();
+      await _waitForAnswers();
     } on Object catch (e) {
-      debugPrint('PhotoPod: the Analyser could not look at new photos: $e');
+      debugPrint('PhotoPod: could not collect the faces of new photos: $e');
     } finally {
       _scanning = false;
       _changed();

@@ -25,17 +25,12 @@ library;
 
 /// The face Analyser, set up as HealthPod's blood pressure analyser is.
 ///
-/// Two addresses matter, and they are separate on purpose:
-///
-///   * [webId] is the Analyser's Pod. The face inbox is shared with it, and
-///     the results are shared back from it. This is all the Solid server
-///     knows about.
-///
-///   * [serviceUrl] is the service, analyser/face_analyser in this
-///     repository, running beside the Solid server. PhotoPod calls it only to
-///     say "look now" and to say which results it has taken; no photo is
-///     ever sent to it. Every call carries the user's Solid login, so it can
-///     only start a run for the caller's own Pod.
+/// The Analyser is a Pod on the same Solid server as the user's. Turning
+/// People on shares the user's face inbox with it; a service beside the
+/// server (analyser/face_analyser in this repository), logged in as the
+/// Analyser, looks at every shared inbox and writes the faces it finds back
+/// into it. The app never talks to that service, so it needs no address of
+/// it: [webId] is all there is to know.
 
 class FaceAnalyser {
   const FaceAnalyser._();
@@ -48,13 +43,4 @@ class FaceAnalyser {
   /// Name shown in the interface, in place of the raw WebID.
 
   static const String displayName = 'PhotoPod Analyser';
-
-  /// Where the service listens, without `/v1/...`, which a build can change
-  /// with `--dart-define=PHOTOPOD_FACE_ANALYSER=https://...`. It must equal
-  /// `service.public_url` in the analyser's configuration.
-
-  static const String serviceUrl = String.fromEnvironment(
-    'PHOTOPOD_FACE_ANALYSER',
-    defaultValue: 'https://solid.dev.empwr.au/photopod-faces',
-  );
 }

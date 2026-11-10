@@ -1,266 +1,265 @@
 # PhotoPod Face Analyser
 
-A headless Python service that runs alongside a Solid server and finds the
-faces for PhotoPod's **People** section. It works the way HealthPod's blood
-pressure analyser does: users **share** their photos with the **Analyser Pod**
-(`https://solid.dev.empwr.au/Analyser/profile/card#me`), the service reads and
-analyses them on the server, and it **shares the results back** to the user's
-Pod. The photos travel only between the user's Pod, the Analyser Pod and this
-service, all on the same server. The app never sends a photo anywhere.
+A headless Python service that runs on the Solid server and finds the faces for
+PhotoPod's **People** section. It works through Pod sharing alone, as
+HealthPod's blood pressure analyser does: a user's Pod shares a folder of
+photos with the **Analyser Pod**
+(`https://solid.dev.empwr.au/Analyser/profile/card#me`), the service finds the
+faces in them and writes the results back into the user's Pod.
 
+- No port, no HTTP interface, nothing the app calls. The service only talks to
+  the Solid server it sits beside, logged in as the Analyser, and finds its
+  work by looking at the shared folders every few seconds.
+- Photos move only between the user's Pod and this service on the same
+  server, and are decrypted only in its memory.
+- Finds and recognises faces with InsightFace's **buffalo_l** models (SCRFD-10GF
+  and ArcFace ResNet-50), the set Immich uses, run through ONNX Runtime. See
+  [Models and licence](#models-and-licence).
 - Lives at `photopod/analyser/face_analyser`, laid out like
-  `healthpod/analyser/bp_analyser`
-- Detects faces with YuNet and describes them with SFace (OpenCV), the models
-  PhotoPod used to run on the device, so faces already in users' Pods still
-  match
-- Runs continuously under systemd: PhotoPod asks for a run after adding photos,
-  and a sweep every few minutes catches anything left when an app closed first
+  `healthpod/analyser/bp_analyser`.
 
 ## Contents
 
 - [How it works](#how-it-works)
 - [What PhotoPod does](#what-photopod-does)
-- [The HTTP interface](#the-http-interface)
 - [Preparing the Analyser Pod](#preparing-the-analyser-pod)
 - [Installing on the Solid server](#installing-on-the-solid-server)
 - [Running it](#running-it)
+- [Models and licence](#models-and-licence)
 - [Privacy and security](#privacy-and-security)
 - [Development](#development)
 
 ## How it works
 
 ```text
-                     ┌───────────────────── Solid server ─────────────────────┐
-                     │                                                         │
- PhotoPod (device)   │  Alice's Pod                                            │
-   │                 │    photopod/data/<photos, renditions>   (not shared)    │
-   │ 1. turn on ─────┼──► photopod/data/.faces-inbox/   shared with Analyser   │
-   │    People       │        (folder key sealed into Analyser's shared-keys)  │
-   │ 2. add photo ───┼──►     <key>.enc.ttl  (large rendition, folder key)     │
-   │                 │              │                                          │
-   │ 3. POST /v1/analyse ──►  ┌─────┴──────────────┐                           │
-   │    (Solid login,         │  face_analyser     │ 4. read, decrypt,         │
-   │     no photo)            │  (this service)    │    analyse in memory      │
-   │                          └─────┬──────────────┘                           │
-   │                                │ 5. publish + share back                  │
-   │                 │  Analyser's Pod                                         │
-   │ 6. read ◄───────┼──  photopod/data/faces/<pod-id>/faces-results.json.enc.ttl
-   │                 │                │ 7. remove analysed photos from inbox   │
-   │ 8. file in ─────┼──► Alice's photopod/data/faces.json.enc.ttl             │
-   │    own Pod      │                                                         │
-   │ 9. ack ───────────────►  results forgotten                                │
-                     └─────────────────────────────────────────────────────────┘
+┌──────────────────────────── Solid server ────────────────────────────┐
+│                                                                      │
+│  Alice's Pod                                                         │
+│    photopod/data/<photos, renditions, faces.json>   (not shared)     │
+│    photopod/data/.faces-inbox/        shared with the Analyser (R/W) │
+│        <key>.enc.ttl         a photo, left by PhotoPod               │
+│        <key>.faces.enc.ttl   its faces, written by the Analyser      │
+│              ▲   │                                                   │
+│     answer   │   │ read, decrypt                                     │
+│              │   ▼                                                   │
+│        ┌────────────────────┐        Analyser's Pod                  │
+│        │  face_analyser     │ ◄───── photopod/shared/shared-keys.ttl │
+│        │  (this service)    │        (the inbox's folder key)        │
+│        └────────────────────┘                                        │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-One run, for the Pod of the WebID that asked (`service.py`):
+1. **Sharing.** When the user turns People on, PhotoPod creates
+   `photopod/data/.faces-inbox/` with a folder key of its own and shares the
+   folder with the Analyser for Read and Write (solidpod `grantPermission`, as
+   HealthPod shares its blood pressure folder). solidpod seals the folder key
+   into the Analyser's `photopod/shared/shared-keys.ttl`.
+2. **Looking.** Every `watch.poll_seconds` (10 s) the service reads that file
+   (opening it again only when it has changed) and lists every inbox shared
+   with it.
+3. **Analysing.** For each photo waiting there, `<key>.enc.ttl`, it reads and
+   decrypts it with the folder key, in memory, and finds the faces.
+4. **Answering.** It writes the result beside the photo as
+   `<key>.faces.enc.ttl`, encrypted with the same folder key in exactly the
+   form solidpod's `writePod(inheritKeyFrom:)` writes, so PhotoPod reads it
+   with `readPod()` like any file of its own. Then it removes the photo.
+5. **Filing.** PhotoPod files each answer in the user's
+   `faces.json.enc.ttl` and deletes the answer.
 
-1. Find that Pod's face inbox among the resources shared with the Analyser
-   (`keys.py`, `inbox.py`). A Pod that has not shared one is refused (409).
-2. Read the results already published for it, and drop those the app
-   acknowledges (`ack`).
-3. List the inbox, then read, decrypt and analyse up to `inbox.max_per_run`
-   photos, in memory (`engine.py`).
-4. Publish the results in the Analyser Pod, encrypted with that file's own
-   key, and share them with the Pod (`publisher.py`, the same protocol as
-   HealthPod's analyser). The key is handed over once; later runs only rewrite
-   the file.
-5. Only then remove the analysed photos from the inbox, so a run that fails
-   part way loses nothing.
+Nothing about any user is kept by the Analyser, neither in its Pod nor on this
+host.
 
-`crypto.py`, `turtle.py`, `pod_paths.py`, `solid_client.py`, `keys.py` and
-`publisher.py` are taken from HealthPod's analyser, and `tests/test_crypto.py`
-with them: its vectors were generated by solidpod's own Dart libraries, so a
-failure there is a compatibility break, not a test to adjust.
+### The files in the inbox
 
-### The face inbox
+`<key>` is the random part of the photo's stored name (32 hex digits), or a
+digest of its path for a photo stored before random names. It says nothing
+about the photo.
 
-```text
-<pod>/photopod/data/.faces-inbox/<key>.enc.ttl
-```
-
-- `<key>` is the random part of the photo's stored name (32 hex digits), or a
-  digest of the path for a photo stored before random names. It says nothing
-  about the photo.
-- Each file is encrypted with the folder's key (solidpod `inheritKeyFrom`), and
-  holds `{"format": "photopod-face-request", "version": 1, "image": "<base64
-  JPEG>"}`: the photo's 2048 px large rendition, which carries no EXIF data
-  and so no location.
-- The folder is shared with the Analyser for **Read** and **Write**: reading
-  gives it the folder key, and writing lets it remove each photo once it has
-  been analysed. A photo stays in the inbox only until then.
-
-### The results
-
-```text
-<analyser>/photopod/data/faces/<pod-id>/faces-results.json.enc.ttl
-```
+A photo, inside its encryption:
 
 ```json
-{"format": "photopod-face-results", "version": 1,
- "model": "yunet-2023mar+sface-2021dec", "generated": "2026-11-10T09:00:00.000+00:00",
- "items": {"<key>": {"width": 1054, "height": 1280, "analysed": "...",
-   "faces": [{"box": [0.5403, 0.2819, 0.1801, 0.2101], "score": 0.935,
-              "embedding": "<base64 of 128 little-endian float32, unit length>",
-              "image": "<base64 96x96 JPEG>"}]}},
- "failed": {"<key>": "why it could not be read"}}
+{"format": "photopod-face-request", "version": 1, "image": "<base64 JPEG>"}
 ```
 
-Results stay there only until the app acknowledges them, so the Analyser Pod
-keeps nothing about a user once their faces are filed in their own Pod.
-`model` must equal `faceModelId` in PhotoPod's `lib/models/face_book.dart`.
+the 2048 px large rendition, which carries no EXIF data and so no location.
 
-No permission log line is written for the results
-(`sharing.write_permission_log: false`). PhotoPod finds them by their address,
-and a log line would list the results file among the user's shared photos.
+An answer, inside its encryption:
+
+```json
+{"format": "photopod-face-result", "version": 1,
+ "model": "buffalo_l:scrfd-10g+arcface-w600k-r50", "analysed": "2026-11-10T09:00:00.000+00:00",
+ "width": 1054, "height": 1280,
+ "faces": [{"box": [0.5403, 0.2819, 0.1801, 0.2101], "score": 0.935,
+            "embedding": "<base64 of 512 little-endian float32, unit length>",
+            "image": "<base64 96x96 JPEG>"}]}
+```
+
+or `"failed": "<why>"` in place of the faces for a photo that could not be
+read, which would fail the same way again. `model` must equal `faceModelId`
+in PhotoPod's `lib/models/face_book.dart`.
+
+The modules `crypto.py`, `turtle.py`, `pod_paths.py`, `solid_client.py` and
+`keys.py` are taken from HealthPod's analyser, and `tests/test_crypto.py`
+with them: its vectors were generated by solidpod's own Dart libraries, so a
+failure there is a compatibility break, not a test to adjust.
 
 ## What PhotoPod does
 
 - **Turning People on** (People section, once per Pod, from any device):
-  creates `.faces-inbox/` with its folder key and shares it with the Analyser
-  (`lib/services/face_inbox.dart`). Nothing is shared before that, and
-  turning People off revokes the share and empties the inbox.
+  creates and shares the inbox (`lib/services/face_inbox.dart`). Nothing is
+  shared before that. Turning People off revokes the share and empties the
+  inbox.
 - **Entering the Pod**: the user's own `faces.json.enc.ttl` is read as soon as
   the security key is entered. It is the record of every photo already looked
   at.
 - **Adding photos**: each new photo's large rendition is left in the inbox as
-  it is uploaded, and a few seconds after the batch the app asks for a run,
-  then files the results.
-- **Opening People**: results waiting from earlier runs are collected first.
-  Then every photo not in the faces file and not already waiting is left in
-  the inbox, and the app asks for runs until everything has come back.
-- **Filing**: the results are written to the user's own faces file
-  (encrypted) **before** they are acknowledged, so a crash loses nothing.
-- **Deleting a photo** deletes its faces from the faces file, and removes it
-  from the inbox if it is still waiting.
+  it is uploaded, and the app looks out for the answers.
+- **Opening People**: answers waiting from before are filed first. Then every
+  photo not in the faces file and not already waiting is left in the inbox,
+  and the app looks at the inbox every few seconds until all are answered.
+- **Filing**: answers are saved to the faces file **before** they are deleted,
+  so a crash loses nothing.
+- **Deleting a photo** deletes its faces from the faces file, and its photo or
+  answer from the inbox if either is still there.
 - **Before login**, the sample album uses `assets/demo/faces.json`, worked out
   once with `./run.sh analyse --full` (see [Development](#development)).
 
-## The HTTP interface
-
-`GET /v1/health`
-
-```json
-{"status": "ok", "service": "photopod-face-analyser", "version": "0.1.0",
- "model": "yunet-2023mar+sface-2021dec",
- "analyser": "https://solid.dev.empwr.au/Analyser/profile/card#me",
- "inbox": ".faces-inbox"}
-```
-
-`POST /v1/analyse`, body `{"ack": ["<key>", ...]}`, with the caller's Solid
-login:
-
-```text
-Authorization: DPoP <access token>
-DPoP: <proof for POST <public_url>/v1/analyse>
-```
-
-answers, once the run is over,
-
-```json
-{"web_id": "...", "model": "...", "result_url": "https://.../faces-results.json.enc.ttl",
- "generated": "...", "analysed": 12, "failed": 0, "pending": 3, "waiting": 12,
- "errors": []}
-```
-
-`pending` is what is still in the inbox, for the next run, and `waiting` is
-the number of results published and not yet acknowledged. Errors are
-`{"error": "..."}` with 401 (login refused), 409 (`"code": "not_shared"`),
-502 (the Solid server refused), 503 (the Analyser Pod cannot be unlocked).
-
-The call carries no photo. The caller's identity is what makes it safe: the
-access token must come from a Solid server in `auth.issuers`, and the DPoP
-proof must be signed by the key the token is bound to and made for this URL
-(`auth.py`). A run only ever reads the caller's own inbox and publishes only to
-the caller.
-
 ## Preparing the Analyser Pod
 
-The same Pod and account as HealthPod's analyser
-(`https://solid.dev.empwr.au/Analyser/profile/card#me`). It needs the
-**PhotoPod** folder structure as well as HealthPod's.
+The same Pod and account as HealthPod's analyser. It needs the **PhotoPod**
+folder structure as well as HealthPod's.
 
 1. **Initialise it with PhotoPod.** Log in to PhotoPod as the Analyser account
    **once** and enter its security key. PhotoPod creates
    `Analyser/photopod/encryption/`, `sharing/public-key.ttl`, `shared/` and
    `logs/`. Until then PhotoPod cannot share an inbox with it ("The Analyser
-   Pod is not set up for PhotoPod yet") and `./run.sh check` reports that
-   `photopod/encryption/enc-keys.ttl` does not exist.
-2. **Client credentials.** The pair issued for HealthPod's analyser can be
-   used, since they log in as the same WebID, or a pair of its own can be
-   issued as described in `healthpod/analyser/bp_analyser/README.md`, section
-   "Issue client credentials" (with `"name": "face-analyser"`).
+   Pod is not set up for PhotoPod yet"), and `./run.sh check` reports that
+   `photopod/encryption/enc-keys.ttl` does not exist. Check with:
+
+   ```bash
+   curl -sI \
+     https://solid.dev.empwr.au/Analyser/photopod/sharing/public-key.ttl
+   ```
+
+2. **Client credentials.** The pair issued for HealthPod's analyser works,
+   since both log in as the same WebID. A pair of its own is better, so that
+   either can be revoked alone: see `healthpod/analyser/bp_analyser/README.md`,
+   section "Issue client credentials", with `"name": "face-analyser"`.
 
 ## Installing on the Solid server
 
-Outside the Solid server's storage root, for the reasons given in HealthPod's
-analyser README: anything under it would become a Pod resource.
+Outside the Solid server's storage root (`/opt/solid/server`), for the reasons
+given in HealthPod's analyser README: anything under it would become a Pod
+resource.
+
+From the PhotoPod folder on your own machine:
 
 ```bash
-sudo useradd --system --home /opt/solid/analyser --shell /usr/sbin/nologin photopod
-sudo mkdir -p /opt/solid/analyser
-sudo rsync -a --exclude .venv --exclude var --exclude config.yaml \
-    photopod/analyser/face_analyser /opt/solid/analyser/
-cd /opt/solid/analyser/face_analyser
-sudo bash setup.sh                 # .venv, config.yaml, var/models (37 MB)
-sudo chown -R photopod:photopod /opt/solid/analyser/face_analyser
+rsync -av --exclude='.venv' --exclude='var' --exclude='config.yaml' \
+      --exclude='__pycache__' --exclude='.DS_Store' \
+      analyser/face_analyser/ you@solid.dev.empwr.au:/tmp/face_analyser/
+```
 
-sudo cp systemd/photopod-face-analyser.env /etc/photopod-face-analyser.env
+On the server:
+
+```bash
+sudo useradd --system --home /opt/solid/analyser \
+    --shell /usr/sbin/nologin photopod
+sudo mkdir -p /opt/solid/analyser
+sudo rsync -a /tmp/face_analyser/ /opt/solid/analyser/face_analyser/
+sudo chown -R photopod:photopod /opt/solid/analyser/face_analyser
+sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh   # 275 MB of models
+
+sudo cp /opt/solid/analyser/face_analyser/systemd/photopod-face-analyser.env \
+        /etc/photopod-face-analyser.env
 sudo chmod 600 /etc/photopod-face-analyser.env
-sudo -e /etc/photopod-face-analyser.env      # security key, client credentials
+sudo nano /etc/photopod-face-analyser.env    # security key, client credentials
+
 sudo systemd-run --pipe --wait -p User=photopod \
     -p EnvironmentFile=/etc/photopod-face-analyser.env \
-    -p WorkingDirectory=$PWD ./run.sh check
+    -p WorkingDirectory=/opt/solid/analyser/face_analyser \
+    /opt/solid/analyser/face_analyser/run.sh check
 
-sudo cp systemd/photopod-face-analyser.service /etc/systemd/system/
+sudo cp \
+    /opt/solid/analyser/face_analyser/systemd/photopod-face-analyser.service \
+        /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now photopod-face-analyser
 journalctl -u photopod-face-analyser -f
 ```
 
-The reverse proxy in front of the Solid server forwards one path to it:
+No firewall rule, reverse proxy or certificate is needed: the service opens no
+port. It needs outbound HTTPS to the Solid server only, plus PyPI and GitHub
+while `setup.sh` runs.
 
-```nginx
-location /photopod-faces/ {
-    proxy_pass http://127.0.0.1:8765/;
-    proxy_set_header Host $host;
-    proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_read_timeout 180s;
-}
+### Updating
+
+```bash
+sudo systemctl stop photopod-face-analyser
+sudo rsync -a /tmp/face_analyser/ /opt/solid/analyser/face_analyser/
+sudo chown -R photopod:photopod /opt/solid/analyser/face_analyser
+sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh
+sudo systemctl start photopod-face-analyser
 ```
 
-`service.public_url` (`https://solid.dev.empwr.au/photopod-faces` by default)
-must equal `FaceAnalyser.serviceUrl` in PhotoPod's
-`lib/constants/face_analyser.dart`, since the DPoP proof names it. A build can
-point PhotoPod elsewhere with
-`--dart-define=PHOTOPOD_FACE_ANALYSER=https://...`.
+`config.yaml` and `/etc/photopod-face-analyser.env` are never overwritten.
 
 ## Running it
 
 ```bash
-./run.sh check                 # models, Analyser Pod, shared inboxes, issuers
-./run.sh serve                 # what systemd runs
-./run.sh run-once              # one run for every inbox holding photos
-./run.sh run-once WEBID        # one run for one Pod
+./run.sh check                 # models, Analyser Pod, shared inboxes
+./run.sh watch                 # what systemd runs
+./run.sh run-once              # one look at every shared inbox
+./run.sh run-once WEBID        # one look at one Pod's inbox
 ./run.sh analyse PHOTO...      # the faces in local photos, no Pod involved
 ./run.sh test                  # the offline test suite
 ```
+
+A look that found photos logs one line per Pod, for example
+`solid.dev.empwr.au-alice: 3 analysed, 0 failed, 0 pending`.
+
+## Models and licence
+
+`./run.sh fetch-models` (run by `setup.sh`) downloads InsightFace's
+`buffalo_l.zip` once (275 MB), checks its SHA-256, and keeps the two models
+used, each checked again, in `var/models`:
+
+- `det_10g.onnx`: **SCRFD-10GF**, which finds each face and five landmarks
+  (eyes, nose tip, corners of the mouth);
+- `w600k_r50.onnx`: **ArcFace ResNet-50** trained on WebFace600K, which
+  describes each face, aligned by those landmarks to 112 x 112, as 512
+  numbers.
+
+They are run directly with ONNX Runtime, following InsightFace's own code,
+rather than through the `insightface` package, which needs a C compiler to
+install.
+
+On PhotoPod's sample photos it finds every portrait (YuNet, used before,
+missed one) and nothing in the landscapes. The same person scores 0.64 to
+0.84 and strangers at most 0.07; PhotoPod files faces together at 0.40
+(`faceMatchThreshold` in `lib/models/face_book.dart`).
+
+**Licence.** InsightFace's code is MIT, but its pretrained models are released
+"for non-commercial research purposes only"
+(<https://github.com/deepinsight/insightface#license>). That suits research
+use; a commercial deployment needs a licence from InsightFace, or other
+models. Changing models means changing `MODEL_ID` in `face_analyser/__init__.py`
+and `faceModelId` in PhotoPod, and choosing a new threshold; PhotoPod then
+starts every faces file afresh.
 
 ## Privacy and security
 
 - **What is shared:** only the face inbox, and only once the user turns People
   on. The photos themselves, their small renditions (which carry the place
   they were taken), names, albums and everything else in PhotoPod stay as
-  private as they were. Turning People off revokes the share and empties the
-  inbox.
-- **How long:** a photo is in the inbox until it has been analysed (usually
-  seconds). The results stay in the Analyser Pod until the app has filed them
-  in the user's own Pod.
-- **Where:** the service reads from and writes to the Solid server it sits
-  beside. Photos are decrypted only in this process's memory, never written to
-  this host's disk, and never logged; the log records how many photos and
-  faces each run handled.
-- **Who can start a run:** only a user logged in to a trusted Solid server, and
-  only for their own Pod. No photo or result crosses the HTTP interface.
+  private as they were.
+- **How long:** a photo stays in the inbox until it has been analysed, usually
+  within seconds. The answer stays until PhotoPod has filed it.
+- **Where:** everything happens on the Solid server's host. Photos are
+  decrypted only in this process's memory, never written to disk and never
+  logged; the log records how many photos each look handled.
+- **No exposure:** the service listens on no port, so there is nothing to
+  reach it by but the Pods themselves.
 - **The Analyser's security key** unlocks every key shared with the Analyser
   Pod. Keep it in `/etc/photopod-face-analyser.env` (mode 600), not in
   `config.yaml`.
@@ -272,12 +271,12 @@ point PhotoPod elsewhere with
 ./run.sh test
 ```
 
-- `tests/test_pipeline.py`: a full run against an in-memory Pod (inbox in,
-  results published and opened as the user, inbox emptied, acknowledgement,
-  batching, the key handed over once, the sweep, the HTTP interface).
-- `tests/test_auth.py`: the Solid-OIDC and DPoP checks.
-- `tests/test_engine.py`: YuNet and SFace on PhotoPod's sample photos (needs
-  the models; skipped without them).
+- `tests/test_pipeline.py`: a full look against an in-memory Pod (photo in,
+  answer written into the user's inbox in solidpod's form and opened with the
+  user's folder key, photo removed, unreadable photos answered, batching, a
+  closed inbox passed over, the shared keys opened once).
+- `tests/test_engine.py`: SCRFD and ArcFace on PhotoPod's sample photos
+  (needs the models; skipped without them).
 - `tests/test_crypto.py`: solidpod compatibility vectors.
 
 When the models or the sample album change, regenerate PhotoPod's

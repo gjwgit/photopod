@@ -1,19 +1,19 @@
 # PhotoPod face analyser.
 #
-# opencv-python-headless - YuNet and SFace, without the GUI libraries a
-#                          server has no use for.
+# onnxruntime   - runs InsightFace's SCRFD and ArcFace models.
+# opencv-python-headless - decoding, alignment and resizing, without the GUI
+#                          libraries a server has no use for.
 # httpx         - HTTP client for the Solid server (DPoP-authenticated).
 # cryptography  - AES, RSA and HKDF, matching solidpod's on-Pod formats.
 # argon2-cffi   - Argon2id, the first half of solidpod's key derivation.
 # rdflib        - parsing the turtle documents a Pod is made of.
-# PyJWT         - checking the Solid login of the app that asks for a run.
 # PyYAML        - the configuration file.
 
+onnxruntime>=1.18
 opencv-python-headless>=4.10,<5
 numpy>=1.26
 httpx>=0.27
 cryptography>=42.0
 argon2-cffi>=23.1
 rdflib>=7.0
-PyJWT[crypto]>=2.9,<3
 PyYAML>=6.0

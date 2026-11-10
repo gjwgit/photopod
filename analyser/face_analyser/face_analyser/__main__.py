@@ -22,7 +22,7 @@ this program. If not, see https://opensource.org/license/gpl-3-0.
 Authors: Tony Chen
 """
 
-#   python -m face_analyser --config config.yaml serve
+#   python -m face_analyser --config config.yaml watch
 #   python -m face_analyser --config config.yaml check
 #   python -m face_analyser --config config.yaml run-once [WEBID...]
 #   python -m face_analyser --config config.yaml fetch-models
@@ -40,7 +40,6 @@ import sys
 from pathlib import Path
 
 from . import MODEL_ID, __version__
-from .auth import AuthError, IssuerKeys
 from .config import Config, ConfigError, load
 from .engine import FaceEngine, ImageError
 from .inbox import shared_inboxes
@@ -58,16 +57,16 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='face_analyser',
         description='Find the faces in the photos PhotoPod users share with '
-                    'the Analyser Pod, and share the results back.')
+                    'the Analyser Pod, and write them back into their Pods.')
     parser.add_argument('--config', type=Path, default=Path('config.yaml'))
     parser.add_argument('--verbose', '-v', action='store_true')
     parser.add_argument('--version', action='version', version=__version__)
     commands = parser.add_subparsers(dest='command', required=True)
-    commands.add_parser('serve', help='answer PhotoPod and sweep the inboxes')
-    commands.add_parser('check', help='verify the models, the Analyser Pod '
-                                      'and the trusted Solid servers')
-    once = commands.add_parser('run-once', help='one run for the Pods named, '
-                                                'or for every shared inbox')
+    commands.add_parser('watch', help='look at the shared inboxes every few '
+                                      'seconds, for ever (systemd\'s mode)')
+    commands.add_parser('check', help='verify the models and the Analyser Pod')
+    once = commands.add_parser('run-once', help='one look at the inboxes of '
+                                                'the Pods named, or at all')
     once.add_argument('web_ids', nargs='*')
     commands.add_parser('fetch-models', help='download the two models')
     analyse = commands.add_parser('analyse', help='the faces in local photos')
@@ -134,40 +133,29 @@ def main(argv: list[str] | None = None) -> int:
             return _check(config, service)
         if args.command == 'run-once':
             return _run_once(service, args.web_ids)
-        from .server import serve
-        serve(config, service)
+        try:
+            service.watch()
+        except KeyboardInterrupt:
+            pass
         return 0
     finally:
         client.close()
 
 
 def _check(config: Config, service: FaceService) -> int:
-    ok = True
     print(f'OK    models load ({MODEL_ID})')
     print(f'OK    logged in and unlocked {config.analyser.web_id}')
-
     try:
         inboxes = shared_inboxes(service.keys.shared_resources(), config)
-        print(f'OK    {len(inboxes)} Pod(s) share a face inbox')
     except SolidError as e:
-        ok = False
         print(f'FAIL  cannot read the shared keys: {e}')
-
-    if not config.auth.required:
-        print('WARN  auth.required is false: anyone who can reach the service '
-              'can start a run for any Pod')
-    keys = IssuerKeys()
-    for issuer in config.auth.issuers:
-        try:
-            print(f'OK    issuer {issuer} ({keys.count(issuer)} key(s))')
-        except AuthError as e:
-            ok = False
-            print(f'FAIL  issuer {issuer}: {e}')
-
-    public = config.service.public_url or '(from the request headers)'
-    print(f'INFO  listening on {config.service.host}:{config.service.port}, '
-          f'public URL {public}')
-    return 0 if ok else 1
+        return 1
+    print(f'OK    {len(inboxes)} Pod(s) share a face inbox')
+    for url in sorted(inboxes):
+        print(f'      {url}')
+    print(f'INFO  looking every {config.watch.poll_seconds:g} s, at most '
+          f'{config.inbox.max_per_run} photos per Pod per look')
+    return 0
 
 
 def _run_once(service: FaceService, web_ids: list[str]) -> int:

@@ -29,8 +29,8 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:photopod/models/face_book.dart';
-import 'package:photopod/services/face_engine.dart';
 import 'package:photopod/services/face_inbox.dart';
+import 'package:photopod/services/face_results.dart';
 
 void main() {
   group('faceKeyOf', () {
@@ -48,53 +48,41 @@ void main() {
     });
   });
 
-  group('FaceAnalyserResults', () {
+  group('FaceResult', () {
     // The faces of one sample photo, as the analyser finds them, in the
-    // results document it publishes (service.py).
+    // answer it writes beside the photo (service.py).
 
     final sample =
         (jsonDecode(File('assets/demo/faces.json').readAsStringSync())
                 as Map<String, dynamic>)['faces']['john_mather_2012.jpg']
             as List;
 
-    Map<String, dynamic> results({String model = faceModelId}) => {
-      'format': 'photopod-face-results',
+    String answer({String model = faceModelId, String? failed}) => jsonEncode({
+      'format': 'photopod-face-result',
       'version': 1,
       'model': model,
-      'generated': '2026-11-10T09:00:00.000+00:00',
-      'items': {
-        'a' * 32: {'width': 1054, 'height': 1280, 'faces': sample},
-        'b' * 32: {'width': 800, 'height': 600, 'faces': <dynamic>[]},
-      },
-      'failed': {'c' * 32: 'The upload is not a picture OpenCV can read.'},
-    };
-
-    test('reads the faces of each photo and the photos that failed', () {
-      final read = FaceAnalyserResults.fromJson(results());
-      expect(read.faces['a' * 32], hasLength(1));
-      expect(read.faces['a' * 32]!.single.embedding, hasLength(128));
-      expect(read.faces['b' * 32], isEmpty);
-      expect(read.failed.keys, ['c' * 32]);
-      expect(read.keys, {'a' * 32, 'b' * 32, 'c' * 32});
+      'analysed': '2026-11-10T09:00:00.000+00:00',
+      if (failed == null) ...{'width': 1054, 'height': 1280, 'faces': sample},
+      'failed': ?failed,
     });
 
-    test('ignores results made with other models', () {
-      expect(
-        FaceAnalyserResults.fromJson(results(model: 'other')).isEmpty,
-        isTrue,
-      );
+    test('reads the faces the Analyser found', () {
+      final read = FaceResult.parse(answer())!;
+      expect(read.failed, isNull);
+      expect(read.faces, hasLength(1));
+      expect(read.faces.single.embedding, hasLength(512));
     });
-  });
 
-  test('a run report is read as the analyser writes it', () {
-    final run = FaceAnalyserRun.fromJson({
-      'result_url': 'https://server/Analyser/photopod/data/faces/x.enc.ttl',
-      'analysed': 3,
-      'failed': 1,
-      'pending': 5,
-      'waiting': 4,
+    test('reads why a photo could not be looked at', () {
+      final read = FaceResult.parse(answer(failed: 'not a picture'))!;
+      expect(read.failed, 'not a picture');
+      expect(read.faces, isEmpty);
     });
-    expect(run.resultUrl, endsWith('x.enc.ttl'));
-    expect((run.analysed, run.failed, run.pending, run.waiting), (3, 1, 5, 4));
+
+    test('ignores answers made with other models, or not answers at all', () {
+      expect(FaceResult.parse(answer(model: 'other')), isNull);
+      expect(FaceResult.parse('{"format": "something else"}'), isNull);
+      expect(FaceResult.parse('not JSON'), isNull);
+    });
   });
 }

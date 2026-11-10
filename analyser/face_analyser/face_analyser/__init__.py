@@ -24,9 +24,10 @@ Authors: Tony Chen
 
 __version__ = '0.1.0'
 
-# Which models produce the embeddings. PhotoPod stores this beside every face
-# it keeps and starts its faces file afresh when it changes, since embeddings
-# from different models cannot be compared. It must match `faceModelId` in
+# Which models produce the embeddings: InsightFace's buffalo_l detector and
+# recogniser (see models.py). PhotoPod stores this beside every face it keeps
+# and starts its faces file afresh when it changes, since embeddings from
+# different models cannot be compared. It must match `faceModelId` in
 # PhotoPod's lib/models/face_book.dart.
 
-MODEL_ID = 'yunet-2023mar+sface-2021dec'
+MODEL_ID = 'buffalo_l:scrfd-10g+arcface-w600k-r50'
