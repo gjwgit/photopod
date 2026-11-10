@@ -1,0 +1,8 @@
+# Local configuration; never commit it.
+config.yaml
+
+# Generated at run time: the downloaded models.
+var/
+.venv/
+__pycache__/
+*.pyc

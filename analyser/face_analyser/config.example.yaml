@@ -1,0 +1,130 @@
+# Configuration for the PhotoPod face analyser.
+#
+# Copy this file to config.yaml and edit it (setup.sh does the copy):
+#
+#     cp config.example.yaml config.yaml
+#     chmod 600 config.yaml
+#
+# Every secret can be supplied through the environment instead, which is what
+# the systemd unit does:
+#
+#     PHOTOPOD_FACE_ANALYSER_SECURITY_KEY
+#     PHOTOPOD_FACE_ANALYSER_CLIENT_ID
+#     PHOTOPOD_FACE_ANALYSER_CLIENT_SECRET
+
+# ---------------------------------------------------------------------------
+# The Analyser Pod: who the analyser is, and how it logs in. The same Pod
+# HealthPod's analyser uses; it needs initialising for PhotoPod as well.
+# ---------------------------------------------------------------------------
+
+analyser:
+
+  web_id: https://solid.dev.empwr.au/Analyser/profile/card#me
+
+  # The Solid server. Derived from web_id when left blank. On the same host
+  # this can be the server's own address; everything stays on the machine.
+
+  server_url: https://solid.dev.empwr.au
+
+  # PhotoPod's application folder, in the Analyser Pod and in every user's.
+
+  app_dir_name: photopod
+
+  # The security key the Analyser Pod was initialised with in PhotoPod.
+  # Prefer the environment variable in production and leave this blank.
+
+  security_key: ''
+
+  # Client credentials issued by the server for the Analyser account. See
+  # README.md, section "Preparing the Analyser Pod".
+
+  credentials:
+    client_id: ''
+    client_secret: ''
+
+  request_timeout: 30.0
+
+# ---------------------------------------------------------------------------
+# The face inbox in each user's Pod.
+# ---------------------------------------------------------------------------
+
+inbox:
+
+  # The folder in PhotoPod's data folder that users share with the Analyser.
+  # Must match faceInboxFolderName in lib/services/face_inbox.dart.
+
+  folder: .faces-inbox
+
+  # The most photos analysed per Pod in one run; the rest wait for the next.
+
+  max_per_run: 40
+
+# ---------------------------------------------------------------------------
+# The results shared back.
+# ---------------------------------------------------------------------------
+
+sharing:
+
+  # The folder in the Analyser Pod's data folder holding one results file
+  # per Pod: <results_dir>/<pod-id>/faces-results.json.enc.ttl
+
+  results_dir: faces
+
+  # Off: PhotoPod finds the results by their address, and a permission log
+  # line would list the results file among the user's shared photos.
+
+  write_permission_log: false
+  encrypt_results: true
+
+# ---------------------------------------------------------------------------
+# The HTTP interface PhotoPod calls to ask for a run. It carries no photos.
+# ---------------------------------------------------------------------------
+
+service:
+
+  # Bind to the loopback address and reverse-proxy over HTTPS.
+
+  host: 127.0.0.1
+  port: 8765
+
+  # The address PhotoPod calls, as seen from outside, without /v1/analyse.
+  # Must equal FaceAnalyser.serviceUrl in lib/constants/face_analyser.dart.
+
+  public_url: https://solid.dev.empwr.au/photopod-faces
+
+  cors_origins:
+    - '*'
+
+  # How often every shared inbox is swept for photos left by an app that
+  # closed before asking. 0 turns the sweep off.
+
+  poll_seconds: 300
+
+# ---------------------------------------------------------------------------
+# Who may ask for a run: users logged in to these Solid servers, each only
+# for their own Pod.
+# ---------------------------------------------------------------------------
+
+auth:
+
+  required: true
+
+  issuers:
+    - https://solid.dev.empwr.au/
+
+  web_id_prefixes: []
+
+  clock_skew: 300
+
+# ---------------------------------------------------------------------------
+# The analysis. The defaults are those PhotoPod used on the device.
+# ---------------------------------------------------------------------------
+
+engine:
+
+  models_dir: var/models
+  min_score: 0.9
+  min_face_side: 32
+  max_side: 2048
+  face_image_side: 96
+  face_image_margin: 1.6
