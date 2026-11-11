@@ -48,4 +48,9 @@ class Analyser {
   /// Name shown in the interface, in place of the raw WebID.
 
   static const String displayName = 'PhotoPod Analyser';
+
+  /// Who the catalog says suggested the tags the Analyser found, shown as
+  /// [displayName].
+
+  static const String tagSource = 'photopod:analyser';
 }

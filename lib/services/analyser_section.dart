@@ -150,6 +150,12 @@ abstract class AnalyserSection extends ChangeNotifier {
   @protected
   bool fileAnswer(String path, String content, {String? url});
 
+  /// Whether the section holds something not yet saved, such as work a
+  /// file from an earlier version still needs, which a scan saves first.
+
+  @protected
+  bool get hasUnsaved => false;
+
   /// File what is known in advance for the sample photos in [todo].
 
   @protected
@@ -265,7 +271,8 @@ abstract class AnalyserSection extends ChangeNotifier {
         _pathOf[inboxKeyOf(item.path)] = item.path;
         _urlOf[item.path] = item.url;
       }
-      if (prune && retainOnly({for (final i in own) i.path})) {
+      if ((prune && retainOnly({for (final i in own) i.path})) ||
+          (hasUnsaved && !_demo)) {
         await save();
       }
 

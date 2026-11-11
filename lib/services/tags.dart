@@ -23,15 +23,20 @@
 
 library;
 
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import 'package:photopod/constants/analyser.dart';
+import 'package:photopod/models/catalog_entry.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/analyser_inbox.dart';
 import 'package:photopod/services/analyser_section.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/tag_results.dart';
 
 /// The tags file, encrypted on the Pod like the rest of PhotoPod's
@@ -39,10 +44,13 @@ import 'package:photopod/services/tag_results.dart';
 ///
 ///     {"version": 1, "model": "<tagModelId>",
 ///      "photos": {"<Pod-relative path>": [{"tag": "Beach",
-///                 "category": "Nature", "score": 0.98}]}}
+///                 "category": "Nature", "score": 0.98}]},
+///      "catalogued": ["<Pod-relative path>"]}
 ///
 /// A photo looked at that fits no tag is kept with an empty list, so that it
-/// is not looked at again.
+/// is not looked at again. `catalogued` lists the photos whose tags are in
+/// the catalog too, where Get Info shows them; a file from before it was
+/// kept has every photo's tags put there on the next scan.
 
 const _file = EncryptedJsonFile('tags.json');
 
@@ -51,6 +59,11 @@ const _file = EncryptedJsonFile('tags.json');
 /// with the app.
 
 const _demoTagsAsset = 'assets/demo/tags.json';
+
+/// The category Tags files the user's own tags under, those they add in Get
+/// Info.
+
+const String yourTagsCategory = 'Your tags';
 
 /// One tag as Tags lists it, with every photo that carries it, the surest
 /// first.
@@ -72,11 +85,25 @@ class TagEntry {
 /// Documents. The tags come from the Analyser through the tag inbox
 /// ([tagInbox]), turned on and off apart from People's; see
 /// [AnalyserSection] for how.
+///
+/// Every tag found is also put in the photo's catalog entry, as suggested by
+/// [Analyser.tagSource], so that Get Info shows it beside the user's own and
+/// the filter finds it. The catalog then has the last word: a tag the user
+/// takes off a photo there leaves it here too, and a tag they add there is
+/// listed here under [yourTagsCategory].
 
 class PhotoTags extends AnalyserSection {
-  PhotoTags() : super(tagInbox);
+  PhotoTags() : super(tagInbox) {
+    _catalogChanges = MediaCatalog.changes.listen((_) => notifyListeners());
+  }
 
   Map<String, List<FoundTag>> _photos = {};
+
+  // The photos whose tags are in the catalog as well.
+
+  Set<String> _catalogued = {};
+
+  late final StreamSubscription<void> _catalogChanges;
 
   @override
   String get lookingFor => 'tags';
@@ -84,24 +111,38 @@ class PhotoTags extends AnalyserSection {
   @override
   int get scannedCount => _photos.length;
 
-  /// The tags on the photo at [path], best first.
+  /// The tags the Analyser found on the photo at [path], best first.
 
   List<FoundTag> tagsOf(String path) => _photos[path] ?? const [];
 
   /// Every tag on the photos in [photos], those on the most photos first.
 
   List<TagEntry> tagsIn(List<MediaItem> photos) {
-    final byPath = {for (final item in photos) item.path: item};
     final found = <String, ({String category, List<(MediaItem, double)> on})>{};
+    void add(String tag, String category, MediaItem item, double score) => found
+        .putIfAbsent(tag, () => (category: category, on: []))
+        .on
+        .add((item, score));
 
-    for (final MapEntry(key: path, value: tags) in _photos.entries) {
-      final item = byPath[path];
-      if (item == null) continue;
-      for (final t in tags) {
-        found.putIfAbsent(t.tag, () => (category: t.category, on: [])).on.add((
-          item,
-          t.score,
-        ));
+    for (final item in photos) {
+      final entry = isDemo ? null : MediaCatalog.entryOf(item.path);
+
+      // Once the tags are in the catalog, those the user has taken off
+      // there are no longer shown.
+
+      final kept = _catalogued.contains(item.path) && entry != null
+          ? {for (final tag in entry.tags) tag.label.toLowerCase()}
+          : null;
+      final shown = <String>{};
+      for (final t in tagsOf(item.path)) {
+        if (kept != null && !kept.contains(t.tag.toLowerCase())) continue;
+        add(t.tag, t.category, item, t.score);
+        shown.add(t.tag.toLowerCase());
+      }
+      for (final tag in entry?.tags ?? const <PhotoTag>[]) {
+        if (tag.source != userSource) continue;
+        if (!shown.add(tag.label.toLowerCase())) continue;
+        add(tag.label, yourTagsCategory, item, 1);
       }
     }
 
@@ -140,7 +181,7 @@ class PhotoTags extends AnalyserSection {
   @override
   Future<void> readFile() async {
     final text = await _file.read();
-    _photos = {};
+    clear();
     if (text == null) return;
     final json = jsonDecode(text) as Map<String, dynamic>;
 
@@ -153,22 +194,58 @@ class PhotoTags extends AnalyserSection {
           in (json['photos'] as Map<String, dynamic>? ?? const {}).entries)
         path: parseFoundTags(tags as List),
     };
+    _catalogued = {
+      for (final path in json['catalogued'] as List? ?? const [])
+        if (path is String && _photos.containsKey(path)) path,
+    };
   }
 
   @override
-  Future<void> writeFile() => _file.write(
-    jsonEncode({
-      'version': 1,
-      'model': tagModelId,
-      'photos': {
-        for (final MapEntry(key: path, value: tags) in _photos.entries)
-          path: foundTagsToJson(tags),
-      },
-    }),
-  );
+  Future<void> writeFile() async {
+    await _catalogue();
+    await _file.write(
+      jsonEncode({
+        'version': 1,
+        'model': tagModelId,
+        'photos': {
+          for (final MapEntry(key: path, value: tags) in _photos.entries)
+            path: foundTagsToJson(tags),
+        },
+        'catalogued': _catalogued.toList()..sort(),
+      }),
+    );
+  }
+
+  // Put the tags of every photo not yet catalogued in the catalog, in one
+  // write. A failure, as without the security key, leaves them to the next
+  // save: the tags file is still worth writing.
+
+  Future<void> _catalogue() async {
+    final pending = {
+      for (final MapEntry(key: path, value: tags) in _photos.entries)
+        if (!_catalogued.contains(path))
+          path: [
+            for (final t in tags)
+              PhotoTag(t.tag, source: Analyser.tagSource, confidence: t.score),
+          ],
+    };
+    if (pending.isEmpty) return;
+    try {
+      await MediaCatalog.suggestTags(pending, Analyser.tagSource);
+      _catalogued.addAll(pending.keys);
+    } on Object catch (e) {
+      debugPrint('PhotoPod: tags not put in the catalog yet: $e');
+    }
+  }
 
   @override
-  void clear() => _photos = {};
+  bool get hasUnsaved => _photos.keys.any((p) => !_catalogued.contains(p));
+
+  @override
+  void clear() {
+    _photos = {};
+    _catalogued = {};
+  }
 
   @override
   bool hasLookedAt(String path) => _photos.containsKey(path);
@@ -180,17 +257,25 @@ class PhotoTags extends AnalyserSection {
   bool retainOnly(Set<String> paths) {
     final before = _photos.length;
     _photos.removeWhere((path, _) => !paths.contains(path));
+    _catalogued.retainAll(_photos.keys);
     return _photos.length != before;
   }
 
   @override
-  void removePhoto(String path) => _photos.remove(path);
+  void removePhoto(String path) {
+    _photos.remove(path);
+    _catalogued.remove(path);
+  }
 
   @override
   bool fileAnswer(String path, String content, {String? url}) {
     final answer = TagResult.parse(content);
     if (answer == null) return false;
     _photos[path] = answer.tags;
+
+    // New tags replace in the catalog what the Analyser suggested before.
+
+    _catalogued.remove(path);
     return answer.failed != null;
   }
 
@@ -206,5 +291,11 @@ class PhotoTags extends AnalyserSection {
     for (final item in todo) {
       _photos[item.path] = tags[item.path] ?? const [];
     }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_catalogChanges.cancel());
+    super.dispose();
   }
 }

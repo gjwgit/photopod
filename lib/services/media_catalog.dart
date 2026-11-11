@@ -130,6 +130,14 @@ class MediaCatalog {
 
   static Future<void> _writes = Future<void>.value();
 
+  static final StreamController<void> _changes =
+      StreamController<void>.broadcast();
+
+  /// Fires after each change the catalog saves, such as a tag the user takes
+  /// off in Get Info, so that what shows it can catch up.
+
+  static Stream<void> get changes => _changes.stream;
+
   /// The entry for the item at Pod-relative [path], if there is one.
 
   static CatalogEntry? entryOf(String path) {
@@ -322,6 +330,23 @@ class MediaCatalog {
     if (entry != null) entries[catalogKeyOf(path)] = entry.copyWith(tags: tags);
   });
 
+  /// Give each photo in [tags], keyed by path, the tags [source] suggests,
+  /// merged as [PhotoTag.merge] says, and store the catalog once for them
+  /// all.
+
+  static Future<void> suggestTags(
+    Map<String, List<PhotoTag>> tags,
+    String source,
+  ) => _change((entries) {
+    for (final suggested in tags.entries) {
+      final entry = _forUpdate(entries, suggested.key);
+      if (entry == null) continue;
+      entries[catalogKeyOf(suggested.key)] = entry.copyWith(
+        tags: PhotoTag.merge(entry.tags, suggested.value, source),
+      );
+    }
+  });
+
   /// Replace the faces in the photo at [path] with [faces].
 
   static Future<void> setFaces(String path, List<PhotoFace> faces) =>
@@ -396,6 +421,7 @@ class MediaCatalog {
       _entries
         ..clear()
         ..addAll(updated);
+      _changes.add(null);
     });
 
     // The chain itself never carries a failure forward, or one refused write

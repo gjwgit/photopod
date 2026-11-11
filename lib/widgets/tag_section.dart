@@ -43,6 +43,7 @@ IconData categoryIcon(String category) => switch (category) {
   'Things' => Icons.category_outlined,
   'Occasions' => Icons.celebration_outlined,
   'Documents' => Icons.description_outlined,
+  yourTagsCategory => Icons.person_outline,
   _ => Icons.sell_outlined,
 };
 

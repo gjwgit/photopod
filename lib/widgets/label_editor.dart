@@ -27,6 +27,7 @@ import 'package:flutter/material.dart';
 
 import 'package:gap/gap.dart';
 
+import 'package:photopod/constants/analyser.dart';
 import 'package:photopod/models/catalog_entry.dart' show userSource;
 
 /// One label: its text, who put it there — [userSource], or the service
@@ -128,7 +129,7 @@ class _LabelEditorState extends State<LabelEditor> {
                 Tooltip(
                   message: label.source == userSource
                       ? 'Added by you'
-                      : 'Suggested by ${label.source}'
+                      : 'Suggested by ${label.source == Analyser.tagSource ? Analyser.displayName : label.source}'
                             '${label.confidence == null ? '' : ' (${(label.confidence! * 100).round()}% sure)'}'
                             '. Take it off if it is wrong.',
                   child: InputChip(

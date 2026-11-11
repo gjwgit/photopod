@@ -30,6 +30,7 @@ import 'package:flutter/services.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:photopod/models/catalog_entry.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/tag_results.dart';
 import 'package:photopod/services/tags.dart';
@@ -85,6 +86,45 @@ void main() {
   test('a tag keeps its shape through the tags file', () {
     final tags = parseFoundTags(samples['moraine_lake.jpg'] as List);
     expect(parseFoundTags(foundTagsToJson(tags)), tags);
+  });
+
+  group('PhotoTag.merge', () {
+    const analyser = 'photopod:analyser';
+
+    test('adds what the Analyser found beside the user\'s own tags', () {
+      final merged = PhotoTag.merge(
+        const [PhotoTag('Holiday')],
+        const [PhotoTag('Beach', source: analyser, confidence: 0.9)],
+        analyser,
+      );
+      expect(merged.map((t) => t.label), ['Holiday', 'Beach']);
+      expect(merged.last.source, analyser);
+      expect(merged.last.confidence, 0.9);
+    });
+
+    test('replaces what the Analyser suggested before', () {
+      final merged = PhotoTag.merge(
+        const [PhotoTag('Lake', source: analyser), PhotoTag('Holiday')],
+        const [PhotoTag('Mountains', source: analyser)],
+        analyser,
+      );
+      expect(merged.map((t) => t.label), ['Holiday', 'Mountains']);
+    });
+
+    test('never doubles a tag the photo already has, whatever its case', () {
+      final merged = PhotoTag.merge(
+        const [PhotoTag('beach'), PhotoTag('Sunset', source: 'teepod:x')],
+        const [
+          PhotoTag('Beach', source: analyser),
+          PhotoTag('sunset', source: analyser),
+        ],
+        analyser,
+      );
+      expect(merged.map((t) => (t.label, t.source)), [
+        ('beach', userSource),
+        ('Sunset', 'teepod:x'),
+      ]);
+    });
   });
 
   test('Tags lists the samples by tag, the commonest first', () async {
