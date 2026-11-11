@@ -27,11 +27,13 @@ Authors: Tony Chen
 #
 #     <pod>/photopod/data/.faces-inbox/<key>.enc.ttl         the photo
 #     <pod>/photopod/data/.faces-inbox/<key>.faces.enc.ttl   the faces in it
+#     <pod>/photopod/data/.faces-inbox/done                  all answered
 #
 # where <key> is the random part of the photo's stored name, so the name says
 # nothing about the photo. Every file in the folder is encrypted with the
 # folder's own key (solidpod's `inheritKeyFrom`), and the folder is shared with
-# the Analyser once, for reading and writing: the share puts the folder key in
+# the Analyser, for reading and writing, once the photos are in it, and for no
+# longer than it takes to answer them. The share puts the folder key in
 # the Analyser's shared-keys.ttl, which is how this service can read every
 # photo left there, and writing is what lets it remove each one once it has
 # been analysed and to write its answer. Inside the photo's encryption is
@@ -54,6 +56,12 @@ from .keys import SharedResource
 
 REQUEST_FORMAT = 'photopod-face-request'
 RESULT_SUFFIX = '.faces.enc.ttl'
+
+# Written in the inbox once every photo in it has been answered, so that
+# PhotoPod knows it can file the answers and end the share. Must match
+# `_doneName` in PhotoPod's lib/services/face_inbox.dart.
+
+DONE_NAME = 'done'
 _SUFFIX = '.enc.ttl'
 
 

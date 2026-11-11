@@ -53,6 +53,7 @@ extension MediaBrowserActions on MediaBrowserState {
     onPreview: () => _previewFirst(context),
     onGetInfo: () => _getInfo(context),
     onDownload: () => downloadMedia(context, _selectedFiles),
+    onIdentifyPeople: () => _identifyPeople(context),
     onToggleFavourite: () => _toggleFavourite(context, _selectedFiles),
     onAddToAlbum: (album) => _addToAlbum(context, album, _selectedFiles),
     onCreateAlbum: () => _createAlbum(context, _selectedFiles),
@@ -436,7 +437,6 @@ extension MediaBrowserActions on MediaBrowserState {
       final photo = renditions.photo;
       final frame = renditions.frame;
       if (photo != null) await MediaRenditions.savePhoto(path, photo);
-      if (photo != null) FaceInbox.photoAdded(path, photo.large ?? photo.small);
       if (frame != null) await MediaRenditions.saveVideo(path, frame);
     } on Object catch (e) {
       debugPrint('PhotoPod: could not store renditions of $name: $e');
@@ -582,6 +582,38 @@ extension MediaBrowserActions on MediaBrowserState {
       }
     }
     return failed;
+  }
+
+  /// Have the PhotoPod Analyser find the people in the selected photos, and
+  /// only those. The faces come back in the background, and show in People
+  /// and in Get Info as they do.
+
+  Future<void> _identifyPeople(BuildContext context) async {
+    final photos = [
+      for (final item in _selectedFiles)
+        if (item.isPhoto && !item.isShared) item,
+    ];
+    if (photos.isEmpty) {
+      await showErrorDialog(
+        context,
+        'No photos selected',
+        'People are found in your own photos. Select one or more of them.',
+      );
+      return;
+    }
+    if (!_demo && !await _ensureSecurityKey(context)) return;
+    if (!context.mounted) return;
+
+    unawaited(context.read<People>().analyse(photos));
+    final count = photos.length == 1 ? 'one photo' : '${photos.length} photos';
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Identifying the people in $count. They show in People, and in '
+          'Get Info, as they are found.',
+        ),
+      ),
+    );
   }
 
   /// Make sure the security key is available before reading or writing

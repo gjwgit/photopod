@@ -55,21 +55,17 @@ inbox:
 
   folder: .faces-inbox
 
-  # The most photos analysed per Pod in one look; the rest wait for the next.
-
-  max_per_run: 40
-
 # ---------------------------------------------------------------------------
-# How often the shared inboxes are looked at.
+# Listening for requests. The service never looks at a user's Pod on a timer:
+# the Solid server tells it when a user shares an inbox with the Analyser.
 # ---------------------------------------------------------------------------
 
 watch:
 
-  # Seconds between looks. A photo is usually analysed within this long of
-  # being added. Everything stays on this server, so a short interval is
-  # cheap.
+  # Seconds to wait before listening again when the server closes the
+  # notification channel or cannot be reached.
 
-  poll_seconds: 10
+  reconnect_seconds: 30
 
 # ---------------------------------------------------------------------------
 # The analysis: InsightFace's buffalo_l models (SCRFD-10GF + ArcFace R50).

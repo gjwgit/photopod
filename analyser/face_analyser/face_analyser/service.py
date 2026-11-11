@@ -1,4 +1,4 @@
-"""Watching the shared face inboxes, and answering into them.
+"""Answering the requests users make by sharing their face inboxes.
 
 Copyright (C) 2026, Software Innovation Institute, ANU.
 
@@ -23,12 +23,15 @@ Authors: Tony Chen
 """
 
 # The service has no interface of its own: no port, nothing an app calls. It
-# talks only to the Solid server it sits beside, as the Analyser, and finds its
-# work by looking.
+# talks only to the Solid server it sits beside, as the Analyser, and acts only
+# when asked.
 #
-# Every few seconds it reads the Analyser's shared-keys file, which lists the
-# face inboxes users have shared with it, and lists each inbox. For every photo
-# waiting there (`<key>.enc.ttl`) it
+# A user asks by choosing photos in PhotoPod and tapping Identify People:
+# PhotoPod leaves those photos in the user's face inbox and then shares the
+# inbox with the Analyser. Sharing writes into the Analyser's own shared-keys
+# file, and the server tells the service so at once (notify.py). The service
+# then reads that file, and for each inbox newly shared with it, and only
+# those, takes every photo waiting there (`<key>.enc.ttl`) and
 #
 #   1. reads and decrypts it with the inbox's folder key, in memory;
 #   2. finds the faces in it;
@@ -37,8 +40,9 @@ Authors: Tony Chen
 #      own Pod and only the user (and the Analyser) can read it;
 #   4. only then removes the photo.
 #
-# PhotoPod files each answer in the user's faces file and deletes it. Nothing
-# about any user is kept by the Analyser, in its Pod or on this host.
+# Once every photo is answered it writes `done` in the inbox. PhotoPod files
+# the answers, ends the share and removes the inbox. Nothing about any user is
+# kept by the Analyser, in its Pod or on this host.
 
 from __future__ import annotations
 
@@ -46,11 +50,12 @@ import base64
 import json
 import logging
 import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from . import MODEL_ID, crypto, inbox, pod_paths as paths, turtle
+from . import MODEL_ID, crypto, inbox, notify, pod_paths as paths, turtle
 from .config import Config
 from .engine import FaceEngine, ImageError
 from .keys import PodKeys, SharedResource
@@ -67,18 +72,16 @@ class NotShared(Exception):
 
 @dataclass
 class InboxReport:
-    """What one look at one inbox did."""
+    """What answering one request did."""
 
     web_id: str
     analysed: int = 0
     failed: int = 0
-    pending: int = 0
     errors: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         return {'web_id': self.web_id, 'analysed': self.analysed,
-                'failed': self.failed, 'pending': self.pending,
-                'errors': self.errors}
+                'failed': self.failed, 'errors': self.errors}
 
 
 def _now() -> str:
@@ -86,7 +89,7 @@ def _now() -> str:
 
 
 class FaceService:
-    """Looks at the shared face inboxes and answers into them."""
+    """Answers each face inbox shared with the Analyser, once per share."""
 
     def __init__(self, config: Config, client: SolidClient, keys: PodKeys,
                  engine: FaceEngine):
@@ -95,30 +98,41 @@ class FaceService:
         self.keys = keys
         self.engine = engine
 
-    # -- Looking -----------------------------------------------------------
+        # The shares already answered, each by its sealed key. Each sharing
+        # seals the key afresh, so a user asking again is a new share even
+        # when the same inbox is shared, and a share that has gone is
+        # forgotten, keeping this no larger than the shared-keys file.
 
-    def sweep(self) -> list[InboxReport]:
-        """One look at every shared inbox, reporting those that held photos."""
+        self._answered: set[str] = set()
 
-        shared = self.keys.shared_resources()
+    # -- Requests ------------------------------------------------------------
+
+    def respond(self) -> list[InboxReport]:
+        """Answer every inbox shared with the Analyser since the last time."""
+
+        shared = inbox.shared_inboxes(self.keys.shared_resources(), self.config)
         reports = []
-        for url, share in sorted(inbox.shared_inboxes(shared, self.config).items()):
+        for url, share in sorted(shared.items()):
+            if share.sealed_key in self._answered:
+                continue
             try:
                 report = self._look(url, share)
             except (ForbiddenError, NotFoundError) as e:
-                # Shared once, since unshared or removed: the entry stays in
-                # the shared-keys file, but there is nothing to do.
+                # Shared once and since removed, but left in the shared-keys
+                # file: there is nothing to answer.
                 log.debug('%s: %s', url, e)
-                continue
             except SolidError as e:
+                # Tried again on the next change, or the next start.
                 log.warning('%s: %s', url, e)
                 continue
-            if report.analysed or report.failed or report.errors:
+            else:
                 reports.append(report)
+            self._answered.add(share.sealed_key)
+        self._answered &= {share.sealed_key for share in shared.values()}
         return reports
 
     def run(self, web_id: str) -> InboxReport:
-        """One look at the inbox of [web_id]'s Pod."""
+        """Answer the inbox of [web_id]'s Pod now, asked for or not."""
 
         url = inbox.inbox_url(web_id, self.config)
         share = inbox.shared_inboxes(
@@ -127,73 +141,48 @@ class FaceService:
             raise NotShared(f'{url} has not been shared with the Analyser')
         return self._look(url, share)
 
-    def forget_old_results(self) -> int:
-        """Delete what an earlier version of this service published in the
-        Analyser Pod, returning how many files went.
+    def watch(self, listen: Callable[[str], Iterable[str]] = notify.messages
+              ) -> None:
+        """Answer each request as it is made, until stopped.
 
-        That version kept each Pod's faces in
-        `<analyser>/photopod/data/faces/<pod-id>/faces-results.json.enc.ttl`
-        and shared them back. This one writes answers into the user's own
-        inbox, so nothing about any user belongs in the Analyser Pod.
+        The server is asked to say whenever the shared-keys file changes,
+        which is what a user's request does to it. Requests made while the
+        service was not listening are answered as soon as it is.
         """
 
-        root = paths.data_url(self.config.analyser.web_id,
-                              self.config.analyser.app_dir_name, 'faces') + '/'
-        try:
-            folders = self.client.list_container(root)
-        except NotFoundError:
-            return 0
-        removed = 0
-        for folder in folders:
-            files = self.client.list_container(folder) if folder.endswith('/') else [folder]
-            for url in files:
-                self.client.delete(f'{url}.acl')
-                removed += self.client.delete(url)
-            if folder.endswith('/'):
-                self.client.delete(folder)
-        self.client.delete(root)
-        log.info('Deleted %d result file(s) left in the Analyser Pod by an '
-                 'earlier version', removed)
-        return removed
-
-    def watch(self) -> None:
-        """Look at every shared inbox, again and again, until stopped."""
-
-        try:
-            self.forget_old_results()
-        except SolidError as e:
-            log.warning('Could not delete the results an earlier version '
-                        'left in the Analyser Pod: %s', e)
-
-        interval = max(1.0, self.config.watch.poll_seconds)
-        log.info('Watching the face inboxes shared with %s every %.0f s',
-                 self.config.analyser.web_id, interval)
+        topic = paths.shared_key_url(self.config.analyser.web_id,
+                                     self.config.analyser.app_dir_name)
+        pause = max(1.0, self.config.watch.reconnect_seconds)
         while True:
-            started = time.monotonic()
             try:
-                self.sweep()
-            except Exception:  # noqa: BLE001 - the next look tries again
-                log.exception('Looking at the face inboxes failed')
-            time.sleep(max(0.0, interval - (time.monotonic() - started)))
+                receive_from = notify.subscribe(
+                    self.client, self.config.analyser.pod_root, topic)
+                log.info('Listening for requests to %s',
+                         self.config.analyser.web_id)
+                self.respond()
+                for _ in listen(receive_from):
+                    self.respond()
+                log.info('The server closed the notification channel')
+            except Exception:  # noqa: BLE001 - listen again shortly
+                log.exception('Listening for requests failed')
+            time.sleep(pause)
 
-    # -- One inbox -----------------------------------------------------------
+    # -- One request ---------------------------------------------------------
 
     def _look(self, url: str, share: SharedResource) -> InboxReport:
         owner = paths.web_id_of(
             paths.owner_pod_root(url, self.config.analyser.app_dir_name))
         report = InboxReport(web_id=owner)
-
-        requests = inbox.items_in(self.client.list_container(url))
-        batch = requests[: max(1, self.config.inbox.max_per_run)]
-        report.pending = len(requests) - len(batch)
         keys = {url: share.key}
 
-        for item in batch:
+        for item in inbox.items_in(self.client.list_container(url)):
             try:
                 answer = self._analyse(item, keys)
             except NotFoundError:
                 continue
-            except SolidError as e:
+            except (SolidError, crypto.DecryptionError) as e:
+                # A photo that cannot be opened with the key shared is left
+                # where it is, unanswered: the key, not the photo, is wrong.
                 report.errors.append(f'{item.key}: {e}')
                 log.warning('cannot read %s: %s', item.url, e)
                 continue
@@ -210,11 +199,11 @@ class FaceService:
             else:
                 report.analysed += 1
 
-        if report.analysed or report.failed or report.errors:
-            log.info('%s: %d analysed, %d failed, %d pending%s',
-                     paths.pod_slug(owner), report.analysed, report.failed,
-                     report.pending,
-                     f', {len(report.errors)} error(s)' if report.errors else '')
+        self.client.put_text(f'{url}{inbox.DONE_NAME}', 'done\n',
+                             content_type='text/plain')
+        log.info('%s: %d analysed, %d failed%s',
+                 paths.pod_slug(owner), report.analysed, report.failed,
+                 f', {len(report.errors)} error(s)' if report.errors else '')
         return report
 
     def _analyse(self, item: inbox.InboxItem,
@@ -231,8 +220,9 @@ class FaceService:
                 inbox.decrypt_document(text, item.url, keys, self.config))
             found = self.engine.analyse(image)
             del image
-        except (inbox.RequestError, crypto.DecryptionError, ImageError,
-                ValueError) as e:
+        except crypto.DecryptionError:
+            raise
+        except (inbox.RequestError, ImageError, ValueError) as e:
             log.info('%s: %s', item.url, e)
             answer['failed'] = str(e)
             return answer

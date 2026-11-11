@@ -22,10 +22,10 @@ this program. If not, see https://opensource.org/license/gpl-3-0.
 Authors: Tony Chen
 """
 
-# The fake server holds what a Community Solid Server would after Alice turned
-# on People in PhotoPod: her face inbox, encrypted with its folder key and
-# shared with the Analyser, holding a few photos. Bob has a Pod but has shared
-# nothing. The face engine is a stand-in, so the suite runs without the models;
+# The fake server holds what a Community Solid Server would after Alice asked
+# PhotoPod to identify the people in some photos: her face inbox, encrypted
+# with its folder key and shared with the Analyser, holding those photos. Bob
+# has a Pod but has asked for nothing. The face engine is a stand-in, so the suite runs without the models;
 # test_engine.py covers the real one.
 
 from __future__ import annotations
@@ -35,7 +35,7 @@ import json
 import unittest
 from pathlib import Path
 
-from face_analyser import MODEL_ID, crypto, pod_paths as paths, turtle
+from face_analyser import MODEL_ID, crypto, notify, pod_paths as paths, turtle
 from face_analyser.config import (
     AnalyserConfig,
     Config,
@@ -123,14 +123,21 @@ class PipelineTest(unittest.TestCase):
 
         shared_url = paths.shared_key_url(ANALYSER_WEB_ID, APP)
         public = self.analyser.public_key
+        unique_id = crypto.unique_resource_id(resource_url, ANALYSER_WEB_ID)
         entry = turtle.shared_keys_document(
             shared_url,
-            crypto.unique_resource_id(resource_url, ANALYSER_WEB_ID),
+            unique_id,
             crypto.rsa_encrypt(public, resource_url),
             crypto.rsa_encrypt(public, 'read,write'),
             crypto.rsa_encrypt(public, base64.b64encode(key).decode()),
         )
         graph = turtle.parse(self.client.resources[shared_url])
+
+        # Sharing again replaces the entry, as revoking and granting does.
+
+        for subject in set(graph.subjects()):
+            if str(subject).endswith(unique_id):
+                graph.remove((subject, None, None))
         graph.parse(data=entry, format='turtle')
         self.client.resources[shared_url] = graph.serialize(format='turtle')
 
@@ -169,10 +176,10 @@ class PipelineTest(unittest.TestCase):
         a = self.leave('a' * 32, b'photo a')
         b = self.leave('b' * 32, b'photo b')
 
-        reports = self.service.sweep()
+        reports = self.service.respond()
 
-        self.assertEqual([(r.web_id, r.analysed, r.failed, r.pending)
-                          for r in reports], [(ALICE, 2, 0, 0)])
+        self.assertEqual([(r.web_id, r.analysed, r.failed)
+                          for r in reports], [(ALICE, 2, 0)])
         answer = self.answer('a' * 32)
         self.assertEqual(answer['format'], RESULT_FORMAT)
         self.assertEqual(answer['model'], MODEL_ID)
@@ -191,11 +198,66 @@ class PipelineTest(unittest.TestCase):
                     and 'faces' in u]
         self.assertEqual(written, [])
 
-    def test_an_answer_is_not_mistaken_for_a_photo(self):
+        # Once every photo is answered, PhotoPod is told so.
+        self.assertEqual(self.client.resources[f'{self.inbox}done'], 'done\n')
+
+    def test_a_request_is_answered_once(self):
         self.leave('a' * 32, b'photo a')
-        self.service.sweep()
-        self.assertEqual(self.service.sweep(), [])
+        self.service.respond()
+
+        # A photo left without asking again is not looked at: the inbox is
+        # not read again until it is shared again.
+        self.leave('b' * 32, b'photo b')
+        self.assertEqual(self.service.respond(), [])
         self.assertEqual(self.engine.seen, [b'photo a'])
+
+        self._share_with_analyser(self.inbox, self.folder_key)
+        self.assertEqual(len(self.service.respond()), 1)
+        self.assertEqual(self.engine.seen, [b'photo a', b'photo b'])
+
+    def test_a_pod_that_has_not_asked_is_not_read(self):
+        bob_inbox = paths.data_url(BOB, APP, '.faces-inbox') + '/'
+        self.client.resources[bob_inbox + 'x' * 32 + '.enc.ttl'] = 'unread'
+        self.client.private_urls.add(self.inbox)
+        self.service.respond()
+        self.assertEqual(self.engine.seen, [])
+
+    def test_a_photo_the_key_cannot_open_is_left_unanswered(self):
+        url = self.leave('a' * 32, b'photo a')
+        self.client.resources[url] = encrypted_resource(
+            url, {'format': REQUEST_FORMAT, 'version': 1, 'image': ''},
+            crypto.random_key(), inherit_from=INBOX_PATH)
+
+        report = self.service.run(ALICE)
+
+        self.assertEqual((report.analysed, report.failed), (0, 0))
+        self.assertEqual(len(report.errors), 1)
+        self.assertIn(url, self.client.resources)
+        self.assertNotIn(f'{self.inbox}{"a" * 32}{RESULT_SUFFIX}',
+                         self.client.resources)
+
+    def test_watching_answers_on_each_notification(self):
+        self.client.resources[f'{SERVER}/Analyser/.well-known/solid'] = (
+            f'@prefix notify: <{notify.NOTIFY}> .\n'
+            f'<{SERVER}/Analyser/> notify:subscription <{SERVER}/ws/> .\n'
+            f'<{SERVER}/ws/> notify:channelType notify:WebSocketChannel2023 .\n')
+        shared_keys = paths.shared_key_url(ANALYSER_WEB_ID, APP)
+
+        def listen(receive_from):
+            self.assertEqual(receive_from, 'wss://server/ws/1')
+            self.leave('b' * 32, b'photo b')
+            self._share_with_analyser(self.inbox, self.folder_key)
+            yield 'Update'
+            raise KeyboardInterrupt
+
+        self.leave('a' * 32, b'photo a')
+        with self.assertRaises(KeyboardInterrupt):
+            self.service.watch(listen)
+
+        self.assertEqual(self.client.subscriptions,
+                         [(f'{SERVER}/ws/', shared_keys)])
+        # The request made before listening, then the one notified.
+        self.assertEqual(self.engine.seen, [b'photo a', b'photo b'])
 
     def test_a_picture_that_cannot_be_read_is_answered_and_removed(self):
         bad = self.leave('c' * 32, b'not a picture')
@@ -211,26 +273,7 @@ class PipelineTest(unittest.TestCase):
     def test_an_inbox_closed_to_the_analyser_is_passed_over(self):
         self.leave('a' * 32, b'photo a')
         self.client.private_urls.add(self.inbox)
-        self.assertEqual(self.service.sweep(), [])
-
-    def test_a_large_inbox_is_worked_through_in_batches(self):
-        self.config.inbox.max_per_run = 2
-        for letter in 'abcde':
-            self.leave(letter * 32, f'photo {letter}'.encode())
-        self.assertEqual(self.service.run(ALICE).pending, 3)
-        self.assertEqual(self.service.run(ALICE).pending, 1)
-        self.assertEqual(self.service.run(ALICE).pending, 0)
-        self.assertEqual(len(self.engine.seen), 5)
-
-    def test_results_left_by_the_earlier_version_are_deleted(self):
-        old = paths.data_url(ANALYSER_WEB_ID, APP,
-                             'faces/server-alice/faces-results.json.enc.ttl')
-        self.client.resources[old] = 'encrypted faces'
-        self.client.resources[old + '.acl'] = 'acl'
-        self.assertEqual(self.service.forget_old_results(), 1)
-        self.assertNotIn(old, self.client.resources)
-        self.assertNotIn(old + '.acl', self.client.resources)
-        self.assertEqual(self.service.forget_old_results(), 0)
+        self.assertEqual(self.service.respond(), [])
 
     def test_the_shared_keys_are_opened_once_while_unchanged(self):
         from unittest import mock

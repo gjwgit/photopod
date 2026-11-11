@@ -91,11 +91,6 @@ class InboxConfig:
 
     folder: str = '.faces-inbox'
 
-    # The most photos analysed per Pod in one look, so that one large
-    # backlog cannot hold up everybody else. The rest wait for the next look.
-
-    max_per_run: int = 40
-
     @property
     def fragment(self) -> str:
         """What the URL of a shared inbox ends with."""
@@ -105,13 +100,13 @@ class InboxConfig:
 
 @dataclass
 class WatchConfig:
-    """How often the shared inboxes are looked at."""
+    """How the service listens for requests."""
 
-    # Seconds between looks. Each look reads the Analyser's shared-keys file
-    # and lists every shared inbox, so a short interval costs little and is
-    # what makes a new photo be analysed moments after it is added.
+    # Seconds to wait before subscribing again when the server closes the
+    # notification channel, or cannot be reached. Requests made meanwhile
+    # are answered as soon as the service is listening again.
 
-    poll_seconds: float = 10.0
+    reconnect_seconds: float = 30.0
 
 
 @dataclass

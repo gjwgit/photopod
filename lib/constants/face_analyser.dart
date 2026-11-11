@@ -25,12 +25,12 @@ library;
 
 /// The face Analyser, set up as HealthPod's blood pressure analyser is.
 ///
-/// The Analyser is a Pod, on the user's Solid server or any other. Turning
-/// People on shares the user's face inbox with its WebID; a service logged
-/// in as the Analyser (analyser/face_analyser in this repository) looks at
-/// every shared inbox and writes the faces it finds back into it. The app
-/// never talks to that service, so it needs no address of it: [webId] is all
-/// there is to know.
+/// The Analyser is a Pod, on the user's Solid server or any other. Identify
+/// People shares the user's face inbox, holding the photos chosen, with its
+/// WebID until they are answered; the Solid server tells a service logged in
+/// as the Analyser (analyser/face_analyser in this repository), which writes
+/// the faces it finds back into the inbox. The app never talks to that
+/// service, so it needs no address of it: [webId] is all there is to know.
 ///
 /// Another Analyser is chosen at build time with
 /// `--dart-define=FACE_ANALYSER_WEBID=https://.../profile/card#me`.

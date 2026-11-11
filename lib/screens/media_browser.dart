@@ -54,7 +54,6 @@ import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/demo_library.dart';
-import 'package:photopod/services/face_inbox.dart';
 import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/media_metadata_backfill.dart';

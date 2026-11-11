@@ -98,7 +98,7 @@ class PodKeys:
         self._public_keys: dict[str, RSAPublicKey] = {}
 
         # The shared-keys file as last read and what it opened to. The face
-        # analyser reads it every few seconds, and opening each entry takes
+        # analyser reads it on every notification, and opening each entry takes
         # three RSA decryptions, so an unchanged file is not opened again.
 
         self._shared_cache: tuple[str, list[SharedResource]] | None = None

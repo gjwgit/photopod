@@ -33,6 +33,7 @@ import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 import 'package:photopod/constants/face_analyser.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/dialogs/person_dialogs.dart';
+import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/people.dart';
@@ -40,17 +41,14 @@ import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/widgets/demo_banner.dart';
 import 'package:photopod/widgets/person_section.dart';
 
-/// The People section: everyone whose face turns up in the album, those in
-/// the most photos first, each above a row of the photos they are in.
+/// The People section: the user's photos arranged by who is in them. First
+/// everyone named, by the user or the Analyser, alphabetically, each above a
+/// row of the photos they are in; then the photos with a face no one has
+/// named, which are named in Get Info; then the photos the Analyser has not
+/// looked at.
 ///
-/// Opening the section is what starts the search for faces, as opening Maps
-/// starts the search for places. The faces already in the Pod are read
-/// first, and only the photos not looked at before are left in the face
-/// inbox for the Analyser. The scan carries on in the background if the
-/// user moves elsewhere.
-///
-/// Nothing is shared until the user turns People on here, which shares the
-/// face inbox, and only that, with the Analyser.
+/// Opening the section sends nothing anywhere. Photos are looked at only when
+/// the user asks, with Identify People, in the Library or here.
 
 class PeopleView extends StatefulWidget {
   const PeopleView({super.key});
@@ -65,17 +63,17 @@ class _PeopleViewState extends State<PeopleView> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
   }
 
-  Future<void> _scan({bool force = false}) async {
+  Future<void> _refresh({bool force = false}) async {
     final index = context.read<MediaIndex>();
     final people = context.read<People>();
 
     await index.refresh(force: force);
     if (!mounted) return;
 
-    // The faces file and the photos are both encrypted, so the security key
+    // The faces file and the catalog are both encrypted, so the security key
     // has to be in hand before either can be read. The samples shown before
     // login are neither.
 
@@ -84,7 +82,7 @@ class _PeopleViewState extends State<PeopleView> {
       if (!mounted) return;
     }
 
-    await people.scan(
+    await people.refresh(
       index.photos,
       prune: !index.isTruncated && index.error == null,
     );
@@ -98,8 +96,7 @@ class _PeopleViewState extends State<PeopleView> {
       await getKeyFromUserIfRequired(
         context,
         const Text(
-          'Please enter your security key to find the people in '
-          'your photos',
+          'Please enter your security key to see the people in your photos',
         ),
       );
       if (!await KeyManager.hasSecurityKey()) {
@@ -118,14 +115,14 @@ class _PeopleViewState extends State<PeopleView> {
   Widget build(BuildContext context) {
     final index = context.watch<MediaIndex>();
     final people = context.watch<People>();
-    final entries = people.peopleIn(index.photos);
+    final sections = people.sectionsOf(index.photos);
 
     return Column(
       children: [
         if (index.isDemo) const DemoBanner(),
-        _buildStatusBar(context, index, people, entries.length),
+        _buildStatusBar(context, index, people, sections),
         const Divider(height: 1),
-        Expanded(child: _buildBody(context, index, people, entries)),
+        Expanded(child: _buildBody(context, index, people, sections)),
       ],
     );
   }
@@ -134,9 +131,10 @@ class _PeopleViewState extends State<PeopleView> {
     BuildContext context,
     MediaIndex index,
     People people,
-    int count,
+    PeopleSections sections,
   ) {
     final busy = people.isScanning || index.isLoading;
+    final count = sections.named.length;
     final summary =
         people.status ??
         (busy
@@ -144,10 +142,9 @@ class _PeopleViewState extends State<PeopleView> {
                   ? 'Leaving photos for the ${FaceAnalyser.displayName}...  '
                         '${people.done} of ${people.toDo}'
                   : 'Looking for faces...'
-            : count == 0
-            ? 'No people found yet'
-            : '$count ${count == 1 ? 'person' : 'people'} in '
-                  '${people.scannedCount} photos looked at'
+            : '$count ${count == 1 ? 'person' : 'people'} named, '
+                  '${sections.unknown.length} with someone unknown, '
+                  '${sections.unprocessed.length} not yet looked at'
                   '${people.failed > 0 ? ' (${people.failed} unreadable)' : ''}');
 
     return Padding(
@@ -168,17 +165,9 @@ class _PeopleViewState extends State<PeopleView> {
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Look for new photos again',
-            onPressed: busy ? null : () => _scan(force: true),
+            tooltip: 'Read the album again',
+            onPressed: busy ? null : () => _refresh(force: true),
           ),
-          if (!index.isDemo && !people.needsConsent)
-            IconButton(
-              icon: const Icon(Icons.face_retouching_off),
-              tooltip:
-                  'Turn People off and stop sharing with the '
-                  '${FaceAnalyser.displayName}',
-              onPressed: busy ? null : () => _disable(context),
-            ),
         ],
       ),
     );
@@ -188,27 +177,23 @@ class _PeopleViewState extends State<PeopleView> {
     BuildContext context,
     MediaIndex index,
     People people,
-    List<PersonEntry> entries,
+    PeopleSections sections,
   ) {
-    if (people.needsConsent && !index.isDemo) {
-      return _consent(context);
-    }
-
     final error = _keyError ?? people.error ?? index.error;
-    if (error != null && entries.isEmpty) {
+    final empty =
+        sections.named.isEmpty &&
+        sections.unknown.isEmpty &&
+        sections.unprocessed.isEmpty;
+    if (error != null && empty) {
       return _message(context, Icons.cloud_off, 'Could not find people', error);
     }
-
-    if (entries.isEmpty) {
+    if (empty) {
       return _message(
         context,
         Icons.face_outlined,
-        people.isScanning ? 'Looking for faces' : 'No people yet',
-        people.isScanning
-            ? 'People appear here as their faces are found by the '
-                  '${FaceAnalyser.displayName}.'
-            : 'Someone is listed once they are in at least '
-                  '$minPhotosPerPerson of your photos.',
+        'No photos yet',
+        'Add photos in the Library, then select some and tap Identify '
+            'People to find who is in them.',
       );
     }
 
@@ -216,112 +201,68 @@ class _PeopleViewState extends State<PeopleView> {
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
       children: [
-        for (final entry in entries)
+        for (final entry in sections.named)
           PersonSection(
-            key: ValueKey(entry.id),
+            key: ValueKey('person:${entry.id}'),
+            title: entry.name ?? entry.id,
             person: entry,
+            items: entry.items,
             tileExtent: extent,
             onRename: () => _rename(context, entry),
-            onMerge: entries.length < 2
-                ? null
-                : () => _merge(context, entry, entries),
+            onPreviewClosed: _refresh,
+          ),
+        if (sections.unknown.isNotEmpty)
+          PersonSection(
+            key: const ValueKey('unknown'),
+            title: 'Unknown',
+            icon: Icons.help_outline,
+            items: sections.unknown,
+            tileExtent: extent,
+            onPreviewClosed: _refresh,
+          ),
+        if (sections.unprocessed.isNotEmpty)
+          PersonSection(
+            key: const ValueKey('unprocessed'),
+            title: 'Unprocessed',
+            icon: Icons.hourglass_empty,
+            items: sections.unprocessed,
+            tileExtent: extent,
+            onPreviewClosed: _refresh,
+            action: FilledButton.tonalIcon(
+              icon: const Icon(Icons.face_outlined),
+              label: const Text('Identify People'),
+              onPressed: people.isScanning
+                  ? null
+                  : () => _identify(context, sections.unprocessed),
+            ),
           ),
       ],
     );
   }
 
-  // What turning People on means, and the button that does it.
+  // Have every photo not yet looked at looked at, once the user agrees to
+  // how many that is.
 
-  Widget _consent(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.face_outlined,
-              size: 56,
-              color: Theme.of(context).colorScheme.outline,
-            ),
-            const Gap(16),
-            Text(
-              'Find the people in your photos',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const Gap(8),
-            const Text(
-              'Faces are found by the ${FaceAnalyser.displayName}. Only one '
-              'folder of your Pod is shared with it, and every photo in it '
-              'stays encrypted. The Analyser opens a photo only to find the '
-              'faces in it, keeps no copy, and returns what it found to your '
-              'Pod, encrypted. Nothing else in your Pod is shared, and you '
-              'can turn People off at any time, which ends the share.',
-              textAlign: TextAlign.center,
-            ),
-            const Gap(24),
-            FilledButton.icon(
-              icon: const Icon(Icons.face),
-              label: const Text('Turn on People'),
-              onPressed: () => _enable(context),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-
-  Future<void> _enable(BuildContext context) async {
-    try {
-      await context.read<People>().enable();
-    } on Object catch (e) {
-      if (context.mounted) {
-        await showErrorDialog(context, 'Could not turn People on', '$e');
-      }
-      return;
-    }
-    if (mounted) await _scan();
-  }
-
-  Future<void> _disable(BuildContext context) async {
-    final confirmed = await showConfirmDialog(
+  Future<void> _identify(BuildContext context, List<MediaItem> photos) async {
+    final count = photos.length == 1 ? 'one photo' : '${photos.length} photos';
+    final agreed = await showConfirmDialog(
       context,
-      title: 'Turn People off?',
+      title: 'Identify People',
       message:
-          'The face inbox will no longer be shared with the '
-          '${FaceAnalyser.displayName}, and any photos still waiting in it '
-          'are removed. The people already found stay.',
-      confirmLabel: 'Turn off',
+          'Have the ${FaceAnalyser.displayName} find the people in $count '
+          'not yet looked at? They are sent without where they were taken, '
+          'and the Analyser keeps no copy.',
+      confirmLabel: 'Identify People',
+      destructive: false,
     );
-    if (!confirmed || !context.mounted) return;
-    try {
-      await context.read<People>().disable();
-    } on Object catch (e) {
-      if (context.mounted) {
-        await showErrorDialog(context, 'Could not turn People off', '$e');
-      }
-    }
+    if (!agreed || !context.mounted) return;
+    await context.read<People>().analyse(photos);
   }
 
   Future<void> _rename(BuildContext context, PersonEntry entry) async {
     final name = await showPersonNameDialog(context, entry);
     if (name == null || !context.mounted) return;
-    await context.read<People>().rename(entry.id, name);
-  }
-
-  // Two groups that are really one person, as happens when someone's looks
-  // change over the years, are put together by hand.
-
-  Future<void> _merge(
-    BuildContext context,
-    PersonEntry entry,
-    List<PersonEntry> entries,
-  ) async {
-    final others = entries.where((other) => other.id != entry.id).toList();
-    final target = await showMergePersonDialog(context, entry, others);
-    if (target == null || !context.mounted) return;
-    await context.read<People>().merge(entry.id, target.id);
+    await context.read<People>().renamePerson(entry.name ?? entry.id, name);
   }
 
   Widget _message(

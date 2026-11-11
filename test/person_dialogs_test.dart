@@ -1,4 +1,4 @@
-/// Tests for the dialogues that name and merge people.
+/// Tests for the dialogue that names a person.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///

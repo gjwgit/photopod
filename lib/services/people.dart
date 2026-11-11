@@ -47,26 +47,24 @@ part 'people_analyser.dart';
 part 'people_catalog.dart';
 part 'people_demo.dart';
 
-/// The fewest photos someone must be in before People lists them. One
-/// sighting is as likely to be a passer-by as a friend; a named person is
-/// listed whatever their count.
-
-const int minPhotosPerPerson = 2;
-
 /// The faces file, encrypted on the Pod like the rest of PhotoPod's
 /// bookkeeping: an embedding is as personal as the face it came from.
 
 const _file = EncryptedJsonFile('faces.json');
 
-/// One person as People lists them.
+/// One person as People lists them: someone named in the photos, by the
+/// user or by the Analyser.
 
 class PersonEntry {
+  /// What People knows them by: their name, ignoring case.
+
   final String id;
   final String? name;
 
-  /// The face that pictures them best, and the photo it is in.
+  /// The face that pictures them best, when the Analyser has found one, and
+  /// the photo it is in.
 
-  final FaceRecord portrait;
+  final FaceRecord? portrait;
   final MediaItem portraitItem;
 
   /// Every photo they are in, newest first.
@@ -82,6 +80,16 @@ class PersonEntry {
   });
 }
 
+/// The user's photos as People shows them: those with someone named in
+/// them, by person, alphabetically; those with a face no one has named; and
+/// those the Analyser has not looked at.
+
+typedef PeopleSections = ({
+  List<PersonEntry> named,
+  List<MediaItem> unknown,
+  List<MediaItem> unprocessed,
+});
+
 /// Finds the faces in the user's own photos and groups them into people.
 ///
 /// The faces file in the Pod, `faces.json.enc.ttl`, is read first, as soon
@@ -91,33 +99,24 @@ class PersonEntry {
 /// picture of it and its embedding).
 ///
 /// The faces themselves are found by the Analyser, entirely between Pods on
-/// the Solid server: each photo not yet in the faces file is left in the
-/// face inbox ([FaceInbox]), a folder of the user's Pod shared only with the
-/// Analyser, and the Analyser writes what it found back into the same
-/// folder. Each answer is filed here and saved to the faces file before it
-/// is deleted. Photos added while People is on are left in the inbox as
-/// they are added, and their answers looked out for.
+/// the Solid server, and only in the photos the user chooses ([analyse]):
+/// those photos are left in the face inbox ([FaceInbox]), a folder of the
+/// user's Pod shared with the Analyser for just as long as it takes, and the
+/// Analyser writes what it found back into the same folder. Each answer is
+/// filed here and saved to the faces file before it is deleted.
 ///
 /// Deleting a photo deletes its faces from the file too ([forget]), and
 /// takes it out of the inbox if it is still waiting there.
 
 class People extends ChangeNotifier {
-  People() {
-    // An answer is filed under the photo its key stands for, so a photo
-    // left as it is added has to be known by its key, or its answer would
-    // wait for a scan of People.
-
-    _added = FaceInbox.added.listen((path) {
-      _pathOf[faceKeyOf(path)] = path;
-      _soon();
-    });
-  }
-
   FaceBook _book = FaceBook();
   bool _loaded = false;
   Future<void>? _loading;
-  late final StreamSubscription<String> _added;
-  Timer? _debounce;
+
+  // The photos chosen to be looked at and not yet left in the inbox. More
+  // can be chosen while a look is under way, and join it.
+
+  final List<MediaItem> _queue = [];
 
   // Whether the faces are those of the sample album shown before login,
   // which are kept in memory only.
@@ -137,22 +136,18 @@ class People extends ChangeNotifier {
   final Map<String, String> _pathOf = {};
   final Map<String, String> _urlOf = {};
 
-  // Whether [_pathOf] holds every photo in the album, as during a scan of a
-  // complete album index.
-
-  bool _knowsAll = false;
-
   int _done = 0;
   int _toDo = 0;
   int _failed = 0;
   int _waiting = 0;
   String? _status;
   String? _error;
-  bool _needsConsent = false;
+
+  /// Whether photos are being looked at, or the faces file read.
 
   bool get isScanning => _scanning;
 
-  /// How far the current scan has got leaving photos for the Analyser.
+  /// How far the current look has got leaving photos for the Analyser.
 
   int get done => _done;
   int get toDo => _toDo;
@@ -171,50 +166,91 @@ class People extends ChangeNotifier {
 
   String? get error => _error;
 
-  /// Whether People has to be turned on, sharing the face inbox with the
-  /// Analyser, before any photo can be looked at.
-
-  bool get needsConsent => _needsConsent;
-
   /// How many of the user's photos have been looked at.
 
   int get scannedCount => _book.scanned.length;
 
-  List<PersonEntry> peopleIn(List<MediaItem> photos) {
-    final byPath = {for (final item in photos) item.path: item};
-    final entries = <PersonEntry>[];
+  /// The user's own photos among [photos], arranged as People shows them.
+  ///
+  /// Who is in a photo is what the catalog says, whoever said it, so that a
+  /// name given in Get Info counts as much as one the Analyser suggested.
+  /// The faces file adds the names of the samples, which have no catalog,
+  /// and of anyone the catalog has yet to be told of.
 
-    for (final person in _book.people.values) {
-      final faces = _book.facesOf(person.id);
-      final paths = {for (final face in faces) face.path};
-      final items = [
-        for (final path in paths)
-          if (byPath[path] != null) byPath[path]!,
-      ];
-      if (items.isEmpty) continue;
-      if (person.name == null && items.length < minPhotosPerPerson) continue;
+  PeopleSections sectionsOf(List<MediaItem> photos) {
+    final own = [
+      for (final item in photos)
+        if (item.isPhoto && !item.isShared) item,
+    ];
+    final byPath = {for (final item in own) item.path: item};
 
-      final portrait = _book.portraitOf(person.id)!;
-      items.sort(
-        (a, b) => (b.date ?? DateTime(0)).compareTo(a.date ?? DateTime(0)),
-      );
-      entries.add(
-        PersonEntry(
-          id: person.id,
-          name: person.name,
-          portrait: portrait,
-          portraitItem: byPath[portrait.path] ?? items.first,
-          items: items,
-        ),
-      );
+    // Each person's photos, by their name ignoring case, as first spelt.
+
+    final spelt = <String, String>{};
+    final photosOf = <String, Map<String, MediaItem>>{};
+    void file(String name, MediaItem item) {
+      final id = name.toLowerCase();
+      spelt.putIfAbsent(id, () => name);
+      (photosOf[id] ??= {})[item.path] = item;
     }
 
-    entries.sort((a, b) {
-      final named = (a.name == null ? 1 : 0) - (b.name == null ? 1 : 0);
-      return named != 0 ? named : b.items.length - a.items.length;
-    });
-    return entries;
+    for (final item in own) {
+      for (final face in MediaCatalog.entryOf(item.path)?.faces ?? const []) {
+        file(face.name, item);
+      }
+    }
+    final unknown = <String, MediaItem>{};
+    for (final face in _book.faces.values) {
+      final item = byPath[face.path];
+      if (item == null) continue;
+      final name = _book.people[face.person]?.name;
+      if (name == null) {
+        unknown[item.path] = item;
+      } else {
+        file(name, item);
+      }
+    }
+
+    final named = [
+      for (final MapEntry(key: id, value: items) in photosOf.entries)
+        _entry(id, spelt[id]!, _newestFirst(items.values)),
+    ]..sort((a, b) => a.id.compareTo(b.id));
+
+    return (
+      named: named,
+      unknown: _newestFirst(unknown.values),
+      unprocessed: _newestFirst(
+        own.where((item) => !_book.hasScanned(item.path)),
+      ),
+    );
   }
+
+  // The entry for the person called [name], pictured by the clearest face
+  // the Analyser found of anyone by that name, if it found one.
+
+  PersonEntry _entry(String id, String name, List<MediaItem> items) {
+    final inItems = {for (final item in items) item.path: item};
+    FaceRecord? portrait;
+    for (final person in _book.people.values) {
+      if (person.name?.toLowerCase() != id) continue;
+      final face = _book.portraitOf(person.id);
+      if (face != null && inItems.containsKey(face.path)) {
+        if (portrait == null || face.area > portrait.area) portrait = face;
+      }
+    }
+    return PersonEntry(
+      id: id,
+      name: name,
+      portrait: portrait,
+      portraitItem: inItems[portrait?.path] ?? items.first,
+      items: items,
+    );
+  }
+
+  static List<MediaItem> _newestFirst(Iterable<MediaItem> items) =>
+      items.toList()..sort(
+        (a, b) => (b.date ?? DateTime(0)).compareTo(a.date ?? DateTime(0)),
+      );
 
   /// Read the faces file, once per login.
   ///
@@ -256,23 +292,18 @@ class People extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Find the faces in every photo in [photos] not yet looked at.
+  /// Bring People up to date with the album, [photos], as when People is
+  /// opened: read the faces file, take on names given in Get Info since, and
+  /// finish a look at some photos that was cut short, as by the app being
+  /// closed. Nothing new is sent to the Analyser; see [analyse].
   ///
   /// With [prune], photos no longer in [photos] are forgotten, which is how
   /// photos deleted elsewhere leave People; it is left off when the album
   /// index is incomplete, so that a truncated walk does not forget anyone.
 
-  Future<void> scan(List<MediaItem> photos, {bool prune = true}) async {
+  Future<void> refresh(List<MediaItem> photos, {bool prune = true}) async {
     if (_scanning) return;
-    _scanning = true;
-    _cancelled = false;
-    _forgotten.clear();
-    _error = null;
-    _needsConsent = false;
-    _failed = 0;
-    _done = 0;
-    _toDo = 0;
-    notifyListeners();
+    _begin();
 
     try {
       await load();
@@ -280,73 +311,162 @@ class People extends ChangeNotifier {
       final own = photos
           .where((item) => item.isPhoto && !item.isShared)
           .toList();
-      for (final item in own) {
-        _pathOf[faceKeyOf(item.path)] = item.path;
-        _urlOf[item.path] = item.url;
-      }
+      _know(own);
       final changed = prune && _book.retainOnly({for (final i in own) i.path});
 
-      // Names given in Get Info since the last scan name the people found.
+      // Names given in Get Info since the last look name the people found.
 
       final named = await _nameFromCatalog();
       if (changed || named.isNotEmpty) await _save();
       await _toCatalog(named);
 
-      final todo = own.where((item) => !_book.hasScanned(item.path)).toList();
-      _knowsAll = prune;
-      if (_demo) {
-        await _scanSamples(todo);
-      } else {
-        await _scanWithAnalyser(todo);
-      }
+      if (!_demo && await FaceInbox.exists()) await _finishEarlier();
     } on Object catch (e) {
       _error = '$e';
-      debugPrint('PhotoPod: face scan stopped: $e');
+      debugPrint('PhotoPod: People could not be brought up to date: $e');
     } finally {
-      _status = null;
-      _scanning = false;
-      _knowsAll = false;
-      notifyListeners();
+      _end();
     }
   }
 
-  /// Turn People on: share the face inbox with the Analyser, then scan.
+  /// Have the Analyser find the faces in [photos], the user's own photos
+  /// among them, whether or not they have been looked at before. The inbox
+  /// is shared with the Analyser for the look and no longer, and photos
+  /// chosen while a look is under way join it.
 
-  Future<void> enable() async {
-    await FaceInbox.enable();
-    _needsConsent = false;
+  Future<void> analyse(Iterable<MediaItem> photos) async {
+    final own = [
+      for (final item in photos)
+        if (item.isPhoto && !item.isShared) item,
+    ];
+    if (own.isEmpty) return;
+    _know(own);
+
+    if (_scanning) {
+      _queue.addAll(own);
+      _toDo += own.length;
+      notifyListeners();
+      return;
+    }
+
+    _begin();
+    _queue.addAll(own);
+    _toDo = own.length;
+    try {
+      await load();
+      if (_demo) {
+        await _scanSamples(own);
+        _queue.clear();
+      } else {
+        await _runAnalyser();
+      }
+    } on Object catch (e) {
+      _error = '$e';
+      debugPrint('PhotoPod: the people in the photos were not found: $e');
+    } finally {
+      _end();
+    }
+  }
+
+  // Remember which photo each key in the inbox stands for.
+
+  void _know(List<MediaItem> photos) {
+    for (final item in photos) {
+      _pathOf[faceKeyOf(item.path)] = item.path;
+      _urlOf[item.path] = item.url;
+    }
+  }
+
+  void _begin() {
+    _scanning = true;
+    _cancelled = false;
+    _forgotten.clear();
+    _error = null;
+    _status = null;
+    _failed = 0;
+    _done = 0;
+    _toDo = 0;
     notifyListeners();
   }
 
-  /// Turn People off: stop sharing the face inbox and empty it. The people
-  /// already found stay.
-
-  Future<void> disable() async {
-    _cancelled = true;
-    await FaceInbox.disable();
-    _waiting = 0;
-    _needsConsent = true;
+  void _end() {
+    _queue.clear();
+    _scanning = false;
     notifyListeners();
   }
 
-  /// Call [person] by [name], or forget their name when it is blank.
+  /// The faces the Analyser found in the photo at [path] that no one has
+  /// named yet.
 
-  Future<void> rename(String person, String name) async {
-    final entry = _book.people[person];
-    if (entry == null) return;
-    entry.name = name.trim().isEmpty ? null : name.trim();
+  List<FaceRecord> unnamedIn(String path) => [
+    for (final face in _book.faces.values)
+      if (face.path == path && _book.people[face.person]?.name == null) face,
+  ];
+
+  /// Say [face] is [name]. The Analyser filed it with the faces it took for
+  /// the same person, so they are all named, in every photo they are in;
+  /// when someone is already called [name], the two become one person.
+
+  Future<void> nameFace(FaceRecord face, String name) async {
+    final given = name.trim();
+    if (given.isEmpty || _book.people[face.person] == null) return;
+    final same = _book.people.values
+        .where(
+          (person) =>
+              person.id != face.person &&
+              person.name?.toLowerCase() == given.toLowerCase(),
+        )
+        .firstOrNull;
+    if (same != null) {
+      _book.merge(face.person, same.id);
+    } else {
+      _book.people[face.person]!.name = given;
+    }
     notifyListeners();
     await _save();
-    await _toCatalog(_book.photosOf([person]));
+    await _toCatalog(_book.photosOf([same?.id ?? face.person]));
+    notifyListeners();
   }
 
-  /// Treat [from] and [into] as one person, keeping [into].
+  /// Call the person named [from] [to] instead, in every photo they are in,
+  /// however they were named. Naming them after someone else makes the two
+  /// one person.
 
-  Future<void> merge(String from, String into) async {
-    _book.merge(from, into);
+  Future<void> renamePerson(String from, String to) async {
+    final name = to.trim();
+    if (name.isEmpty || name == from) return;
+    final old = from.toLowerCase();
+
+    final target = _book.people.values
+        .where(
+          (person) =>
+              person.name?.toLowerCase() == name.toLowerCase() &&
+              person.name?.toLowerCase() != old,
+        )
+        .firstOrNull;
+    final renamed = [
+      for (final person in _book.people.values)
+        if (person.name?.toLowerCase() == old) person.id,
+    ];
+    for (final id in renamed) {
+      if (target != null) {
+        _book.merge(id, target.id);
+      } else {
+        _book.people[id]!.name = name;
+      }
+    }
     notifyListeners();
     await _save();
-    await _toCatalog(_book.photosOf([into]));
+
+    if (!_demo) {
+      try {
+        await MediaCatalog.renamePerson(from, name);
+      } on Object catch (e) {
+        _error = 'Could not rename $from: $e';
+      }
+      await _toCatalog(_book.photosOf(target == null ? renamed : [target.id]));
+    }
+    notifyListeners();
   }
 
   /// Delete the faces of the photos in [items], and of every photo in the
@@ -405,23 +525,14 @@ class People extends ChangeNotifier {
 
   void reset() {
     _cancelled = true;
-    _debounce?.cancel();
+    _queue.clear();
     _book = FaceBook();
     _loaded = false;
     _error = null;
-    _needsConsent = false;
     _pathOf.clear();
     _urlOf.clear();
     _waiting = 0;
-    FaceInbox.reset();
     notifyListeners();
-  }
-
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    unawaited(_added.cancel());
-    super.dispose();
   }
 
   // For the halves of this class in people_analyser.dart and

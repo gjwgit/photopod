@@ -40,7 +40,8 @@ const double _margin = 1.6;
 /// [face] shown in a circle: the picture of it kept in the faces file, or,
 /// for a face recorded before those were kept, the face cut out of [item]'s
 /// grid thumbnail. The box is a fraction of the photo, so it fits the small
-/// rendition the grid has usually fetched already.
+/// rendition the grid has usually fetched already. With no face, as for
+/// someone only the user has named, the middle of [item] is shown.
 
 class FaceAvatar extends StatefulWidget {
   const FaceAvatar({
@@ -50,7 +51,7 @@ class FaceAvatar extends StatefulWidget {
     this.size = 56,
   });
 
-  final FaceRecord face;
+  final FaceRecord? face;
   final MediaItem item;
   final double size;
 
@@ -71,7 +72,7 @@ class _FaceAvatarState extends State<FaceAvatar> {
   void didUpdateWidget(FaceAvatar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.item.url != widget.item.url ||
-        oldWidget.face.image != widget.face.image) {
+        oldWidget.face?.image != widget.face?.image) {
       _load();
     }
   }
@@ -83,7 +84,7 @@ class _FaceAvatarState extends State<FaceAvatar> {
   }
 
   Future<void> _load() async {
-    final own = widget.face.image;
+    final own = widget.face?.image;
     final bytes = own ?? await ThumbnailCache.instance.thumbnail(widget.item);
     if (bytes == null || !mounted) return;
     final codec = await ui.instantiateImageCodec(bytes);
@@ -117,8 +118,8 @@ class _FaceAvatarState extends State<FaceAvatar> {
               : CustomPaint(
                   painter: _FacePainter(
                     image,
-                    widget.face.image == null
-                        ? widget.face.box
+                    widget.face?.image == null
+                        ? widget.face?.box ?? const [0, 0, 1, 1]
                         : const [0, 0, 1, 1],
                   ),
                 ),

@@ -66,6 +66,16 @@ class FakePod:
             line for line in pem.splitlines() if not line.startswith('-----'))
 
 
+class FakeResponse:
+    def __init__(self, status_code: int, body: dict) -> None:
+        self.status_code = status_code
+        self._body = body
+        self.text = json.dumps(body)
+
+    def json(self) -> dict:
+        return self._body
+
+
 class FakeSolidClient:
     """A dictionary pretending to be a Solid server."""
 
@@ -75,6 +85,7 @@ class FakeSolidClient:
         self.containers_created: list[str] = []
         self.private_urls: set[str] = set()
         self.deleted: list[str] = []
+        self.subscriptions: list[tuple[str, str | None]] = []
 
     # -- Reading -----------------------------------------------------------
 
@@ -222,6 +233,16 @@ class FakeSolidClient:
             raise ForbiddenError(f'delete {url}: access denied', 403)
         self.deleted.append(url)
         return self.resources.pop(url, None) is not None
+
+    def request(self, method: str, url: str, *, content: bytes | None = None,
+                content_type: str | None = None,
+                headers: dict[str, str] | None = None) -> 'FakeResponse':
+        """A subscription to a notification channel, the one request the
+        service makes other than reading and writing resources."""
+
+        body = json.loads(content or b'{}')
+        self.subscriptions.append((url, body.get('topic')))
+        return FakeResponse(200, {'receiveFrom': f'wss://server/ws/{len(self.subscriptions)}'})
 
     def close(self) -> None:
         return None

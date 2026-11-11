@@ -31,16 +31,20 @@ import 'package:provider/provider.dart';
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
+import 'package:photopod/dialogs/person_dialogs.dart';
 import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/catalog_entry.dart';
+import 'package:photopod/models/face_book.dart' show FaceRecord;
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
+import 'package:photopod/services/people.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
+import 'package:photopod/widgets/face_avatar.dart';
 import 'package:photopod/widgets/label_editor.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 import 'package:photopod/widgets/place_editor.dart';
@@ -269,6 +273,7 @@ class _InfoDialogState extends State<_InfoDialog> {
         onAdd: _addPerson,
         onRemove: (index) => _saveFaces([..._faces]..removeAt(index)),
       ),
+      ..._unnamedFaces(),
       const Gap(16),
       Text('Place', style: style),
       const Gap(8),
@@ -343,6 +348,61 @@ class _InfoDialogState extends State<_InfoDialog> {
       setState(() => _tags = before);
       await showErrorDialog(context, 'The tags were not saved', '$e');
     }
+  }
+
+  // The faces the PhotoPod Analyser found here that no one has named, each
+  // a chip to tap and name. Naming one names that person wherever the
+  // Analyser found them, and lists them among the people above.
+
+  List<Widget> _unnamedFaces() {
+    final People people;
+    try {
+      people = context.read<People>();
+    } on ProviderNotFoundException {
+      return const [];
+    }
+    final faces = people.unnamedIn(widget.item.path);
+    if (faces.isEmpty) return const [];
+    return [
+      const Gap(8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final face in faces)
+            ActionChip(
+              avatar: FaceAvatar(face: face, item: widget.item, size: 24),
+              label: const Text('Who is this?'),
+              tooltip: 'Name the person the PhotoPod Analyser found here',
+              onPressed: () => _nameFace(people, face),
+            ),
+        ],
+      ),
+    ];
+  }
+
+  Future<void> _nameFace(People people, FaceRecord face) async {
+    final name = await showPersonNameDialog(
+      context,
+      PersonEntry(
+        id: face.person,
+        name: null,
+        portrait: face,
+        portraitItem: widget.item,
+        items: [widget.item],
+      ),
+    );
+    if (name == null || name.trim().isEmpty || !mounted) return;
+    try {
+      await people.nameFace(face, name);
+    } on Object catch (e) {
+      if (mounted) await showErrorDialog(context, 'Not named', '$e');
+      return;
+    }
+    if (!mounted) return;
+    setState(
+      () => _faces = MediaCatalog.entryOf(widget.item.path)?.faces ?? _faces,
+    );
   }
 
   Future<void> _saveFaces(List<PhotoFace> faces) async {

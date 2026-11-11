@@ -1,4 +1,5 @@
-/// One person in the People section, with every photo they are in.
+/// One group in the People section: a person, or the photos with no one
+/// named, or those not yet looked at, with every photo in it.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -28,44 +29,64 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 
 import 'package:photopod/dialogs/preview_dialog.dart';
+import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/people.dart';
 import 'package:photopod/widgets/face_avatar.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 
-/// What a person is listed as before they have been named.
-
-const String unnamedPerson = 'Add a name';
-
-/// A person's portrait, name and photo count, above a row of their photos
-/// that scrolls sideways, as an album's does. A tap on a photo previews it,
-/// and the preview steps through this person's photos.
+/// A heading, with a person's portrait or an icon, the photo count and what
+/// can be done, above a row of the photos that scrolls sideways, as an
+/// album's does. A tap on a photo previews it, and the preview steps through
+/// the group's photos; Get Info there is where the people in it are named.
 
 class PersonSection extends StatelessWidget {
   const PersonSection({
     super.key,
-    required this.person,
+    required this.title,
+    required this.items,
     required this.tileExtent,
-    required this.onRename,
-    required this.onMerge,
+    this.person,
+    this.icon,
+    this.onRename,
+    this.action,
+    this.onPreviewClosed,
   });
 
-  final PersonEntry person;
+  /// The person's name, or what the group is.
+
+  final String title;
+
+  final List<MediaItem> items;
 
   /// The size of a tile, from the user's View preferences.
 
   final double tileExtent;
 
-  final VoidCallback onRename;
+  /// The person pictured beside the title, or null for a group that is not
+  /// one person, which shows [icon].
 
-  /// Called to say this person is the same as someone else, or null when
-  /// there is no one else.
+  final PersonEntry? person;
+  final IconData? icon;
 
-  final VoidCallback? onMerge;
+  /// Called to give the person another name, or null when there is no one
+  /// to name.
+
+  final VoidCallback? onRename;
+
+  /// Shown at the end of the heading, such as a button acting on the group.
+
+  final Widget? action;
+
+  /// Called once a preview opened from the row is closed, since what Get
+  /// Info changed there may change the groups.
+
+  final VoidCallback? onPreviewClosed;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final count = person.items.length;
+    final count = items.length;
+    final person = this.person;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
@@ -74,25 +95,29 @@ class PersonSection extends StatelessWidget {
         children: [
           Row(
             children: [
-              InkWell(
-                customBorder: const CircleBorder(),
-                onTap: onRename,
-                child: FaceAvatar(
-                  face: person.portrait,
-                  item: person.portraitItem,
+              if (person != null)
+                InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: onRename,
+                  child: FaceAvatar(
+                    face: person.portrait,
+                    item: person.portraitItem,
+                  ),
+                )
+              else
+                SizedBox.square(
+                  dimension: 56,
+                  child: Icon(icon, size: 32, color: theme.colorScheme.outline),
                 ),
-              ),
               const Gap(12),
               Flexible(
                 child: InkWell(
                   onTap: onRename,
                   child: Text(
-                    person.name ?? unnamedPerson,
+                    title,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: person.name == null
-                          ? theme.colorScheme.outline
-                          : null,
+                      color: person == null ? theme.colorScheme.outline : null,
                     ),
                   ),
                 ),
@@ -103,16 +128,13 @@ class PersonSection extends StatelessWidget {
                 style: theme.textTheme.bodySmall,
               ),
               const Spacer(),
-              IconButton(
-                icon: const Icon(Icons.edit_outlined),
-                tooltip: 'Name this person',
-                onPressed: onRename,
-              ),
-              IconButton(
-                icon: const Icon(Icons.merge_type),
-                tooltip: 'Same person as...',
-                onPressed: onMerge,
-              ),
+              if (onRename != null)
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: 'Rename this person',
+                  onPressed: onRename,
+                ),
+              ?action,
             ],
           ),
           const Gap(8),
@@ -123,7 +145,7 @@ class PersonSection extends StatelessWidget {
               itemCount: count,
               separatorBuilder: (context, index) => const Gap(4),
               itemBuilder: (context, index) {
-                final item = person.items[index];
+                final item = items[index];
                 return SizedBox.square(
                   dimension: tileExtent,
                   child: Material(
@@ -131,8 +153,10 @@ class PersonSection extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
-                      onTap: () =>
-                          showPreviewDialog(context, item, items: person.items),
+                      onTap: () async {
+                        await showPreviewDialog(context, item, items: items);
+                        onPreviewClosed?.call();
+                      },
                       child: Tooltip(
                         message: item.name,
                         child: MediaThumbnail(item: item),

@@ -1,4 +1,4 @@
-/// The dialogues for naming a person and for merging two people.
+/// The dialogue for naming a person.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -29,7 +29,6 @@ import 'package:gap/gap.dart';
 
 import 'package:photopod/services/people.dart';
 import 'package:photopod/widgets/face_avatar.dart';
-import 'package:photopod/widgets/person_section.dart' show unnamedPerson;
 
 /// Ask what [person] is called, returning the name typed, which may be
 /// blank to forget it, or null if the user cancels.
@@ -40,38 +39,6 @@ Future<String?> showPersonNameDialog(
 ) => showDialog<String>(
   context: context,
   builder: (context) => _PersonNameDialog(person: person),
-);
-
-/// Ask who else [person] is, among [others], returning the one chosen or
-/// null if the user cancels.
-
-Future<PersonEntry?> showMergePersonDialog(
-  BuildContext context,
-  PersonEntry person,
-  List<PersonEntry> others,
-) => showDialog<PersonEntry>(
-  context: context,
-  builder: (context) => SimpleDialog(
-    title: Text('${person.name ?? 'This person'} is the same person as'),
-    children: [
-      for (final other in others)
-        SimpleDialogOption(
-          onPressed: () => Navigator.pop(context, other),
-          child: Row(
-            children: [
-              FaceAvatar(
-                face: other.portrait,
-                item: other.portraitItem,
-                size: 40,
-              ),
-              const Gap(12),
-              Expanded(child: Text(other.name ?? unnamedPerson)),
-              Text('${other.items.length}'),
-            ],
-          ),
-        ),
-    ],
-  ),
 );
 
 /// The name field lives in a State of its own so that its controller is
