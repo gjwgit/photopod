@@ -1,4 +1,4 @@
-# Configuration for the PhotoPod face analyser.
+# Configuration for the PhotoPod analyser: faces for People, tags for Tags.
 #
 # Copy this file to config.yaml and edit it (setup.sh does the copy):
 #
@@ -66,8 +66,7 @@ inbox:
 watch:
 
   # Seconds between looks. A photo is usually analysed within this long of
-  # being added. Everything stays on this server, so a short interval is
-  # cheap.
+  # being added.
 
   poll_seconds: 10
 
@@ -90,3 +89,25 @@ engine:
   # face_image_side: 96     # the portrait kept of each face
   # face_image_margin: 1.6
   # threads: 0              # ONNX Runtime threads per photo; 0 = automatic
+
+# ---------------------------------------------------------------------------
+# Tags: Google's SigLIP ViT-B/16, kept in engine.models_dir. The tag inbox is
+# shared separately from the face inbox, so users turn Tags on and off on
+# their own. The defaults are in face_analyser/tagger.py.
+# ---------------------------------------------------------------------------
+
+tags:
+
+  # false on a host with no room for the 372 MB model; tag inboxes are then
+  # left alone.
+
+  enabled: true
+
+  # Must match tagInbox in lib/services/analyser_inbox.dart.
+
+  folder: .tags-inbox
+
+  # min_share: 0.12         # the share of the whole a tag must take
+  # min_similarity: 0.035   # how close it must lie in its own right
+  # max_tags: 4             # the most tags one photo is given
+  # threads: 0

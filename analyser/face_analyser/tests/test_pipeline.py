@@ -43,9 +43,20 @@ from face_analyser.config import (
     WatchConfig,
 )
 from face_analyser.engine import EngineConfig, ImageError
-from face_analyser.inbox import REQUEST_FORMAT, RESULT_SUFFIX
+from face_analyser.inbox import (
+    REQUEST_FORMAT,
+    RESULT_SUFFIX,
+    TAG_REQUEST_FORMAT,
+    TAG_RESULT_SUFFIX,
+)
 from face_analyser.keys import PodKeys
-from face_analyser.service import RESULT_FORMAT, FaceService, NotShared
+from face_analyser.service import (
+    RESULT_FORMAT,
+    TAG_RESULT_FORMAT,
+    AnalyserService,
+    NotShared,
+)
+from face_analyser.tagger import TagConfig
 
 from tests.fake_pod import FakePod, FakeSolidClient, encrypted_resource
 
@@ -55,10 +66,14 @@ ALICE = f'{SERVER}/alice/profile/card#me'
 BOB = f'{SERVER}/bob/profile/card#me'
 APP = 'photopod'
 INBOX_PATH = f'{APP}/data/.faces-inbox/'
+TAG_INBOX_PATH = f'{APP}/data/.tags-inbox/'
+TAG_MODEL_ID = 'siglip-b16-webli:tags-v1'
 
 
 class FakeEngine:
     """One face per picture, its embedding the picture's own bytes."""
+
+    model_id = MODEL_ID
 
     def __init__(self):
         self.seen: list[bytes] = []
@@ -71,6 +86,20 @@ class FakeEngine:
             'box': [0.1, 0.2, 0.3, 0.4], 'score': 0.95,
             'embedding': base64.b64encode(data).decode(),
             'image': None}]}
+
+
+class FakeTagger:
+    """One tag per picture, named after the picture."""
+
+    model_id = TAG_MODEL_ID
+
+    def __init__(self):
+        self.seen: list[bytes] = []
+
+    def analyse(self, data: bytes) -> dict:
+        self.seen.append(data)
+        return {'model': TAG_MODEL_ID, 'width': 100, 'height': 80, 'tags': [
+            {'tag': data.decode(), 'category': 'Things', 'score': 0.9}]}
 
 
 class PipelineTest(unittest.TestCase):
@@ -92,11 +121,13 @@ class PipelineTest(unittest.TestCase):
             inbox=InboxConfig(),
             watch=WatchConfig(),
             engine=EngineConfig(models_dir=Path('.')),
+            tags=TagConfig(models_dir=Path('.')),
         )
         self.engine = FakeEngine()
-        self.service = FaceService(self.config, self.client,
-                                   PodKeys(self.client, self.config),
-                                   self.engine)
+        self.tagger = FakeTagger()
+        self.service = AnalyserService(self.config, self.client,
+                                       PodKeys(self.client, self.config),
+                                       self.engine, self.tagger)
 
     # -- Seeding -----------------------------------------------------------
 
@@ -134,33 +165,49 @@ class PipelineTest(unittest.TestCase):
         graph.parse(data=entry, format='turtle')
         self.client.resources[shared_url] = graph.serialize(format='turtle')
 
-    def leave(self, key: str, image: bytes) -> str:
-        """Leave a photo in Alice's inbox, as PhotoPod does."""
+    def share_tags(self) -> None:
+        """Turn Tags on for Alice as well, as PhotoPod does."""
 
-        url = f'{self.inbox}{key}.enc.ttl'
+        self.tag_inbox = paths.data_url(ALICE, APP, '.tags-inbox') + '/'
+        self.tag_key = crypto.random_key()
+        self._share_with_analyser(self.tag_inbox, self.tag_key)
+
+    def leave(self, key: str, image: bytes, *, tags: bool = False) -> str:
+        """Leave a photo in Alice's face inbox, or tag inbox, as PhotoPod
+        does."""
+
+        inbox, folder_key, inbox_path, request = (
+            (self.tag_inbox, self.tag_key, TAG_INBOX_PATH, TAG_REQUEST_FORMAT)
+            if tags else
+            (self.inbox, self.folder_key, INBOX_PATH, REQUEST_FORMAT))
+        url = f'{inbox}{key}.enc.ttl'
         self.client.resources[url] = encrypted_resource(
             url,
-            {'format': REQUEST_FORMAT, 'version': 1,
+            {'format': request, 'version': 1,
              'image': base64.b64encode(image).decode()},
-            self.folder_key,
-            inherit_from=INBOX_PATH,
+            folder_key,
+            inherit_from=inbox_path,
         )
         return url
 
-    def answer(self, key: str) -> dict:
+    def answer(self, key: str, *, tags: bool = False) -> dict:
         """Open the answer for [key] as PhotoPod's readPod() does: by the
         folder its inheritKeyFrom names, with Alice's own folder key."""
 
-        url = f'{self.inbox}{key}{RESULT_SUFFIX}'
+        inbox, folder_key, inbox_path, suffix = (
+            (self.tag_inbox, self.tag_key, TAG_INBOX_PATH, TAG_RESULT_SUFFIX)
+            if tags else
+            (self.inbox, self.folder_key, INBOX_PATH, RESULT_SUFFIX))
+        url = f'{inbox}{key}{suffix}'
         fields = turtle.triple_map(self.client.resources[url], base=url)[url]
         self.assertEqual(
             turtle.single(fields[paths.APPS_TERMS + 'inheritKeyFrom']),
-            INBOX_PATH)
+            inbox_path)
         self.assertEqual(turtle.single(fields[paths.APPS_TERMS + 'path']),
-                         f'{INBOX_PATH}{key}{RESULT_SUFFIX}')
+                         f'{inbox_path}{key}{suffix}')
         return json.loads(crypto.aes_ctr_decrypt(
             turtle.single(fields[paths.APPS_TERMS + 'encData']),
-            self.folder_key,
+            folder_key,
             base64.b64decode(turtle.single(fields[paths.APPS_TERMS + 'iv']))))
 
     # -- Looks -------------------------------------------------------------
@@ -171,8 +218,8 @@ class PipelineTest(unittest.TestCase):
 
         reports = self.service.sweep()
 
-        self.assertEqual([(r.web_id, r.analysed, r.failed, r.pending)
-                          for r in reports], [(ALICE, 2, 0, 0)])
+        self.assertEqual([(r.web_id, r.kind, r.analysed, r.failed, r.pending)
+                          for r in reports], [(ALICE, 'faces', 2, 0, 0)])
         answer = self.answer('a' * 32)
         self.assertEqual(answer['format'], RESULT_FORMAT)
         self.assertEqual(answer['model'], MODEL_ID)
@@ -231,6 +278,50 @@ class PipelineTest(unittest.TestCase):
         self.assertNotIn(old, self.client.resources)
         self.assertNotIn(old + '.acl', self.client.resources)
         self.assertEqual(self.service.forget_old_results(), 0)
+
+    def test_tags_are_answered_in_the_tag_inbox_only_when_it_is_shared(self):
+        self.leave('a' * 32, b'photo a')
+        self.service.sweep()
+        self.assertEqual(self.tagger.seen, [])
+
+        self.share_tags()
+        photo = self.leave('b' * 32, b'Beach', tags=True)
+        reports = self.service.sweep()
+        self.assertEqual([(r.kind, r.analysed) for r in reports],
+                         [('tags', 1)])
+        answer = self.answer('b' * 32, tags=True)
+        self.assertEqual(answer['format'], TAG_RESULT_FORMAT)
+        self.assertEqual(answer['model'], TAG_MODEL_ID)
+        self.assertEqual(answer['tags'][0]['tag'], 'Beach')
+        self.assertNotIn('faces', answer)
+        self.assertNotIn(photo, self.client.resources)
+        self.assertEqual(self.engine.seen, [b'photo a'])
+
+    def test_a_face_request_in_the_tag_inbox_is_refused(self):
+        self.share_tags()
+        url = f'{self.tag_inbox}{"c" * 32}.enc.ttl'
+        self.client.resources[url] = encrypted_resource(
+            url, {'format': REQUEST_FORMAT, 'version': 1, 'image': ''},
+            self.tag_key, inherit_from=TAG_INBOX_PATH)
+        report = self.service.run(ALICE, 'tags')
+        self.assertEqual(report.failed, 1)
+        self.assertIn('failed', self.answer('c' * 32, tags=True))
+
+    def test_tags_answers_are_not_mistaken_for_photos(self):
+        self.share_tags()
+        self.leave('d' * 32, b'Dog', tags=True)
+        self.service.sweep()
+        self.assertEqual(self.service.sweep(), [])
+        self.assertEqual(self.tagger.seen, [b'Dog'])
+
+    def test_tagging_turned_off_leaves_the_tag_inboxes_alone(self):
+        self.share_tags()
+        self.leave('e' * 32, b'Cat', tags=True)
+        service = AnalyserService(self.config, self.client,
+                                  self.service.keys, self.engine)
+        self.assertEqual(service.sweep(), [])
+        with self.assertRaises(NotShared):
+            service.run(ALICE, 'tags')
 
     def test_the_shared_keys_are_opened_once_while_unchanged(self):
         from unittest import mock

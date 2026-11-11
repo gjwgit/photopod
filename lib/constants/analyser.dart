@@ -1,4 +1,4 @@
-/// The Analyser: the service that finds the faces in PhotoPod photos.
+/// The Analyser, which finds the faces and the tags in PhotoPod photos.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -23,25 +23,25 @@
 
 library;
 
-/// The face Analyser, set up as HealthPod's blood pressure analyser is.
+/// The Analyser, set up as HealthPod's blood pressure analyser is.
 ///
 /// The Analyser is a Pod, on the user's Solid server or any other. Turning
-/// People on shares the user's face inbox with its WebID; a service logged
-/// in as the Analyser (analyser/face_analyser in this repository) looks at
-/// every shared inbox and writes the faces it finds back into it. The app
-/// never talks to that service, so it needs no address of it: [webId] is all
-/// there is to know.
+/// People or Tags on shares one folder of the user's Pod, the face inbox or
+/// the tag inbox, with its WebID; a service logged in as the Analyser
+/// (analyser/face_analyser in this repository) looks at every shared inbox
+/// and writes what it finds back into it. The app never talks to that
+/// service, so it needs no address of it: [webId] is all there is to know.
 ///
 /// Another Analyser is chosen at build time with
-/// `--dart-define=FACE_ANALYSER_WEBID=https://.../profile/card#me`.
+/// `--dart-define=ANALYSER_WEBID=https://.../profile/card#me`.
 
-class FaceAnalyser {
-  const FaceAnalyser._();
+class Analyser {
+  const Analyser._();
 
-  /// The WebID the face inbox is shared with.
+  /// The WebID the inboxes are shared with.
 
   static const String webId = String.fromEnvironment(
-    'FACE_ANALYSER_WEBID',
+    'ANALYSER_WEBID',
     defaultValue: 'https://solid.dev.empwr.au/Analyser/profile/card#me',
   );
 

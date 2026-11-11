@@ -1,4 +1,4 @@
-/// People through the Analyser: photos into the face inbox, answers back.
+/// How a section leaves its photos in the inbox and collects the answers.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -21,7 +21,7 @@
 ///
 /// Authors: Tony Chen
 
-part of 'people.dart';
+part of 'analyser_section.dart';
 
 /// How often the inbox is looked at while photos are waiting in it. The
 /// Analyser looks at it every ten seconds or so.
@@ -30,12 +30,12 @@ const Duration _lookEvery = Duration(seconds: 5);
 
 /// How long the inbox may go without a single answer coming back before the
 /// app stops waiting. The photos stay in the inbox, and the answers are
-/// collected the next time People is opened.
+/// collected the next time the section is opened.
 
 const Duration _patience = Duration(minutes: 2);
 
 /// How many photos are left in the inbox between looks for answers, so that
-/// people start to appear while a long backlog is still being left.
+/// results start to appear while a long backlog is still being left.
 
 const int _lookAfter = 20;
 
@@ -44,12 +44,12 @@ const int _lookAfter = 20;
 
 const Duration _addedDelay = Duration(seconds: 10);
 
-extension _PeopleAnalyser on People {
+extension _Scan on AnalyserSection {
   /// Leave every photo in [todo] not yet in the inbox there, then wait for
   /// the Analyser's answers.
 
   Future<void> _scanWithAnalyser(List<MediaItem> todo) async {
-    if (!await FaceInbox.isEnabled()) {
+    if (!await inbox.isEnabled()) {
       _needsConsent = true;
       return;
     }
@@ -57,14 +57,14 @@ extension _PeopleAnalyser on People {
     // Answers left from before, as for photos added on another device or
     // answered after the app closed, are filed first.
 
-    _status = 'Collecting what the ${FaceAnalyser.displayName} found...';
+    _status = 'Collecting what the ${Analyser.displayName} found...';
     _changed();
     final listing = await _collect();
 
     final toSend = [
       for (final item in todo)
-        if (!_book.hasScanned(item.path) &&
-            !listing.waiting.contains(faceKeyOf(item.path)))
+        if (!hasLookedAt(item.path) &&
+            !listing.waiting.contains(inboxKeyOf(item.path)))
           item,
     ];
     _toDo = toSend.length;
@@ -78,7 +78,7 @@ extension _PeopleAnalyser on People {
             await MediaRenditions.readLarge(item) ??
             await ThumbnailCache.instance.preview(item);
         if (image == null) throw StateError('no picture');
-        await FaceInbox.leave(item.path, image);
+        await inbox.leave(item.path, image);
       } on Object catch (e) {
         _failed++;
         debugPrint(
@@ -105,7 +105,7 @@ extension _PeopleAnalyser on People {
       if (DateTime.now().difference(lastAnswer) > _patience) {
         _status =
             '${listing.waiting.length} photos are waiting for the '
-            '${FaceAnalyser.displayName}';
+            '${Analyser.displayName}';
         _changed();
         return;
       }
@@ -114,14 +114,14 @@ extension _PeopleAnalyser on People {
     _status = null;
   }
 
-  /// File every answer in the inbox in the faces file, save it, and only
-  /// then delete the answers, returning what the inbox held.
+  /// File every answer in the inbox, save the file, and only then delete
+  /// the answers, returning what the inbox held.
 
-  Future<FaceInboxListing> _collect() async {
-    final listing = await FaceInbox.list();
+  Future<InboxListing> _collect() async {
+    final listing = await inbox.list();
     _waiting = listing.waiting.length;
     _status = _waiting > 0
-        ? 'The ${FaceAnalyser.displayName} has $_waiting '
+        ? 'The ${Analyser.displayName} has $_waiting '
               '${_waiting == 1 ? 'photo' : 'photos'} still to look at'
         : null;
     _changed();
@@ -130,17 +130,17 @@ extension _PeopleAnalyser on People {
     for (final key in listing.answered) {
       final path = _pathOf[key];
       try {
-        final answer = await FaceInbox.readAnswer(key);
+        final answer = await inbox.readAnswer(key);
         if (path == null) {
-          // A photo this session does not know of waits for a scan of
-          // People, which knows every photo, unless the album is complete
-          // and the photo is gone.
+          // A photo this session does not know of waits for a scan, which
+          // knows every photo, unless the album is complete and the photo
+          // is gone.
           if (_knowsAll) filed.add(key);
           continue;
         }
-        if (answer != null && !_forgotten.contains(path)) {
-          _book.addPhoto(path, answer.faces, url: _urlOf[path]);
-          if (answer.failed != null) _failed++;
+        if (!_forgotten.contains(path) &&
+            fileAnswer(path, answer, url: _urlOf[path])) {
+          _failed++;
         }
         filed.add(key);
       } on Object catch (e) {
@@ -149,10 +149,10 @@ extension _PeopleAnalyser on People {
     }
 
     if (filed.isEmpty) return listing;
-    await _save();
+    await save();
     for (final key in filed) {
       try {
-        await FaceInbox.deleteAnswer(key);
+        await inbox.deleteAnswer(key);
       } on Object catch (e) {
         debugPrint('PhotoPod: could not delete the answer for $key: $e');
       }
@@ -177,7 +177,9 @@ extension _PeopleAnalyser on People {
       await load();
       await _waitForAnswers();
     } on Object catch (e) {
-      debugPrint('PhotoPod: could not collect the faces of new photos: $e');
+      debugPrint(
+        'PhotoPod: could not collect the $lookingFor of new photos: $e',
+      );
     } finally {
       _scanning = false;
       _changed();

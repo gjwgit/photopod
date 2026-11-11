@@ -45,6 +45,7 @@ import yaml
 
 from . import pod_paths as paths
 from .engine import EngineConfig
+from .tagger import TagConfig
 
 ENV_SECURITY_KEY = 'PHOTOPOD_FACE_ANALYSER_SECURITY_KEY'
 ENV_CLIENT_ID = 'PHOTOPOD_FACE_ANALYSER_CLIENT_ID'
@@ -108,7 +109,7 @@ class WatchConfig:
     """How often the shared inboxes are looked at."""
 
     # Seconds between looks. Each look reads the Analyser's shared-keys file
-    # and lists every shared inbox, so a short interval costs little and is
+    # and lists every shared inbox, for faces and for tags, so a short interval costs little and is
     # what makes a new photo be analysed moments after it is added.
 
     poll_seconds: float = 10.0
@@ -120,6 +121,7 @@ class Config:
     inbox: InboxConfig
     watch: WatchConfig
     engine: EngineConfig
+    tags: TagConfig | None = None
     source_path: Path | None = None
     warnings: list[str] = field(default_factory=list)
 
@@ -189,11 +191,15 @@ def load(path: Path) -> Config:
     engine['models_dir'] = (models_dir if models_dir.is_absolute()
                             else base / models_dir)
 
+    tags = _section(data, 'tags')
+    tags['models_dir'] = engine['models_dir']
+
     config = Config(
         analyser=_build(AnalyserConfig, analyser, 'analyser'),
         inbox=_build(InboxConfig, _section(data, 'inbox'), 'inbox'),
         watch=_build(WatchConfig, _section(data, 'watch'), 'watch'),
         engine=_build(EngineConfig, engine, 'engine'),
+        tags=_build(TagConfig, tags, 'tags'),
         source_path=path.resolve(),
     )
     # A file holding the security key must not be readable by others.

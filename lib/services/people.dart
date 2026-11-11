@@ -23,25 +23,18 @@
 
 library;
 
-import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
-import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
-
-import 'package:photopod/constants/face_analyser.dart';
 import 'package:photopod/models/face_book.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/analyser_inbox.dart';
+import 'package:photopod/services/analyser_section.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
-import 'package:photopod/services/face_inbox.dart';
 import 'package:photopod/services/face_results.dart';
-import 'package:photopod/services/media_renditions.dart';
-import 'package:photopod/services/thumbnail_cache.dart';
 
-part 'people_analyser.dart';
 part 'people_demo.dart';
 
 /// The fewest photos someone must be in before People lists them. One
@@ -81,93 +74,22 @@ class PersonEntry {
 
 /// Finds the faces in the user's own photos and groups them into people.
 ///
-/// The faces file in the Pod, `faces.json.enc.ttl`, is read first, as soon
-/// as the security key is to hand: it is the record of every photo already
-/// looked at, kept in [FaceBook] form (for each person their name, their
-/// portrait and the photos they are in; for each face where it is, a small
-/// picture of it and its embedding).
-///
-/// The faces themselves are found by the Analyser, entirely between Pods on
-/// the Solid server: each photo not yet in the faces file is left in the
-/// face inbox ([FaceInbox]), a folder of the user's Pod shared only with the
-/// Analyser, and the Analyser writes what it found back into the same
-/// folder. Each answer is filed here and saved to the faces file before it
-/// is deleted. Photos added while People is on are left in the inbox as
-/// they are added, and their answers looked out for.
-///
-/// Deleting a photo deletes its faces from the file too ([forget]), and
-/// takes it out of the inbox if it is still waiting there.
+/// The faces file in the Pod, `faces.json.enc.ttl`, is the record of every
+/// photo already looked at, kept in [FaceBook] form (for each person their
+/// name, their portrait and the photos they are in; for each face where it
+/// is, a small picture of it and its embedding). The faces themselves are
+/// found by the Analyser through the face inbox ([faceInbox]); see
+/// [AnalyserSection] for how.
 
-class People extends ChangeNotifier {
-  People() {
-    _added = FaceInbox.added.listen((_) => _soon());
-  }
+class People extends AnalyserSection {
+  People() : super(faceInbox);
 
   FaceBook _book = FaceBook();
-  bool _loaded = false;
-  Future<void>? _loading;
-  late final StreamSubscription<void> _added;
-  Timer? _debounce;
 
-  // Whether the faces are those of the sample album shown before login,
-  // which are kept in memory only.
+  @override
+  String get lookingFor => 'faces';
 
-  bool _demo = false;
-  bool _scanning = false;
-  bool _cancelled = false;
-
-  // The photos deleted while a scan is running, which it must not file
-  // again if their results arrive afterwards.
-
-  final Set<String> _forgotten = {};
-
-  // The path of each photo by its key in the inbox and in the results, for
-  // the photos this session knows of.
-
-  final Map<String, String> _pathOf = {};
-  final Map<String, String> _urlOf = {};
-
-  // Whether [_pathOf] holds every photo in the album, as during a scan of a
-  // complete album index.
-
-  bool _knowsAll = false;
-
-  int _done = 0;
-  int _toDo = 0;
-  int _failed = 0;
-  int _waiting = 0;
-  String? _status;
-  String? _error;
-  bool _needsConsent = false;
-
-  bool get isScanning => _scanning;
-
-  /// How far the current scan has got leaving photos for the Analyser.
-
-  int get done => _done;
-  int get toDo => _toDo;
-
-  /// How many photos are waiting in the inbox for the Analyser.
-
-  int get waiting => _waiting;
-
-  /// How many photos the last scan could not read.
-
-  int get failed => _failed;
-
-  /// What the scan is doing, for the status line.
-
-  String? get status => _status;
-
-  String? get error => _error;
-
-  /// Whether People has to be turned on, sharing the face inbox with the
-  /// Analyser, before any photo can be looked at.
-
-  bool get needsConsent => _needsConsent;
-
-  /// How many of the user's photos have been looked at.
-
+  @override
   int get scannedCount => _book.scanned.length;
 
   List<PersonEntry> peopleIn(List<MediaItem> photos) {
@@ -206,115 +128,6 @@ class People extends ChangeNotifier {
     return entries;
   }
 
-  /// Read the faces file, once per login.
-  ///
-  /// Reading needs the security key, and throws [SecurityKeyNeeded] when it
-  /// has not been entered; the next call tries again.
-
-  Future<void> load() => _loading ??= _load().whenComplete(() {
-    _loading = null;
-  });
-
-  /// [load], for a caller that only wants the faces in hand early, such as
-  /// the album once the security key is entered, and has nothing to do
-  /// about a failure: the People section reads the file again and reports.
-
-  Future<void> preload() async {
-    try {
-      await load();
-    } on Object catch (e) {
-      debugPrint('PhotoPod: could not read the faces file yet: $e');
-    }
-  }
-
-  Future<void> _load() async {
-    // Logging in or out swaps the sample album for a Pod or back, and the
-    // faces found in one mean nothing in the other.
-
-    final demo = !await isUserLoggedIn();
-    if (demo != _demo) {
-      _book = FaceBook();
-      _loaded = false;
-      _demo = demo;
-    }
-    if (_loaded) return;
-    if (!_demo) {
-      final json = await _file.read();
-      _book = json == null ? FaceBook() : FaceBook.fromJson(json);
-    }
-    _loaded = true;
-    notifyListeners();
-  }
-
-  /// Find the faces in every photo in [photos] not yet looked at.
-  ///
-  /// With [prune], photos no longer in [photos] are forgotten, which is how
-  /// photos deleted elsewhere leave People; it is left off when the album
-  /// index is incomplete, so that a truncated walk does not forget anyone.
-
-  Future<void> scan(List<MediaItem> photos, {bool prune = true}) async {
-    if (_scanning) return;
-    _scanning = true;
-    _cancelled = false;
-    _forgotten.clear();
-    _error = null;
-    _needsConsent = false;
-    _failed = 0;
-    _done = 0;
-    _toDo = 0;
-    notifyListeners();
-
-    try {
-      await load();
-
-      final own = photos
-          .where((item) => item.isPhoto && !item.isShared)
-          .toList();
-      for (final item in own) {
-        _pathOf[faceKeyOf(item.path)] = item.path;
-        _urlOf[item.path] = item.url;
-      }
-      if (prune && _book.retainOnly({for (final i in own) i.path})) {
-        await _save();
-      }
-
-      final todo = own.where((item) => !_book.hasScanned(item.path)).toList();
-      _knowsAll = prune;
-      if (_demo) {
-        await _scanSamples(todo);
-      } else {
-        await _scanWithAnalyser(todo);
-      }
-    } on Object catch (e) {
-      _error = '$e';
-      debugPrint('PhotoPod: face scan stopped: $e');
-    } finally {
-      _status = null;
-      _scanning = false;
-      _knowsAll = false;
-      notifyListeners();
-    }
-  }
-
-  /// Turn People on: share the face inbox with the Analyser, then scan.
-
-  Future<void> enable() async {
-    await FaceInbox.enable();
-    _needsConsent = false;
-    notifyListeners();
-  }
-
-  /// Turn People off: stop sharing the face inbox and empty it. The people
-  /// already found stay.
-
-  Future<void> disable() async {
-    _cancelled = true;
-    await FaceInbox.disable();
-    _waiting = 0;
-    _needsConsent = true;
-    notifyListeners();
-  }
-
   /// Call [person] by [name], or forget their name when it is blank.
 
   Future<void> rename(String person, String name) async {
@@ -322,7 +135,7 @@ class People extends ChangeNotifier {
     if (entry == null) return;
     entry.name = name.trim().isEmpty ? null : name.trim();
     notifyListeners();
-    await _save();
+    await save();
   }
 
   /// Treat [from] and [into] as one person, keeping [into].
@@ -330,96 +143,46 @@ class People extends ChangeNotifier {
   Future<void> merge(String from, String into) async {
     _book.merge(from, into);
     notifyListeners();
-    await _save();
+    await save();
   }
 
-  /// Delete the faces of the photos in [items], and of every photo in the
-  /// folders among them, from the faces file in the Pod, as when they are
-  /// deleted, and take them out of the face inbox if they are waiting there.
-  ///
-  /// The file is read first if it has not been yet. When it cannot be, as
-  /// when the security key has not been entered, the faces stay until the
-  /// next scan, which forgets every photo no longer in the album.
+  // -- The faces file ------------------------------------------------------
 
-  Future<void> forget(Iterable<MediaItem> items) async {
-    final gone = {
-      for (final item in items)
-        if (!item.isFolder) item.path,
-    };
-    final prefixes = [
-      for (final item in items)
-        if (item.isFolder) '${item.path}/',
-    ];
-    if (gone.isEmpty && prefixes.isEmpty) return;
-    _forgotten.addAll(gone);
-
-    try {
-      await load();
-    } on Object catch (e) {
-      debugPrint('PhotoPod: faces of deleted photos kept until next scan: $e');
-      return;
-    }
-
-    final known = {
-      ..._book.scanned,
-      for (final f in _book.faces.values) f.path,
-      ..._pathOf.values,
-    };
-    final remove = known
-        .where(
-          (path) =>
-              gone.contains(path) || prefixes.any((p) => path.startsWith(p)),
-        )
-        .toSet();
-    if (remove.isEmpty) return;
-    _forgotten.addAll(remove);
-    if (!_demo) {
-      try {
-        await FaceInbox.remove(remove);
-      } on Object catch (e) {
-        debugPrint('PhotoPod: could not empty the face inbox: $e');
-      }
-    }
-    remove.forEach(_book.removePhoto);
-    notifyListeners();
-    await _save();
-  }
-
-  /// Forget everything, as on logout, so nothing is left for the next user.
-
-  void reset() {
-    _cancelled = true;
-    _debounce?.cancel();
-    _book = FaceBook();
-    _loaded = false;
-    _error = null;
-    _needsConsent = false;
-    _pathOf.clear();
-    _urlOf.clear();
-    _waiting = 0;
-    FaceInbox.reset();
-    notifyListeners();
+  @override
+  Future<void> readFile() async {
+    final json = await _file.read();
+    _book = json == null ? FaceBook() : FaceBook.fromJson(json);
   }
 
   @override
-  void dispose() {
-    _debounce?.cancel();
-    unawaited(_added.cancel());
-    super.dispose();
+  Future<void> writeFile() => _file.write(_book.toJson());
+
+  @override
+  void clear() => _book = FaceBook();
+
+  @override
+  bool hasLookedAt(String path) => _book.hasScanned(path);
+
+  @override
+  Iterable<String> get knownPaths => {
+    ..._book.scanned,
+    for (final f in _book.faces.values) f.path,
+  };
+
+  @override
+  bool retainOnly(Set<String> paths) => _book.retainOnly(paths);
+
+  @override
+  void removePhoto(String path) => _book.removePhoto(path);
+
+  @override
+  bool fileAnswer(String path, String content, {String? url}) {
+    final answer = FaceResult.parse(content);
+    if (answer == null) return false;
+    _book.addPhoto(path, answer.faces, url: url);
+    return answer.failed != null;
   }
 
-  // For the halves of this class in people_analyser.dart and
-  // people_demo.dart, which cannot call the protected method themselves.
-
-  void _changed() => notifyListeners();
-
-  Future<void> _save() async {
-    if (_demo) return;
-    try {
-      await _file.write(_book.toJson());
-    } on Object catch (e) {
-      _error = 'Could not save the faces found: $e';
-      debugPrint('PhotoPod: $_error');
-    }
-  }
+  @override
+  Future<void> lookAtSamples(List<MediaItem> todo) => _scanSamples(todo);
 }

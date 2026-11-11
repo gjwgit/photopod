@@ -74,7 +74,7 @@ fi
 # service never has to reach GitHub while a user waits, and so that systemd's
 # read-only sandbox has nothing to write.
 
-echo "==> Fetching the face models into var/models (a 275 MB download, once)"
+echo "==> Fetching the face and tag models into var/models (275 MB and 372 MB, once)"
 mkdir -p var/models
 ./.venv/bin/python -m face_analyser --config config.yaml fetch-models
 

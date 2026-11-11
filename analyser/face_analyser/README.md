@@ -1,19 +1,22 @@
-# PhotoPod Face Analyser
+# PhotoPod Analyser
 
-A headless Python service that runs on the Solid server and finds the faces for
-PhotoPod's **People** section. It works through Pod sharing alone, as
-HealthPod's blood pressure analyser does: a user's Pod shares a folder of
-photos with the **Analyser Pod**
-(`https://solid.dev.empwr.au/Analyser/profile/card#me`), the service finds the
-faces in them and writes the results back into the user's Pod.
+A headless Python service that finds the faces for PhotoPod's **People**
+section and the tags for its **Tags** section. It works through Pod sharing
+alone, as HealthPod's blood pressure analyser does: a user's Pod shares a
+folder of photos with the **Analyser Pod**
+(`https://solid.dev.empwr.au/Analyser/profile/card#me`), the service looks at
+them and writes the results back into the user's Pod.
 
-- No port, no HTTP interface, nothing the app calls. The service only talks to
-  the Solid server it sits beside, logged in as the Analyser, and finds its
-  work by looking at the shared folders every few seconds.
-- Photos move only between the user's Pod and this service on the same
-  server, and are decrypted only in its memory.
+- No port, no HTTP interface, nothing the app calls. The service talks only to
+  Solid servers, logged in as the Analyser, and finds its work by looking at
+  the shared folders every few seconds. The users' Pods may be on the
+  Analyser's server or any other.
+- People and Tags each share a folder of their own, the **face inbox** and the
+  **tag inbox**, so the user turns each on and off separately.
+- Photos are decrypted only in this service's memory.
 - Finds and recognises faces with InsightFace's **buffalo_l** models (SCRFD-10GF
-  and ArcFace ResNet-50), the set Immich uses, run through ONNX Runtime. See
+  and ArcFace ResNet-50), the set Immich uses, and tags photos with Google's
+  **SigLIP** ViT-B/16, all run through ONNX Runtime. See
   [Models and licence](#models-and-licence).
 - Lives at `photopod/analyser/face_analyser`, laid out like
   `healthpod/analyser/bp_analyser`.
@@ -32,19 +35,21 @@ faces in them and writes the results back into the user's Pod.
 ## How it works
 
 ```text
-┌──────────────────────────── Solid server ────────────────────────────┐
+┌──────────────────────────── Solid servers ───────────────────────────┐
 │                                                                      │
 │  Alice's Pod                                                         │
 │    photopod/data/<photos, renditions, faces.json>   (not shared)     │
 │    photopod/data/.faces-inbox/        shared with the Analyser (R/W) │
 │        <key>.enc.ttl         a photo, left by PhotoPod               │
 │        <key>.faces.enc.ttl   its faces, written by the Analyser      │
+│    photopod/data/.tags-inbox/         shared on its own, likewise    │
+│        <key>.tags.enc.ttl    its tags, written by the Analyser       │
 │              ▲   │                                                   │
 │     answer   │   │ read, decrypt                                     │
 │              │   ▼                                                   │
 │        ┌────────────────────┐        Analyser's Pod                  │
 │        │  face_analyser     │ ◄───── photopod/shared/shared-keys.ttl │
-│        │  (this service)    │        (the inbox's folder key)        │
+│        │  (this service)    │        (each inbox's folder key)       │
 │        └────────────────────┘                                        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
@@ -53,20 +58,23 @@ faces in them and writes the results back into the user's Pod.
    `photopod/data/.faces-inbox/` with a folder key of its own and shares the
    folder with the Analyser for Read and Write (solidpod `grantPermission`, as
    HealthPod shares its blood pressure folder). solidpod seals the folder key
-   into the Analyser's `photopod/shared/shared-keys.ttl`.
+   into the Analyser's `photopod/shared/shared-keys.ttl`. Turning Tags on does
+   the same for `photopod/data/.tags-inbox/`.
 2. **Looking.** Every `watch.poll_seconds` (10 s) the service reads that file
    (opening it again only when it has changed) and lists every inbox shared
    with it.
 3. **Analysing.** For each photo waiting there, `<key>.enc.ttl`, it reads and
-   decrypts it with the folder key, in memory, and finds the faces.
+   decrypts it with the folder key, in memory, and finds the faces or the
+   tags, as the inbox asks.
 4. **Answering.** It writes the result beside the photo as
-   `<key>.faces.enc.ttl`, encrypted with the same folder key in exactly the
-   form solidpod's `writePod(inheritKeyFrom:)` writes, so PhotoPod reads it
-   with `readPod()` like any file of its own. Then it removes the photo.
+   `<key>.faces.enc.ttl` or `<key>.tags.enc.ttl`, encrypted with the same
+   folder key in exactly the form solidpod's `writePod(inheritKeyFrom:)`
+   writes, so PhotoPod reads it with `readPod()` like any file of its own.
+   Then it removes the photo.
 5. **Filing.** PhotoPod files each answer in the user's
-   `faces.json.enc.ttl` and deletes the answer.
+   `faces.json.enc.ttl` or `tags.json.enc.ttl` and deletes the answer.
 
-Nothing about any user is kept by the Analyser, neither in its Pod nor on this
+Nothing about any user is kept by the Analyser, neither in its Pod nor on its
 host.
 
 ### The files in the inbox
@@ -98,6 +106,20 @@ or `"failed": "<why>"` in place of the faces for a photo that could not be
 read, which would fail the same way again. `model` must equal `faceModelId`
 in PhotoPod's `lib/models/face_book.dart`.
 
+In the tag inbox the photo's format is `photopod-tag-request`, and the
+answer:
+
+```json
+{"format": "photopod-tag-result", "version": 1,
+ "model": "siglip-b16-webli:tags-v1", "analysed": "2026-11-11T09:00:00.000+00:00",
+ "width": 2048, "height": 1365,
+ "tags": [{"tag": "Mountains", "category": "Nature", "score": 0.604},
+          {"tag": "Lake", "category": "Nature", "score": 0.209}]}
+```
+
+best first, empty when no tag fits well enough. `model` must equal
+`tagModelId` in PhotoPod's `lib/services/tag_results.dart`.
+
 The modules `crypto.py`, `turtle.py`, `pod_paths.py`, `solid_client.py` and
 `keys.py` are taken from HealthPod's analyser, and `tests/test_crypto.py`
 with them: its vectors were generated by solidpod's own Dart libraries, so a
@@ -105,24 +127,29 @@ failure there is a compatibility break, not a test to adjust.
 
 ## What PhotoPod does
 
-- **Turning People on** (People section, once per Pod, from any device):
-  creates and shares the inbox (`lib/services/face_inbox.dart`). Nothing is
-  shared before that. Turning People off revokes the share and empties the
-  inbox.
-- **Entering the Pod**: the user's own `faces.json.enc.ttl` is read as soon as
-  the security key is entered. It is the record of every photo already looked
-  at.
-- **Adding photos**: each new photo's large rendition is left in the inbox as
-  it is uploaded, and the app looks out for the answers.
-- **Opening People**: answers waiting from before are filed first. Then every
-  photo not in the faces file and not already waiting is left in the inbox,
-  and the app looks at the inbox every few seconds until all are answered.
-- **Filing**: answers are saved to the faces file **before** they are deleted,
-  so a crash loses nothing.
-- **Deleting a photo** deletes its faces from the faces file, and its photo or
-  answer from the inbox if either is still there.
-- **Before login**, the sample album uses `assets/demo/faces.json`, worked out
-  once with `./run.sh analyse --full` (see [Development](#development)).
+People and Tags work alike (`lib/services/analyser_section.dart`), each
+with its own inbox and file.
+
+- **Turning People or Tags on** (in its section, once per Pod, from any
+  device): creates and shares its inbox (`lib/services/analyser_inbox.dart`).
+  Nothing is shared before that. Turning it off revokes that share and empties
+  that inbox; the other section is untouched.
+- **Entering the Pod**: the user's own `faces.json.enc.ttl` and
+  `tags.json.enc.ttl` are read as soon as the security key is entered. They
+  are the record of every photo already looked at.
+- **Adding photos**: each new photo's large rendition is left in every inbox
+  that is on as it is uploaded, and the app looks out for the answers.
+- **Opening People or Tags**: answers waiting from before are filed first.
+  Then every photo not in the file and not already waiting is left in the
+  inbox, and the app looks at the inbox every few seconds until all are
+  answered.
+- **Filing**: answers are saved to the file **before** they are deleted, so a
+  crash loses nothing.
+- **Deleting a photo** deletes its faces and tags from both files, and its
+  photo or answer from either inbox if still there.
+- **Before login**, the sample album uses `assets/demo/faces.json` and
+  `assets/demo/tags.json`, worked out once with `./run.sh analyse` (see
+  [Development](#development)).
 
 ## Preparing the Analyser Pod
 
@@ -168,7 +195,7 @@ sudo useradd --system --home /opt/solid/analyser \
 sudo mkdir -p /opt/solid/analyser
 sudo rsync -a /tmp/face_analyser/ /opt/solid/analyser/face_analyser/
 sudo chown -R photopod:photopod /opt/solid/analyser/face_analyser
-sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh   # 275 MB of models
+sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh   # 647 MB of models
 
 sudo cp /opt/solid/analyser/face_analyser/systemd/photopod-face-analyser.env \
         /etc/photopod-face-analyser.env
@@ -189,8 +216,9 @@ journalctl -u photopod-face-analyser -f
 ```
 
 No firewall rule, reverse proxy or certificate is needed: the service opens no
-port. It needs outbound HTTPS to the Solid server only, plus PyPI and GitHub
-while `setup.sh` runs.
+port. It needs outbound HTTPS to the Solid servers only, plus PyPI, GitHub
+and Hugging Face while `setup.sh` runs. Both models together take about 1 GB
+of memory.
 
 ### Updating
 
@@ -202,7 +230,9 @@ sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh
 sudo systemctl start photopod-face-analyser
 ```
 
-`config.yaml` and `/etc/photopod-face-analyser.env` are never overwritten.
+`config.yaml` and `/etc/photopod-face-analyser.env` are never overwritten. A
+`config.yaml` from before Tags has no `tags` section, and the defaults (Tags
+on, `.tags-inbox`) apply.
 
 ## Running it
 
@@ -211,12 +241,12 @@ sudo systemctl start photopod-face-analyser
 ./run.sh watch                 # what systemd runs
 ./run.sh run-once              # one look at every shared inbox
 ./run.sh run-once WEBID        # one look at one Pod's inbox
-./run.sh analyse PHOTO...      # the faces in local photos, no Pod involved
+./run.sh analyse PHOTO...      # faces and tags of local photos, no Pod involved
 ./run.sh test                  # the offline test suite
 ```
 
-A look that found photos logs one line per Pod, for example
-`solid.dev.empwr.au-alice: 3 analysed, 0 failed, 0 pending`.
+A look that found photos logs one line per Pod and inbox, for example
+`solid.dev.empwr.au-alice faces: 3 analysed, 0 failed, 0 pending`.
 
 ## Models and licence
 
@@ -247,17 +277,42 @@ models. Changing models means changing `MODEL_ID` in `face_analyser/__init__.py`
 and `faceModelId` in PhotoPod, and choosing a new threshold; PhotoPod then
 starts every faces file afresh.
 
+### Tags
+
+The tag model is Google's **SigLIP** ViT-B/16 (WebLI, 224 px), in the ONNX
+export Immich publishes on Hugging Face, pinned to one revision and checked
+by SHA-256. Only its image half (372 MB) is fetched by `fetch-models`.
+
+The tags and their categories are in `face_analyser/tag_vocabulary.json`
+(83 tags under Nature, Places, People, Animals, Food and drink, Things,
+Occasions and Documents). Each is described once by SigLIP's text half as
+"a photo of ..." and the descriptions ship beside it in `tag_vocabulary.npz`.
+For a photo, the closeness to every tag is turned into shares of one whole;
+a tag is kept when it takes at least 0.12 of the whole and lies at least
+0.035 close, four at most (`tags` in `config.example.yaml`). On the sample
+photos this gives, for example, Canyon for the Grand Canyon, Mountains, Lake
+and Glacier for Moraine Lake, and Portrait for the portraits.
+
+To change the vocabulary, edit the JSON, raise its `version`, run
+`./run.sh embed-tags` (which fetches the text half, 441 MB, and needs the
+`tokenizers` package), and change `tagModelId` in PhotoPod to match. PhotoPod
+then tags every photo afresh.
+
+**Licence.** SigLIP's weights are released by Google under the Apache License
+2.0 (<https://github.com/google-research/big_vision>), which allows
+commercial use.
+
 ## Privacy and security
 
-- **What is shared:** only the face inbox, and only once the user turns People
-  on. The photos themselves, their small renditions (which carry the place
-  they were taken), names, albums and everything else in PhotoPod stay as
-  private as they were.
+- **What is shared:** only the face inbox and the tag inbox, each only once the
+  user turns People or Tags on. The photos themselves, their small renditions
+  (which carry the place they were taken), names, albums and everything else
+  in PhotoPod stay as private as they were.
 - **How long:** a photo stays in the inbox until it has been analysed, usually
   within seconds. The answer stays until PhotoPod has filed it.
-- **Where:** everything happens on the Solid server's host. Photos are
-  decrypted only in this process's memory, never written to disk and never
-  logged; the log records how many photos each look handled.
+- **Where:** photos are decrypted only in this process's memory, never
+  written to disk and never logged; the log records how many photos each look
+  handled.
 - **No exposure:** the service listens on no port, so there is nothing to
   reach it by but the Pods themselves.
 - **The Analyser's security key** unlocks every key shared with the Analyser
@@ -277,6 +332,8 @@ starts every faces file afresh.
   closed inbox passed over, the shared keys opened once).
 - `tests/test_engine.py`: SCRFD and ArcFace on PhotoPod's sample photos
   (needs the models; skipped without them).
+- `tests/test_tagger.py`: SigLIP on the sample photos, and the shipped
+  descriptions against the vocabulary.
 - `tests/test_crypto.py`: solidpod compatibility vectors.
 
 When the models or the sample album change, regenerate PhotoPod's
@@ -298,5 +355,24 @@ data = {'format': 'photopod-demo-faces', 'version': 1,
         'faces': {pathlib.Path(k).name: v['faces']
                   for k, v in results.items() if v['faces']}}
 (demo / 'faces.json').write_text(json.dumps(data, separators=(',', ':')))
+PY
+```
+
+Likewise `assets/demo/tags.json`, checked with
+`flutter test test/tag_results_test.dart`:
+
+```bash
+A=analyser/face_analyser
+$A/.venv/bin/python -I - "$A" assets/demo <<'PY'
+import json, pathlib, subprocess, sys
+a, demo = sys.argv[1], pathlib.Path(sys.argv[2])
+photos = sorted(p for p in demo.glob('*.jpg') if not p.stem.endswith('_poster'))
+out = subprocess.run([f'{a}/run.sh', 'analyse',
+                      *[str(p.resolve()) for p in photos]],
+                     capture_output=True, text=True, check=True).stdout
+results = json.loads(out)
+data = {'model': 'siglip-b16-webli:tags-v1',
+        'tags': {pathlib.Path(k).name: v['tags'] for k, v in results.items()}}
+(demo / 'tags.json').write_text(json.dumps(data, indent=1))
 PY
 ```

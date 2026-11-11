@@ -1,4 +1,4 @@
-/// Tests for the face inbox names and the results the Analyser shares back.
+/// Tests for the inbox names and the face results the Analyser writes back.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -29,22 +29,24 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:photopod/models/face_book.dart';
-import 'package:photopod/services/face_inbox.dart';
+import 'package:photopod/services/analyser_inbox.dart';
 import 'package:photopod/services/face_results.dart';
 
 void main() {
-  group('faceKeyOf', () {
+  group('inboxKeyOf', () {
     test('is the random part of a stored name', () {
       expect(
-        faceKeyOf('photopod/data/3f9c0b7a1d2e4f5a6b7c8d9e0f1a2b3c.jpg.enc.ttl'),
+        inboxKeyOf(
+          'photopod/data/3f9c0b7a1d2e4f5a6b7c8d9e0f1a2b3c.jpg.enc.ttl',
+        ),
         '3f9c0b7a1d2e4f5a6b7c8d9e0f1a2b3c',
       );
     });
 
     test('is a digest of the path for a name the user gave', () {
-      final key = faceKeyOf('photopod/data/Holiday/beach.jpg.enc.ttl');
+      final key = inboxKeyOf('photopod/data/Holiday/beach.jpg.enc.ttl');
       expect(key, matches(RegExp(r'^[0-9a-f]{32}$')));
-      expect(key, isNot(faceKeyOf('photopod/data/Work/beach.jpg.enc.ttl')));
+      expect(key, isNot(inboxKeyOf('photopod/data/Work/beach.jpg.enc.ttl')));
     });
   });
 

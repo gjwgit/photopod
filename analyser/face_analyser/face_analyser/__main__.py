@@ -26,6 +26,7 @@ Authors: Tony Chen
 #   python -m face_analyser --config config.yaml check
 #   python -m face_analyser --config config.yaml run-once [WEBID...]
 #   python -m face_analyser --config config.yaml fetch-models
+#   python -m face_analyser --config config.yaml embed-tags
 #   python -m face_analyser --config config.yaml analyse PHOTO...
 #
 # Exit status 2 is a configuration error, which the systemd unit does not
@@ -39,13 +40,14 @@ import logging
 import sys
 from pathlib import Path
 
-from . import MODEL_ID, __version__
+from . import __version__
 from .config import Config, ConfigError, load
 from .engine import FaceEngine, ImageError
 from .inbox import shared_inboxes
 from .keys import KeyStoreError, PodKeys
-from .models import ModelError, ensure_all
-from .service import FaceService, NotShared
+from .models import TAG_IMAGE_MODEL, ModelError, ensure_all, ensure_siglip
+from .service import AnalyserService, NotShared
+from .tagger import TagEngine, embed_vocabulary
 from .solid_client import SolidClient, SolidError
 
 log = logging.getLogger('face_analyser')
@@ -56,8 +58,9 @@ EXIT_CONFIG = 2
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog='face_analyser',
-        description='Find the faces in the photos PhotoPod users share with '
-                    'the Analyser Pod, and write them back into their Pods.')
+        description='Find the faces in, and the tags for, the photos PhotoPod '
+                    'users share with the Analyser Pod, and write them back '
+                    'into their Pods.')
     parser.add_argument('--config', type=Path, default=Path('config.yaml'))
     parser.add_argument('--verbose', '-v', action='store_true')
     parser.add_argument('--version', action='version', version=__version__)
@@ -68,8 +71,11 @@ def _parser() -> argparse.ArgumentParser:
     once = commands.add_parser('run-once', help='one look at the inboxes of '
                                                 'the Pods named, or at all')
     once.add_argument('web_ids', nargs='*')
-    commands.add_parser('fetch-models', help='download the two models')
-    analyse = commands.add_parser('analyse', help='the faces in local photos')
+    commands.add_parser('fetch-models', help='download the face and tag models')
+    commands.add_parser('embed-tags', help='describe tag_vocabulary.json '
+                                           'again, after changing it')
+    analyse = commands.add_parser('analyse', help='the faces in, and tags '
+                                                  'for, local photos')
     analyse.add_argument('photos', nargs='+', type=Path)
     analyse.add_argument('--full', action='store_true',
                          help='print embeddings and face pictures as well')
@@ -92,9 +98,18 @@ def main(argv: list[str] | None = None) -> int:
     for warning in config.warnings:
         log.warning(warning)
 
-    if args.command == 'fetch-models':
+    tagging = config.tags is not None and config.tags.enabled
+
+    if args.command in ('fetch-models', 'embed-tags'):
         try:
-            for path in ensure_all(config.engine.models_dir):
+            if args.command == 'embed-tags':
+                print(f'OK  {embed_vocabulary(config.engine.models_dir)}')
+                return 0
+            paths = list(ensure_all(config.engine.models_dir))
+            if tagging:
+                paths += ensure_siglip(config.engine.models_dir,
+                                       (TAG_IMAGE_MODEL,))
+            for path in paths:
                 print(f'OK  {path}')
         except ModelError as e:
             print(e, file=sys.stderr)
@@ -103,12 +118,13 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         engine = FaceEngine(config.engine, download=False)
+        tagger = TagEngine(config.tags, download=False) if tagging else None
     except ModelError as e:
         print(e, file=sys.stderr)
         return EXIT_CONFIG
 
     if args.command == 'analyse':
-        return _analyse(engine, args.photos, full=args.full)
+        return _analyse(engine, tagger, args.photos, full=args.full)
 
     try:
         config.require_credentials()
@@ -127,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f'The Analyser Pod cannot be used: {e}', file=sys.stderr)
         return EXIT_CONFIG
 
-    service = FaceService(config, client, keys, engine)
+    service = AnalyserService(config, client, keys, engine, tagger)
     try:
         if args.command == 'check':
             return _check(config, service)
@@ -142,43 +158,53 @@ def main(argv: list[str] | None = None) -> int:
         client.close()
 
 
-def _check(config: Config, service: FaceService) -> int:
-    print(f'OK    models load ({MODEL_ID})')
+def _check(config: Config, service: AnalyserService) -> int:
+    for kind in service.kinds:
+        print(f'OK    {kind.name} model loads ({kind.engine.model_id})')
+    if service.kind('tags') is None:
+        print('INFO  tagging is turned off (tags.enabled)')
     print(f'OK    logged in and unlocked {config.analyser.web_id}')
     try:
-        inboxes = shared_inboxes(service.keys.shared_resources(), config)
+        shared = service.keys.shared_resources()
     except SolidError as e:
         print(f'FAIL  cannot read the shared keys: {e}')
         return 1
-    print(f'OK    {len(inboxes)} Pod(s) share a face inbox')
-    for url in sorted(inboxes):
-        print(f'      {url}')
+    for kind in service.kinds:
+        inboxes = shared_inboxes(shared, config, kind.fragment)
+        print(f'OK    {len(inboxes)} Pod(s) share a {kind.name} inbox')
+        for url in sorted(inboxes):
+            print(f'      {url}')
     print(f'INFO  looking every {config.watch.poll_seconds:g} s, at most '
           f'{config.inbox.max_per_run} photos per Pod per look')
     return 0
 
 
-def _run_once(service: FaceService, web_ids: list[str]) -> int:
+def _run_once(service: AnalyserService, web_ids: list[str]) -> int:
     if not web_ids:
         reports = service.sweep()
     else:
         reports = []
         for web_id in web_ids:
-            try:
-                reports.append(service.run(web_id))
-            except NotShared as e:
-                print(f'{web_id}: {e}', file=sys.stderr)
+            for kind in service.kinds:
+                try:
+                    reports.append(service.run(web_id, kind.name))
+                except NotShared as e:
+                    print(f'{web_id}: {e}', file=sys.stderr)
     json.dump([r.to_json() for r in reports], sys.stdout, indent=2)
     print()
     return 1 if any(r.errors for r in reports) else 0
 
 
-def _analyse(engine: FaceEngine, photos: list[Path], *, full: bool) -> int:
+def _analyse(engine: FaceEngine, tagger: TagEngine | None,
+             photos: list[Path], *, full: bool) -> int:
     status = 0
     results = {}
     for photo in photos:
         try:
-            result = engine.analyse(photo.read_bytes())
+            data = photo.read_bytes()
+            result = engine.analyse(data)
+            if tagger is not None:
+                result['tags'] = tagger.analyse(data)['tags']
         except (OSError, ImageError) as e:
             print(f'{photo}: {e}', file=sys.stderr)
             status = 1

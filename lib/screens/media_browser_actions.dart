@@ -436,7 +436,7 @@ extension MediaBrowserActions on MediaBrowserState {
       final photo = renditions.photo;
       final frame = renditions.frame;
       if (photo != null) await MediaRenditions.savePhoto(path, photo);
-      if (photo != null) FaceInbox.photoAdded(path, photo.large ?? photo.small);
+      if (photo != null) photoAdded(path, photo.large ?? photo.small);
       if (frame != null) await MediaRenditions.saveVideo(path, frame);
     } on Object catch (e) {
       debugPrint('PhotoPod: could not store renditions of $name: $e');
@@ -502,7 +502,7 @@ extension MediaBrowserActions on MediaBrowserState {
     final albums = context.read<Albums>();
     final index = context.read<MediaIndex>();
     final sharedWithMe = context.read<SharedWithMe>();
-    final people = context.read<People>();
+    final analysed = [context.read<People>(), context.read<PhotoTags>()];
 
     final failed = await showWorking(context, 'Deleting...', () async {
       return {
@@ -527,10 +527,13 @@ extension MediaBrowserActions on MediaBrowserState {
     await favourites.forget(gone);
     await albums.forget(gone);
 
-    // The faces found in a deleted photo, or in any photo of a deleted
-    // folder, are deleted from the faces file in the Pod along with it.
+    // The faces and tags found in a deleted photo, or in any photo of a
+    // deleted folder, are deleted from their files in the Pod along with it.
 
-    await people.forget(own.where((item) => !failed.containsKey(item)));
+    final deleted = own.where((item) => !failed.containsKey(item)).toList();
+    for (final section in analysed) {
+      await section.forget(deleted);
+    }
 
     // Deleting a file already took away everyone's access to it, so album
     // sharing only has to stop remembering it.
