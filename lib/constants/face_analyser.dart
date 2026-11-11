@@ -48,4 +48,9 @@ class FaceAnalyser {
   /// Name shown in the interface, in place of the raw WebID.
 
   static const String displayName = 'PhotoPod Analyser';
+
+  /// Who the catalog credits with the people the Analyser found, as a
+  /// suggestion the user may keep, change or remove in Get Info.
+
+  static const String source = 'photopod:analyser';
 }

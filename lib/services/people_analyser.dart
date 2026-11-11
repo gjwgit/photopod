@@ -75,8 +75,7 @@ extension _PeopleAnalyser on People {
       if (_cancelled) return;
       try {
         final image =
-            await MediaRenditions.readLarge(item) ??
-            await ThumbnailCache.instance.preview(item);
+            await MediaRenditions.readLarge(item) ?? await _renderLarge(item);
         if (image == null) throw StateError('no picture');
         await FaceInbox.leave(item.path, image);
       } on Object catch (e) {
@@ -91,6 +90,20 @@ extension _PeopleAnalyser on People {
     }
 
     await _waitForAnswers();
+  }
+
+  /// A large rendition of [item] made from its original, for a photo with
+  /// none stored: one added before renditions were kept, or a GIF, whose
+  /// preview is its original. Never the original itself, which can be many
+  /// megabytes and in a format [FaceInbox.leave] cannot clean.
+
+  Future<Uint8List?> _renderLarge(MediaItem item) async {
+    final original = await ThumbnailCache.instance.original(item);
+    final made = await compute(renderPhoto, (
+      bytes: original,
+      keepOriginal: false,
+    ));
+    return made?.large;
   }
 
   /// Look at the inbox every few seconds while photos are waiting in it,
@@ -127,6 +140,7 @@ extension _PeopleAnalyser on People {
     _changed();
 
     final filed = <String>[];
+    final photos = <String>{};
     for (final key in listing.answered) {
       final path = _pathOf[key];
       try {
@@ -140,6 +154,7 @@ extension _PeopleAnalyser on People {
         }
         if (answer != null && !_forgotten.contains(path)) {
           _book.addPhoto(path, answer.faces, url: _urlOf[path]);
+          photos.add(path);
           if (answer.failed != null) _failed++;
         }
         filed.add(key);
@@ -149,7 +164,13 @@ extension _PeopleAnalyser on People {
     }
 
     if (filed.isEmpty) return listing;
+
+    // A face found where the user has named someone in Get Info takes that
+    // name, and the people named in these photos are listed in the catalog.
+
+    photos.addAll(await _nameFromCatalog());
     await _save();
+    await _toCatalog(photos);
     for (final key in filed) {
       try {
         await FaceInbox.deleteAnswer(key);

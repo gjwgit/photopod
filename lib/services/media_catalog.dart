@@ -332,6 +332,24 @@ class MediaCatalog {
         }
       });
 
+  /// Replace the faces [source] found in each photo in [found], by path,
+  /// with those listed for it there, keeping everyone else's
+  /// ([withFoundFaces]). All the photos are changed in one write.
+
+  static Future<void> setFoundFaces(
+    String source,
+    Map<String, List<PhotoFace>> found,
+  ) => _change((entries) {
+    for (final MapEntry(key: path, value: faces) in found.entries) {
+      if (faces.isEmpty && _at(entries, path) == null) continue;
+      final entry = _forUpdate(entries, path);
+      if (entry == null) continue;
+      entries[catalogKeyOf(path)] = entry.copyWith(
+        faces: withFoundFaces(entry.faces, source, faces),
+      );
+    }
+  });
+
   /// Forget [paths], and everything beneath those that are folders, for items
   /// that have been deleted. Nothing that goes wrong is reported: an entry
   /// left behind belongs to a path no file will ever have again.

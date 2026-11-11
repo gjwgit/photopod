@@ -38,8 +38,9 @@ Authors: Tony Chen
 #
 #     {"format": "photopod-face-request", "version": 1, "image": "<base64 JPEG>"}
 #
-# the photo's large rendition, which carries no EXIF block. The answer is
-# encrypted with the same folder key; see service.py for what it holds.
+# the photo's large rendition, its EXIF block taken out by PhotoPod. The
+# answer is encrypted with the same folder key; see service.py for what it
+# holds.
 
 from __future__ import annotations
 

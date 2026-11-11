@@ -25,6 +25,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -81,6 +82,80 @@ String faceKeyOf(String path) {
       sha256.convert(utf8.encode(path)).toString().substring(0, 32);
 }
 
+/// [picture], a JPEG or PNG, without what it says about itself beyond the
+/// picture: the EXIF block, which says where and when it was taken and with
+/// what, XMP, IPTC and any comments. Everything needed to show it, colour
+/// profile included, is kept. Null when [picture] is neither, or is not
+/// well formed, so that nothing is let through unexamined.
+///
+/// Byte by byte rather than decoded and encoded again, which would cost far
+/// more and change the picture: only whole segments, or chunks, are dropped.
+
+Uint8List? withoutMetadata(Uint8List picture) {
+  if (_startsWith(picture, _jpegStart)) return _jpegWithoutMetadata(picture);
+  if (_startsWith(picture, _pngStart)) return _pngWithoutMetadata(picture);
+  return null;
+}
+
+const _jpegStart = [0xff, 0xd8];
+const _pngStart = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+bool _startsWith(Uint8List bytes, List<int> start) {
+  if (bytes.length < start.length) return false;
+  for (var i = 0; i < start.length; i++) {
+    if (bytes[i] != start[i]) return false;
+  }
+  return true;
+}
+
+// A JPEG is a run of segments, each a marker and its length, up to the
+// start of the scan, after which comes the picture itself. APP1 holds EXIF
+// and XMP, APP13 IPTC, and COM comments.
+
+Uint8List? _jpegWithoutMetadata(Uint8List bytes) {
+  const app1 = 0xe1, app13 = 0xed, comment = 0xfe, startOfScan = 0xda;
+  final out = BytesBuilder(copy: false)..add(bytes.sublist(0, 2));
+  var at = 2;
+  while (at + 4 <= bytes.length) {
+    if (bytes[at] != 0xff) return null;
+    final marker = bytes[at + 1];
+    if (marker == 0xff) {
+      at++;
+      continue;
+    }
+    if (marker == startOfScan) {
+      out.add(bytes.sublist(at));
+      return out.takeBytes();
+    }
+    final end = at + 2 + ((bytes[at + 2] << 8) | bytes[at + 3]);
+    if (end < at + 4 || end > bytes.length) return null;
+    if (marker != app1 && marker != app13 && marker != comment) {
+      out.add(bytes.sublist(at, end));
+    }
+    at = end;
+  }
+  return null;
+}
+
+// A PNG is a run of chunks, each its length, its type, its data and a
+// checksum of its own, so a chunk can be dropped whole.
+
+Uint8List? _pngWithoutMetadata(Uint8List bytes) {
+  const dropped = {'eXIf', 'tEXt', 'zTXt', 'iTXt'};
+  final out = BytesBuilder(copy: false)..add(bytes.sublist(0, 8));
+  var at = 8;
+  while (at + 12 <= bytes.length) {
+    final length = ByteData.sublistView(bytes, at, at + 4).getUint32(0);
+    final end = at + 12 + length;
+    if (end > bytes.length) return null;
+    final type = String.fromCharCodes(bytes.sublist(at + 4, at + 8));
+    if (!dropped.contains(type)) out.add(bytes.sublist(at, end));
+    at = end;
+    if (type == 'IEND') return out.takeBytes();
+  }
+  return null;
+}
+
 /// The face inbox in the user's own Pod.
 ///
 /// Face recognition runs in the Analyser, a service beside the Solid server
@@ -112,13 +187,13 @@ class FaceInbox {
 
   static Future<void> _queue = Future<void>.value();
 
-  static final StreamController<void> _added =
-      StreamController<void>.broadcast();
+  static final StreamController<String> _added =
+      StreamController<String>.broadcast();
 
-  /// Fires each time a photo is left in the inbox as it is added, so that
-  /// [People] can look out for the answer.
+  /// The path of each photo left in the inbox as it is added, so that
+  /// [People] can look out for its answer and knows which photo it is for.
 
-  static Stream<void> get added => _added.stream;
+  static Stream<String> get added => _added.stream;
 
   /// The Pod-relative path of the inbox.
 
@@ -158,21 +233,33 @@ class FaceInbox {
     // grantPermission() declares the list as dynamic but reads each entry
     // as a String, so the mode names are what must be passed.
 
-    final status = await grantPermission(
-      fileName: url,
-      isFile: false,
-      permissionList: [AccessMode.read.mode, AccessMode.write.mode],
-      recipientType: RecipientType.individual,
-      recipientWebIdList: [FaceAnalyser.webId],
-      ownerWebId: webId,
-      granterWebId: webId,
-    );
-    if (status != SolidFunctionCallStatus.success) {
-      throw StateError(
-        status == SolidFunctionCallStatus.notInitialised
-            ? 'The Analyser Pod is not set up for PhotoPod yet.'
-            : 'Could not share the face inbox with the Analyser ($status).',
+    try {
+      final status = await grantPermission(
+        fileName: url,
+        isFile: false,
+        permissionList: [AccessMode.read.mode, AccessMode.write.mode],
+        recipientType: RecipientType.individual,
+        recipientWebIdList: [FaceAnalyser.webId],
+        ownerWebId: webId,
+        granterWebId: webId,
       );
+      if (status != SolidFunctionCallStatus.success) {
+        throw StateError(
+          status == SolidFunctionCallStatus.notInitialised
+              ? 'The Analyser Pod is not set up for PhotoPod yet.'
+              : 'Could not share the face inbox with the Analyser ($status).',
+        );
+      }
+    } on Object {
+      // setInheritKeyDir() made the folder, and the folder being there is
+      // what says People is on. Left behind unshared, it would keep People
+      // on, with nothing ever answered and no way to try again.
+
+      await _delete('$url.acl');
+      await _delete(url, ResourceContentType.directory);
+      _enabled = false;
+      _knownFor = url;
+      rethrow;
     }
     _enabled = true;
     _knownFor = url;
@@ -209,17 +296,21 @@ class FaceInbox {
     _knownFor = url;
   }
 
-  /// Leave the photo at [photoPath] in the inbox as [jpeg], its large
-  /// rendition, for the Analyser to look at.
+  /// Leave the photo at [photoPath] in the inbox as [picture], its large
+  /// rendition, for the Analyser to look at. What the photo's EXIF block and
+  /// the like say, such as where it was taken, is taken out first
+  /// ([withoutMetadata]): the Analyser needs only the picture.
 
-  static Future<void> leave(String photoPath, Uint8List jpeg) async {
+  static Future<void> leave(String photoPath, Uint8List picture) async {
+    final bare = withoutMetadata(picture);
+    if (bare == null) throw StateError('not a JPEG or PNG picture');
     final inbox = await path();
     await writePod(
       '$inbox/${faceKeyOf(photoPath)}$_photoSuffix',
       jsonEncode({
         'format': faceRequestFormat,
         'version': 1,
-        'image': base64Encode(jpeg),
+        'image': base64Encode(bare),
       }),
       pathType: PathType.relativeToPod,
       createAcl: false,
@@ -238,7 +329,7 @@ class FaceInbox {
       try {
         if (!await isEnabled()) return;
         await leave(photoPath, jpeg);
-        _added.add(null);
+        _added.add(photoPath);
       } on Object catch (e) {
         debugPrint('PhotoPod: could not leave $photoPath for the Analyser: $e');
       }

@@ -32,16 +32,19 @@ import 'package:flutter/services.dart' show rootBundle;
 import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 
 import 'package:photopod/constants/face_analyser.dart';
+import 'package:photopod/models/catalog_entry.dart';
 import 'package:photopod/models/face_book.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
 import 'package:photopod/services/face_inbox.dart';
 import 'package:photopod/services/face_results.dart';
+import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
 part 'people_analyser.dart';
+part 'people_catalog.dart';
 part 'people_demo.dart';
 
 /// The fewest photos someone must be in before People lists them. One
@@ -100,13 +103,20 @@ class PersonEntry {
 
 class People extends ChangeNotifier {
   People() {
-    _added = FaceInbox.added.listen((_) => _soon());
+    // An answer is filed under the photo its key stands for, so a photo
+    // left as it is added has to be known by its key, or its answer would
+    // wait for a scan of People.
+
+    _added = FaceInbox.added.listen((path) {
+      _pathOf[faceKeyOf(path)] = path;
+      _soon();
+    });
   }
 
   FaceBook _book = FaceBook();
   bool _loaded = false;
   Future<void>? _loading;
-  late final StreamSubscription<void> _added;
+  late final StreamSubscription<String> _added;
   Timer? _debounce;
 
   // Whether the faces are those of the sample album shown before login,
@@ -274,9 +284,13 @@ class People extends ChangeNotifier {
         _pathOf[faceKeyOf(item.path)] = item.path;
         _urlOf[item.path] = item.url;
       }
-      if (prune && _book.retainOnly({for (final i in own) i.path})) {
-        await _save();
-      }
+      final changed = prune && _book.retainOnly({for (final i in own) i.path});
+
+      // Names given in Get Info since the last scan name the people found.
+
+      final named = await _nameFromCatalog();
+      if (changed || named.isNotEmpty) await _save();
+      await _toCatalog(named);
 
       final todo = own.where((item) => !_book.hasScanned(item.path)).toList();
       _knowsAll = prune;
@@ -323,6 +337,7 @@ class People extends ChangeNotifier {
     entry.name = name.trim().isEmpty ? null : name.trim();
     notifyListeners();
     await _save();
+    await _toCatalog(_book.photosOf([person]));
   }
 
   /// Treat [from] and [into] as one person, keeping [into].
@@ -331,6 +346,7 @@ class People extends ChangeNotifier {
     _book.merge(from, into);
     notifyListeners();
     await _save();
+    await _toCatalog(_book.photosOf([into]));
   }
 
   /// Delete the faces of the photos in [items], and of every photo in the

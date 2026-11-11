@@ -81,7 +81,9 @@ A photo, inside its encryption:
 {"format": "photopod-face-request", "version": 1, "image": "<base64 JPEG>"}
 ```
 
-the 2048 px large rendition, which carries no EXIF data and so no location.
+the 2048 px large rendition, with its EXIF, XMP and IPTC blocks taken out by
+PhotoPod first (`withoutMetadata` in `lib/services/face_inbox.dart`), so that
+it says nothing of where or when it was taken.
 
 An answer, inside its encryption:
 
