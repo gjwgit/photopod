@@ -220,7 +220,7 @@ class _AppScaffoldState extends State<AppScaffold> {
 
         🔐 Share photos and videos with other Solid users by WebID;
 
-        ↕️ Sort by name or by date, and page through large albums;
+        ↕️ Sort by name, date or location, and page through large albums;
 
         🎨 Theme switching (light/dark/system);
 

@@ -57,10 +57,14 @@ extension MediaBrowserBody on MediaBrowserState {
     }
 
     // The timeline scrolls through everything at once, the way a camera
-    // roll does, so it has no pages, and nor does the Albums section, where
-    // each album scrolls on its own.
+    // roll does, so it has no pages, and nor do the tiles grouped by place,
+    // which would otherwise split a place across pages, nor the Albums
+    // section, where each album scrolls on its own.
 
-    final paged = widget.section != LibrarySection.albums && !_isTimeline;
+    final paged =
+        widget.section != LibrarySection.albums &&
+        !_isTimeline &&
+        !_groupsByPlace;
     final sorted = _sorted;
     final pageCount = paged ? _pageCount(sorted.length, prefs.itemsPerPage) : 1;
     final page = _page.clamp(0, pageCount - 1);
@@ -172,8 +176,8 @@ extension MediaBrowserBody on MediaBrowserState {
       selectionCount: _selected.length,
       fileCount: files.length,
       allFavourite: context.read<Favourites>().containsAll(files),
-      sortOption: context.read<ViewPrefs>().sortOption,
-      canSort: !_isTimeline,
+      sortOption: _sortShown,
+      sortOptions: _sortChoices,
       actions: _actions(context),
       albumNames: context.read<Albums>().names,
       canRemoveFromAlbum: _inOwnAlbum && files.isNotEmpty,
@@ -366,6 +370,8 @@ extension MediaBrowserBody on MediaBrowserState {
       },
       child: _isTimeline
           ? _buildTimeline(context, prefs, favourites, all)
+          : _groupsByPlace
+          ? _buildPlaces(context, prefs, favourites, all)
           : prefs.viewMode == MediaViewMode.grid
           ? MediaGrid(
               items: visible,
@@ -417,6 +423,34 @@ extension MediaBrowserBody on MediaBrowserState {
       onInfo: (item) => showInfoDialog(context, item),
       onOpenMemory: (memory) =>
           _handleActivate(memory.items.first, memory.items),
+    );
+  }
+
+  // The photos and videos are grouped under the place they were taken, the
+  // places from A to Z and Others, for those that do not say, at the end.
+  // Memories belong to the timeline and are not shown here.
+
+  Widget _buildPlaces(
+    BuildContext context,
+    ViewPrefs prefs,
+    Favourites favourites,
+    List<MediaItem> all,
+  ) {
+    final files = all.where((item) => !item.isFolder).toList();
+
+    return MediaTimeline(
+      groups: groupByPlace(files, MediaBrowserState.regionOfItem),
+      memories: const [],
+      tileExtent: prefs.tileSize.extent,
+      isSelected: (item) => _selected.contains(item.id),
+      isFavourite: favourites.contains,
+      isSharedOut: (item) => context.read<SharedWithMe>().isSharedOut(item.url),
+      multiSelect: _multiSelect,
+      onTap: (item) => _handleTap(item, all),
+      onActivate: _handleActivate,
+      onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+      onInfo: (item) => showInfoDialog(context, item),
+      onOpenMemory: (_) {},
     );
   }
 
