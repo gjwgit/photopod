@@ -102,64 +102,6 @@ extension MediaBrowserBody on MediaBrowserState {
     );
   }
 
-  // Only the Library shows everything, so it alone takes files dragged from
-  // the desktop, once it knows where the album is. While a drag hovers the
-  // content is outlined and says where the files will go, so the drop is not
-  // a leap of faith.
-
-  Widget _buildDropTarget(BuildContext context, Widget child) {
-    final enabled =
-        widget.section == LibrarySection.library && _root.isNotEmpty;
-    final scheme = Theme.of(context).colorScheme;
-
-    return DropTarget(
-      enable: enabled,
-      onDragEntered: (_) => updateState(() => _dragging = true),
-      onDragExited: (_) => updateState(() => _dragging = false),
-      onDragDone: (details) {
-        updateState(() => _dragging = false);
-        _dropFiles(context, details.files);
-      },
-      child: Stack(
-        children: [
-          Positioned.fill(child: child),
-          if (enabled && _dragging)
-            Positioned.fill(
-              child: IgnorePointer(
-                child: Container(
-                  margin: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: scheme.primaryContainer.withValues(alpha: 0.85),
-                    border: Border.all(color: scheme.primary, width: 2),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.file_upload_outlined,
-                          size: 56,
-                          color: scheme.onPrimaryContainer,
-                        ),
-                        const Gap(12),
-                        Text(
-                          'Drop photos and videos to add them to your album',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(color: scheme.onPrimaryContainer),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
   // The title and the toolbar share a row on a wide window and stack on a
   // narrow one, so neither has to be squeezed or scrolled on a phone.
 
@@ -488,6 +430,7 @@ extension MediaBrowserBody on MediaBrowserState {
     LibrarySection.videos =>
       'There are no videos anywhere in your album yet. Use Add in the '
           'Library to put some in.',
+    LibrarySection.people => 'Nobody to show.',
     LibrarySection.maps => 'Nothing to map.',
   };
 

@@ -59,6 +59,7 @@ import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/media_metadata_backfill.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/media_store.dart';
+import 'package:photopod/services/people.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
@@ -80,6 +81,7 @@ import 'package:photopod/widgets/pagination_bar.dart';
 part 'media_browser_actions.dart';
 part 'media_browser_albums.dart';
 part 'media_browser_body.dart';
+part 'media_browser_drop.dart';
 part 'media_browser_transfers.dart';
 
 /// The Library, Favourites, Albums or Videos section of the app.
@@ -199,8 +201,13 @@ class MediaBrowserState extends State<MediaBrowser> {
       // or filed in a folder, is moved into the store, once, as soon as the
       // security key is to hand.
 
+      //
+      // The faces already found are read from the Pod at the same point, so
+      // that People opens on them and sends only the photos added since.
+
       unawaited(
         PodKeys.unlocked().then((_) async {
+          if (mounted) unawaited(context.read<People>().preload());
           if (mounted) await _upgradeStorage(context);
         }),
       );
@@ -342,6 +349,7 @@ class MediaBrowserState extends State<MediaBrowser> {
             .toList();
       case LibrarySection.videos:
         return context.read<MediaIndex>().videos;
+      case LibrarySection.people:
       case LibrarySection.maps:
         return const [];
     }

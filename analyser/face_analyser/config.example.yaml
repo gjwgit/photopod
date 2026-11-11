@@ -1,0 +1,88 @@
+# Configuration for the PhotoPod face analyser.
+#
+# Copy this file to config.yaml and edit it (setup.sh does the copy):
+#
+#     cp config.example.yaml config.yaml
+#     chmod 600 config.yaml
+#
+# Every secret can be supplied through the environment instead, which is what
+# the systemd unit does:
+#
+#     PHOTOPOD_FACE_ANALYSER_SECURITY_KEY
+#     PHOTOPOD_FACE_ANALYSER_CLIENT_ID
+#     PHOTOPOD_FACE_ANALYSER_CLIENT_SECRET
+
+# ---------------------------------------------------------------------------
+# The Analyser Pod: who the analyser is, and how it logs in. The same Pod
+# HealthPod's analyser uses; it needs initialising for PhotoPod as well.
+# ---------------------------------------------------------------------------
+
+analyser:
+
+  web_id: https://solid.dev.empwr.au/Analyser/profile/card#me
+
+  # The Solid server the Analyser logs in to. Derived from web_id when left
+  # out. The users' Pods may be on this server or any other.
+
+  # server_url: https://solid.dev.empwr.au
+
+  # PhotoPod's application folder, in the Analyser Pod and in every user's.
+
+  app_dir_name: photopod
+
+  # The security key the Analyser Pod was initialised with in PhotoPod.
+  # Prefer the environment variable in production and leave this blank.
+
+  security_key: ''
+
+  # Client credentials issued by the server for the Analyser account. See
+  # README.md, section "Preparing the Analyser Pod".
+
+  credentials:
+    client_id: ''
+    client_secret: ''
+
+  request_timeout: 30.0
+
+# ---------------------------------------------------------------------------
+# The face inbox in each user's Pod.
+# ---------------------------------------------------------------------------
+
+inbox:
+
+  # The folder in PhotoPod's data folder that users share with the Analyser.
+  # Must match faceInboxFolderName in lib/services/face_inbox.dart.
+
+  folder: .faces-inbox
+
+# ---------------------------------------------------------------------------
+# Listening for requests. The service never looks at a user's Pod on a timer:
+# the Solid server tells it when a user shares an inbox with the Analyser.
+# ---------------------------------------------------------------------------
+
+watch:
+
+  # Seconds to wait before listening again when the server closes the
+  # notification channel or cannot be reached.
+
+  reconnect_seconds: 30
+
+# ---------------------------------------------------------------------------
+# The analysis: InsightFace's buffalo_l models (SCRFD-10GF + ArcFace R50).
+# The defaults are in face_analyser/engine.py; uncomment a line only to
+# change it, so that a later version's defaults are not pinned here.
+# ---------------------------------------------------------------------------
+
+engine:
+
+  # Where the two ONNX models are kept, relative to this file.
+
+  models_dir: var/models
+
+  # min_score: 0.6          # how sure SCRFD must be that it is a face
+  # min_face_side: 24       # the smallest face, in pixels, worth recognising
+  # detect_side: 640        # the square SCRFD looks at
+  # max_side: 2048          # the longest side a picture is kept at
+  # face_image_side: 96     # the portrait kept of each face
+  # face_image_margin: 1.6
+  # threads: 0              # ONNX Runtime threads per photo; 0 = automatic
