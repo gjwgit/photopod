@@ -86,14 +86,14 @@ String faceKeyOf(String path) {
 /// Face recognition runs in the Analyser, a service beside the Solid server
 /// with a Pod of its own ([FaceAnalyser.webId]), as HealthPod's blood
 /// pressure analyser does. PhotoPod never talks to the service: the two Pods
-/// share a folder, and the server does the rest.
+/// share a folder, and the Analyser does the rest.
 ///
 /// Turning People on makes `.faces-inbox/` in the PhotoPod data folder and
 /// shares it with the Analyser, for reading and writing, once. Every photo
 /// added is then left there as its large rendition, `<key>.enc.ttl`,
 /// encrypted with the folder's key ([leave]); the share is what gives the
 /// Analyser that key. The Analyser, which looks at every shared inbox every
-/// few seconds, reads the photo on the server, writes the faces it found
+/// few seconds, reads the photo, writes the faces it found
 /// beside it as `<key>.faces.enc.ttl`, encrypted with the same key, and
 /// removes the photo. PhotoPod files each answer in the faces file and
 /// deletes it ([readAnswer], [deleteAnswer]).

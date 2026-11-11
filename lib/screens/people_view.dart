@@ -205,10 +205,8 @@ class _PeopleViewState extends State<PeopleView> {
         Icons.face_outlined,
         people.isScanning ? 'Looking for faces' : 'No people yet',
         people.isScanning
-            ? 'People appear here as their faces are found. Each new photo '
-                  'waits in your Pod for the ${FaceAnalyser.displayName}, '
-                  'which looks at it on the server and writes what describes '
-                  'each face back, encrypted, into your Pod.'
+            ? 'People appear here as their faces are found by the '
+                  '${FaceAnalyser.displayName}.'
             : 'Someone is listed once they are in at least '
                   '$minPhotosPerPerson of your photos.',
       );
@@ -254,14 +252,12 @@ class _PeopleViewState extends State<PeopleView> {
             ),
             const Gap(8),
             const Text(
-              'Faces are found by the ${FaceAnalyser.displayName}, a service '
-              'on the same server as your Pod. Turning People on shares one '
-              'folder of your Pod with it, the face inbox. Each photo is '
-              'left there, encrypted, until the Analyser has looked at it '
-              'on the server and written the faces it found back into the '
-              'same folder. Your photos, their details and everything else '
-              'stay as private as they are now. You can turn People off at any '
-              'time.',
+              'Faces are found by the ${FaceAnalyser.displayName}. Only one '
+              'folder of your Pod is shared with it, and every photo in it '
+              'stays encrypted. The Analyser opens a photo only to find the '
+              'faces in it, keeps no copy, and returns what it found to your '
+              'Pod, encrypted. Nothing else in your Pod is shared, and you '
+              'can turn People off at any time, which ends the share.',
               textAlign: TextAlign.center,
             ),
             const Gap(24),

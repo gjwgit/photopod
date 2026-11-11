@@ -108,9 +108,8 @@ class WatchConfig:
     """How often the shared inboxes are looked at."""
 
     # Seconds between looks. Each look reads the Analyser's shared-keys file
-    # and lists every shared inbox, all on the same server, so a short
-    # interval costs little and is what makes a new photo be analysed
-    # moments after it is added.
+    # and lists every shared inbox, so a short interval costs little and is
+    # what makes a new photo be analysed moments after it is added.
 
     poll_seconds: float = 10.0
 

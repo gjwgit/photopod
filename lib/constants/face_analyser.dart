@@ -25,20 +25,25 @@ library;
 
 /// The face Analyser, set up as HealthPod's blood pressure analyser is.
 ///
-/// The Analyser is a Pod on the same Solid server as the user's. Turning
-/// People on shares the user's face inbox with it; a service beside the
-/// server (analyser/face_analyser in this repository), logged in as the
-/// Analyser, looks at every shared inbox and writes the faces it finds back
-/// into it. The app never talks to that service, so it needs no address of
-/// it: [webId] is all there is to know.
+/// The Analyser is a Pod, on the user's Solid server or any other. Turning
+/// People on shares the user's face inbox with its WebID; a service logged
+/// in as the Analyser (analyser/face_analyser in this repository) looks at
+/// every shared inbox and writes the faces it finds back into it. The app
+/// never talks to that service, so it needs no address of it: [webId] is all
+/// there is to know.
+///
+/// Another Analyser is chosen at build time with
+/// `--dart-define=FACE_ANALYSER_WEBID=https://.../profile/card#me`.
 
 class FaceAnalyser {
   const FaceAnalyser._();
 
   /// The WebID the face inbox is shared with.
 
-  static const String webId =
-      'https://solid.dev.empwr.au/Analyser/profile/card#me';
+  static const String webId = String.fromEnvironment(
+    'FACE_ANALYSER_WEBID',
+    defaultValue: 'https://solid.dev.empwr.au/Analyser/profile/card#me',
+  );
 
   /// Name shown in the interface, in place of the raw WebID.
 

@@ -21,9 +21,10 @@ analyser:
 
   web_id: https://solid.dev.empwr.au/Analyser/profile/card#me
 
-  # The Solid server. Derived from web_id when left blank.
+  # The Solid server the Analyser logs in to. Derived from web_id when left
+  # out. The users' Pods may be on this server or any other.
 
-  server_url: https://solid.dev.empwr.au
+  # server_url: https://solid.dev.empwr.au
 
   # PhotoPod's application folder, in the Analyser Pod and in every user's.
 

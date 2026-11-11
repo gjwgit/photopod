@@ -152,9 +152,9 @@ class _AppScaffoldState extends State<AppScaffold> {
             **People**
 
             Tap here for the people in your photos, each with every photo
-            they are in. Faces are found by the PhotoPod Analyser, on the
-            same server as your Pod, from a face inbox you share with it;
-            what it finds comes back, encrypted, to your Pod.
+            they are in. Faces are found by the PhotoPod Analyser, from one
+            encrypted folder you share with it; what it finds comes back,
+            encrypted, to your Pod.
 
             ''',
           child: PeopleView(key: ValueKey(LibrarySection.people)),
