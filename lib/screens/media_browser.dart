@@ -59,6 +59,7 @@ import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/media_metadata_backfill.dart';
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/media_store.dart';
+import 'package:photopod/services/place_regions.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
@@ -360,7 +361,39 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   bool get _isTimeline =>
       widget.section == LibrarySection.library &&
-      context.read<ViewPrefs>().viewMode == MediaViewMode.grid;
+      context.read<ViewPrefs>().viewMode == MediaViewMode.grid &&
+      context.read<ViewPrefs>().sortOption != MediaSortOption.location;
+
+  /// Whether the tiles are shown under the place each was taken, one place
+  /// under each heading, which the Location order does wherever tiles are
+  /// shown, the Library included. Each album in the Albums section keeps its
+  /// own row of tiles, sorted by place.
+
+  bool get _groupsByPlace =>
+      widget.section != LibrarySection.albums &&
+      widget.section != LibrarySection.maps &&
+      context.read<ViewPrefs>().viewMode == MediaViewMode.grid &&
+      context.read<ViewPrefs>().sortOption == MediaSortOption.location;
+
+  /// The orders the Sort menu offers. The Library's tiles are either the
+  /// timeline, the latest day first, or grouped by place, so only those two
+  /// are offered there.
+
+  List<MediaSortOption> get _sortChoices =>
+      widget.section == LibrarySection.library &&
+          context.read<ViewPrefs>().viewMode == MediaViewMode.grid
+      ? const [MediaSortOption.dateDescending, MediaSortOption.location]
+      : MediaSortOption.values;
+
+  /// The order ticked in the Sort menu: the one chosen, or in the Library's
+  /// timeline, which always puts the latest day first, that order.
+
+  MediaSortOption get _sortShown {
+    final option = context.read<ViewPrefs>().sortOption;
+    return _sortChoices.contains(option)
+        ? option
+        : MediaSortOption.dateDescending;
+  }
 
   /// Everything this section shows, folders first and then files, each group
   /// in the order the user has chosen.
@@ -396,8 +429,22 @@ class MediaBrowserState extends State<MediaBrowser> {
         items.sort(_byDate);
       case MediaSortOption.dateDescending:
         items.sort((a, b) => _byDate(b, a));
+      case MediaSortOption.location:
+        final ordered = [
+          for (final group in groupByPlace(items, regionOfItem)) ...group.items,
+        ];
+        items
+          ..clear()
+          ..addAll(ordered);
     }
   }
+
+  /// The city or region the item was taken in, such as
+  /// `Canberra, Australia`, from the place the user gave it or else from
+  /// where the photo itself says; [unknownRegion] when neither says.
+
+  static String regionOfItem(MediaItem item) =>
+      PlaceRegions.regionOf(MediaCatalog.entryOf(item.path)?.location);
 
   static int _byName(MediaItem a, MediaItem b) =>
       a.name.toLowerCase().compareTo(b.name.toLowerCase());

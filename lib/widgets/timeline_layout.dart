@@ -26,15 +26,16 @@ library;
 import 'dart:math' as math;
 
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/place_regions.dart' show unknownRegion;
 import 'package:photopod/utils/formatting.dart';
 
-/// The photos and videos under one heading: a single day, the folders, or
-/// everything the server gave no date for.
+/// The photos and videos under one heading: a single day, a place, the
+/// folders, or everything the server gave no date for.
 
 class TimelineGroup {
   const TimelineGroup({required this.label, required this.items, this.day});
 
-  /// The heading, such as `Sat, 5 April`.
+  /// The heading, such as `Sat, 5 April` or `Canberra, Australia`.
 
   final String label;
 
@@ -112,6 +113,45 @@ List<TimelineGroup> groupByDay(Iterable<MediaItem> files, {DateTime? now}) {
       ),
     if (undated.isNotEmpty)
       TimelineGroup(label: 'Date unknown', items: undated),
+  ];
+}
+
+/// Group [files] by the region each was taken in, as [regionOf] names it,
+/// such as `Canberra, Australia`, the regions from A to Z and the newest item
+/// first within each. Anything [regionOf] gives [unknownRegion] for, as it
+/// does not say where it was taken, goes into one group at the end.
+
+List<TimelineGroup> groupByPlace(
+  Iterable<MediaItem> files,
+  String Function(MediaItem) regionOf,
+) {
+  final byRegion = <String, List<MediaItem>>{};
+  for (final item in files) {
+    byRegion.putIfAbsent(regionOf(item), () => []).add(item);
+  }
+
+  int newestFirst(MediaItem a, MediaItem b) {
+    final left = a.date;
+    final right = b.date;
+    final result = left == null || right == null
+        ? (left == null ? 1 : 0) - (right == null ? 1 : 0)
+        : right.compareTo(left);
+    return result != 0
+        ? result
+        : a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  }
+
+  final regions =
+      byRegion.keys.where((region) => region != unknownRegion).toList()
+        ..sort((a, b) {
+          final result = a.toLowerCase().compareTo(b.toLowerCase());
+          return result != 0 ? result : a.compareTo(b);
+        });
+  if (byRegion.containsKey(unknownRegion)) regions.add(unknownRegion);
+
+  return [
+    for (final region in regions)
+      TimelineGroup(label: region, items: byRegion[region]!..sort(newestFirst)),
   ];
 }
 

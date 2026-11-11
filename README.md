@@ -47,7 +47,11 @@ the same album.
 - Share any file or folder with other WebIDs using Solid's own access
   control, including the permissions each recipient is granted.
 - Files are encrypted at rest with your Solid security key.
-- Sort by file name or by date, in either direction.
+- Sort by file name or by date, in either direction, or by location: the
+  city or region each photo was taken in, such as Canberra, Australia, with
+  the photos that do not say where under Others. The regions are bundled
+  with the app from [GeoNames](https://www.geonames.org/) (CC BY 4.0), so
+  where your photos were taken is never sent anywhere to name it.
 - Preview a photo full size, or play a video, in a modal dialogue.
 
 ## Storage

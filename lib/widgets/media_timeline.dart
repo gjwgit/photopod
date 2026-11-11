@@ -148,6 +148,11 @@ class _MediaTimelineState extends State<MediaTimeline> {
           hasMemories: widget.memories.isNotEmpty,
         );
 
+        // Tiles grouped by place have no dates to mark, so they keep the
+        // usual scroll bar in place of the date scroll bar.
+
+        final dated = layout.months.isNotEmpty;
+
         return Stack(
           children: [
             Padding(
@@ -156,7 +161,7 @@ class _MediaTimelineState extends State<MediaTimeline> {
                 // The date scroll bar stands in for the usual one.
                 behavior: ScrollConfiguration.of(
                   context,
-                ).copyWith(scrollbars: false),
+                ).copyWith(scrollbars: !dated),
                 child: ListView.builder(
                   controller: _controller,
                   itemCount: layout.lines.length,
