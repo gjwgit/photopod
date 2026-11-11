@@ -46,6 +46,7 @@ class PersonSection extends StatelessWidget {
     required this.items,
     required this.tileExtent,
     this.person,
+    this.unnamed = false,
     this.icon,
     this.onRename,
     this.action,
@@ -67,6 +68,10 @@ class PersonSection extends StatelessWidget {
 
   final PersonEntry? person;
   final IconData? icon;
+
+  /// Whether [person] has no name yet, which shows their title muted.
+
+  final bool unnamed;
 
   /// Called to give the person another name, or null when there is no one
   /// to name.
@@ -117,7 +122,9 @@ class PersonSection extends StatelessWidget {
                     title,
                     overflow: TextOverflow.ellipsis,
                     style: theme.textTheme.titleMedium?.copyWith(
-                      color: person == null ? theme.colorScheme.outline : null,
+                      color: person == null || unnamed
+                          ? theme.colorScheme.outline
+                          : null,
                     ),
                   ),
                 ),
@@ -131,7 +138,7 @@ class PersonSection extends StatelessWidget {
               if (onRename != null)
                 IconButton(
                   icon: const Icon(Icons.edit_outlined),
-                  tooltip: 'Rename this person',
+                  tooltip: unnamed ? 'Name this person' : 'Rename this person',
                   onPressed: onRename,
                 ),
               ?action,

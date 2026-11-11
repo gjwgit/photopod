@@ -53,13 +53,24 @@ part 'people_demo.dart';
 const _file = EncryptedJsonFile('faces.json');
 
 /// One person as People lists them: someone named in the photos, by the
-/// user or by the Analyser.
+/// user or by the Analyser, or someone the Analyser found and no one has
+/// named yet.
 
 class PersonEntry {
-  /// What People knows them by: their name, ignoring case.
+  /// What People knows them by: a name, ignoring case, or for someone not
+  /// yet named, their place in the faces file.
 
   final String id;
   final String? name;
+
+  /// What they are shown as: their name, or Unknown and their alias.
+
+  final String title;
+
+  /// For someone not yet named, who they are in the faces file, so that
+  /// naming them names every face the Analyser took for them.
+
+  final String? person;
 
   /// The face that pictures them best, when the Analyser has found one, and
   /// the photo it is in.
@@ -74,19 +85,21 @@ class PersonEntry {
   const PersonEntry({
     required this.id,
     required this.name,
+    required this.title,
+    this.person,
     required this.portrait,
     required this.portraitItem,
     required this.items,
   });
 }
 
-/// The user's photos as People shows them: those with someone named in
-/// them, by person, alphabetically; those with a face no one has named; and
-/// those the Analyser has not looked at.
+/// The user's photos as People shows them: by person, those named first,
+/// alphabetically, then those not yet named, most photos first; and the
+/// photos the Analyser has not looked at.
 
 typedef PeopleSections = ({
   List<PersonEntry> named,
-  List<MediaItem> unknown,
+  List<PersonEntry> unknown,
   List<MediaItem> unprocessed,
 });
 
@@ -199,13 +212,14 @@ class People extends ChangeNotifier {
         file(face.name, item);
       }
     }
-    final unknown = <String, MediaItem>{};
+    final unknown = <String, Map<String, MediaItem>>{};
     for (final face in _book.faces.values) {
       final item = byPath[face.path];
-      if (item == null) continue;
-      final name = _book.people[face.person]?.name;
+      final person = _book.people[face.person];
+      if (item == null || person == null) continue;
+      final name = person.name;
       if (name == null) {
-        unknown[item.path] = item;
+        (unknown[person.id] ??= {})[item.path] = item;
       } else {
         file(name, item);
       }
@@ -216,9 +230,14 @@ class People extends ChangeNotifier {
         _entry(id, spelt[id]!, _newestFirst(items.values)),
     ]..sort((a, b) => a.id.compareTo(b.id));
 
+    final unnamed = [
+      for (final MapEntry(key: id, value: items) in unknown.entries)
+        _unknownEntry(_book.people[id]!, _newestFirst(items.values)),
+    ]..sort((a, b) => b.items.length.compareTo(a.items.length));
+
     return (
       named: named,
-      unknown: _newestFirst(unknown.values),
+      unknown: unnamed,
       unprocessed: _newestFirst(
         own.where((item) => !_book.hasScanned(item.path)),
       ),
@@ -241,8 +260,24 @@ class People extends ChangeNotifier {
     return PersonEntry(
       id: id,
       name: name,
+      title: name,
       portrait: portrait,
       portraitItem: inItems[portrait?.path] ?? items.first,
+      items: items,
+    );
+  }
+
+  PersonEntry _unknownEntry(Person person, List<MediaItem> items) {
+    final portrait = _book.portraitOf(person.id);
+    return PersonEntry(
+      id: 'unknown:${person.id}',
+      name: null,
+      title: person.label,
+      person: person.id,
+      portrait: portrait,
+      portraitItem:
+          items.where((item) => item.path == portrait?.path).firstOrNull ??
+          items.first,
       items: items,
     );
   }
@@ -396,35 +431,36 @@ class People extends ChangeNotifier {
   }
 
   /// The faces the Analyser found in the photo at [path] that no one has
-  /// named yet.
+  /// named yet, each with what it goes by meanwhile.
 
-  List<FaceRecord> unnamedIn(String path) => [
+  List<({FaceRecord face, String label})> unnamedIn(String path) => [
     for (final face in _book.faces.values)
-      if (face.path == path && _book.people[face.person]?.name == null) face,
+      if (face.path == path && _book.people[face.person]?.name == null)
+        (face: face, label: _book.people[face.person]!.label),
   ];
 
-  /// Say [face] is [name]. The Analyser filed it with the faces it took for
-  /// the same person, so they are all named, in every photo they are in;
-  /// when someone is already called [name], the two become one person.
+  /// Name [person], someone the Analyser found, [name]: every face it took
+  /// for them is named, in every photo they are in. When someone is already
+  /// called [name], the two become one person.
 
-  Future<void> nameFace(FaceRecord face, String name) async {
+  Future<void> namePerson(String person, String name) async {
     final given = name.trim();
-    if (given.isEmpty || _book.people[face.person] == null) return;
+    if (given.isEmpty || _book.people[person] == null) return;
     final same = _book.people.values
         .where(
-          (person) =>
-              person.id != face.person &&
-              person.name?.toLowerCase() == given.toLowerCase(),
+          (other) =>
+              other.id != person &&
+              other.name?.toLowerCase() == given.toLowerCase(),
         )
         .firstOrNull;
     if (same != null) {
-      _book.merge(face.person, same.id);
+      _book.merge(person, same.id);
     } else {
-      _book.people[face.person]!.name = given;
+      _book.people[person]!.name = given;
     }
     notifyListeners();
     await _save();
-    await _toCatalog(_book.photosOf([same?.id ?? face.person]));
+    await _toCatalog(_book.photosOf([same?.id ?? person]));
     notifyListeners();
   }
 

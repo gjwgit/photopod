@@ -43,9 +43,10 @@ import 'package:photopod/widgets/person_section.dart';
 
 /// The People section: the user's photos arranged by who is in them. First
 /// everyone named, by the user or the Analyser, alphabetically, each above a
-/// row of the photos they are in; then the photos with a face no one has
-/// named, which are named in Get Info; then the photos the Analyser has not
-/// looked at.
+/// row of the photos they are in; then everyone the Analyser found and no
+/// one has named, each as Unknown and a code of their own, most photos
+/// first, so that naming one names them in all their photos; then the
+/// photos the Analyser has not looked at.
 ///
 /// Opening the section sends nothing anywhere. Photos are looked at only when
 /// the user asks, with Identify People, in the Library or here.
@@ -143,7 +144,7 @@ class _PeopleViewState extends State<PeopleView> {
                         '${people.done} of ${people.toDo}'
                   : 'Looking for faces...'
             : '$count ${count == 1 ? 'person' : 'people'} named, '
-                  '${sections.unknown.length} with someone unknown, '
+                  '${sections.unknown.length} unknown, '
                   '${sections.unprocessed.length} not yet looked at'
                   '${people.failed > 0 ? ' (${people.failed} unreadable)' : ''}');
 
@@ -204,20 +205,22 @@ class _PeopleViewState extends State<PeopleView> {
         for (final entry in sections.named)
           PersonSection(
             key: ValueKey('person:${entry.id}'),
-            title: entry.name ?? entry.id,
+            title: entry.title,
             person: entry,
             items: entry.items,
             tileExtent: extent,
             onRename: () => _rename(context, entry),
             onPreviewClosed: _refresh,
           ),
-        if (sections.unknown.isNotEmpty)
+        for (final entry in sections.unknown)
           PersonSection(
-            key: const ValueKey('unknown'),
-            title: 'Unknown',
-            icon: Icons.help_outline,
-            items: sections.unknown,
+            key: ValueKey(entry.id),
+            title: entry.title,
+            person: entry,
+            unnamed: true,
+            items: entry.items,
             tileExtent: extent,
+            onRename: () => _rename(context, entry),
             onPreviewClosed: _refresh,
           ),
         if (sections.unprocessed.isNotEmpty)
@@ -262,7 +265,13 @@ class _PeopleViewState extends State<PeopleView> {
   Future<void> _rename(BuildContext context, PersonEntry entry) async {
     final name = await showPersonNameDialog(context, entry);
     if (name == null || !context.mounted) return;
-    await context.read<People>().renamePerson(entry.name ?? entry.id, name);
+    final people = context.read<People>();
+    final person = entry.person;
+    if (person != null) {
+      await people.namePerson(person, name);
+    } else {
+      await people.renamePerson(entry.title, name);
+    }
   }
 
   Widget _message(

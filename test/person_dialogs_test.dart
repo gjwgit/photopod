@@ -55,6 +55,8 @@ PersonEntry _person() {
   return PersonEntry(
     id: 'p1',
     name: null,
+    title: 'Unknown 7QK3',
+    person: 'p1',
     portrait: face,
     portraitItem: item,
     items: const [item],

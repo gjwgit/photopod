@@ -369,24 +369,28 @@ class _InfoDialogState extends State<_InfoDialog> {
         spacing: 8,
         runSpacing: 8,
         children: [
-          for (final face in faces)
+          for (final (:face, :label) in faces)
             ActionChip(
               avatar: FaceAvatar(face: face, item: widget.item, size: 24),
-              label: const Text('Who is this?'),
-              tooltip: 'Name the person the PhotoPod Analyser found here',
-              onPressed: () => _nameFace(people, face),
+              label: Text(label),
+              tooltip:
+                  'Who is this? Name them here, and they are named in '
+                  'every photo the PhotoPod Analyser found them in',
+              onPressed: () => _nameFace(people, face, label),
             ),
         ],
       ),
     ];
   }
 
-  Future<void> _nameFace(People people, FaceRecord face) async {
+  Future<void> _nameFace(People people, FaceRecord face, String label) async {
     final name = await showPersonNameDialog(
       context,
       PersonEntry(
         id: face.person,
         name: null,
+        title: label,
+        person: face.person,
         portrait: face,
         portraitItem: widget.item,
         items: [widget.item],
@@ -394,7 +398,7 @@ class _InfoDialogState extends State<_InfoDialog> {
     );
     if (name == null || name.trim().isEmpty || !mounted) return;
     try {
-      await people.nameFace(face, name);
+      await people.namePerson(face.person, name);
     } on Object catch (e) {
       if (mounted) await showErrorDialog(context, 'Not named', '$e');
       return;

@@ -200,6 +200,53 @@ void main() {
     expect(book.scanned, isEmpty);
   });
 
+  group('someone not yet named', () {
+    test('goes by Unknown and a code of their own', () {
+      final book = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0)), _found(_face(10), left: 0.6)]);
+      final people = book.people.values.toList();
+
+      for (final person in people) {
+        expect(person.label, matches(RegExp(r'^Unknown [A-Z2-9]{4}$')));
+      }
+      expect(people[0].alias, isNot(people[1].alias));
+
+      people[0].name = 'Alice';
+      expect(people[0].label, 'Alice');
+    });
+
+    test('keeps their code, so they stay the same group', () {
+      final old = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0))])
+        ..addPhoto('b.jpg', [_found(_face(0, 0.2))]);
+      final person = old.faces['a.jpg#0']!.person;
+      final alias = old.people[person]!.alias;
+
+      final book = FaceBook.fromJson(old.toJson());
+      expect(book.people[person]!.alias, alias);
+
+      // Found again, their faces stay with them, code and all.
+
+      book.addPhoto('c.jpg', [_found(_face(0, 0.1))]);
+      expect(book.faces['c.jpg#0']!.person, person);
+      expect(book.people, hasLength(1));
+    });
+
+    test('given a name, is that name in every photo', () {
+      final book = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0))])
+        ..addPhoto('b.jpg', [_found(_face(0, 0.2))]);
+      final person = book.faces['a.jpg#0']!.person;
+
+      book.people[person]!.name = 'Alice';
+      final found = book.namedFaces(['a.jpg', 'b.jpg'], 's');
+      expect(
+        [for (final face in found.values) face.single.name],
+        ['Alice', 'Alice'],
+      );
+    });
+  });
+
   group('names from Get Info', () {
     test('a name boxed where a face is names its person', () {
       final book = FaceBook()

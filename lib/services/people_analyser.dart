@@ -31,7 +31,7 @@ const Duration _lookEvery = Duration(seconds: 3);
 
 /// How long a request may go without a single photo being answered before
 /// it is given up: the share ends, and the photos still waiting are taken
-/// out, to be asked about again once the Analyser is back.
+/// out. They were never looked at, so they stay under Unprocessed.
 
 const Duration _patience = Duration(minutes: 2);
 
@@ -59,7 +59,7 @@ extension _PeopleAnalyser on People {
 
   /// Finish a request cut short, as by the app being closed: file whatever
   /// was answered, and close the inbox. Photos it had not answered are not
-  /// waited for; they can be asked about again.
+  /// waited for, and stay under Unprocessed.
 
   Future<void> _finishEarlier() async {
     try {
@@ -68,7 +68,8 @@ extension _PeopleAnalyser on People {
       if (count > 0) {
         _status =
             '$count ${count == 1 ? 'photo was' : 'photos were'} not '
-            'looked at last time. Select them and Identify People again.';
+            'looked at last time, and ${count == 1 ? 'stays' : 'stay'} '
+            'under Unprocessed.';
       }
     } finally {
       await _close();
@@ -131,8 +132,8 @@ extension _PeopleAnalyser on People {
         final count = listing.waiting.length;
         _status =
             'The ${FaceAnalyser.displayName} did not answer, so $count '
-            '${count == 1 ? 'photo was' : 'photos were'} not looked at. '
-            'Try again later.';
+            '${count == 1 ? 'photo was' : 'photos were'} not looked at, and '
+            '${count == 1 ? 'stays' : 'stay'} under Unprocessed.';
         return;
       }
     }

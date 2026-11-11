@@ -155,12 +155,22 @@ class Person {
 
   String? name;
 
+  /// What they go by until named: a short code chosen at random when they
+  /// are first found, and kept with them, so that an unknown person is the
+  /// same group every time and can be named all at once.
+
+  final String alias;
+
+  /// What People calls them: their name, or [unknownPerson] and their alias.
+
+  String get label => name ?? '$unknownPerson $alias';
+
   /// The running sum of the person's embeddings. Its direction is the
   /// centre of their faces, which is what a new face is compared with.
 
   final Float64List _sum;
 
-  Person(this.id, {this.name}) : _sum = Float64List(_dimensions);
+  Person(this.id, this.alias, {this.name}) : _sum = Float64List(_dimensions);
 
   void _add(Float32List embedding) {
     for (var i = 0; i < _sum.length; i++) {
@@ -187,6 +197,10 @@ class Person {
     return norm == 0 ? 0 : dot / math.sqrt(norm);
   }
 }
+
+/// What a person not yet named is called, before their alias.
+
+const String unknownPerson = 'Unknown';
 
 /// ArcFace embeddings have 512 values.
 
@@ -416,7 +430,24 @@ class FaceBook {
     while (people.containsKey(id)) {
       id = 'p${_nextPerson++}';
     }
-    return people[id] = Person(id);
+    return people[id] = Person(id, _newAlias());
+  }
+
+  // Four letters and digits, leaving out those easily taken for others, and
+  // none another person in the book already has.
+
+  static const _aliasCharacters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  static final _random = math.Random();
+
+  String _newAlias() {
+    final used = {for (final person in people.values) person.alias};
+    while (true) {
+      final alias = String.fromCharCodes([
+        for (var i = 0; i < 4; i++)
+          _aliasCharacters.codeUnitAt(_random.nextInt(_aliasCharacters.length)),
+      ]);
+      if (!used.contains(alias)) return alias;
+    }
   }
 
   void _dropEmpty() {
@@ -438,6 +469,7 @@ class FaceBook {
       for (final person in people.values)
         person.id: {
           if (person.name != null) 'name': person.name,
+          'alias': person.alias,
           'portrait': portraitOf(person.id)?.id,
           'photos': _photosOf(person.id),
         },
@@ -471,8 +503,12 @@ class FaceBook {
     book.scanned.addAll((data['scanned'] as List).cast<String>());
     final people = data['people'] as Map<String, dynamic>;
     for (final entry in people.entries) {
-      final name = (entry.value as Map<String, dynamic>)['name'] as String?;
-      book.people[entry.key] = Person(entry.key, name: name);
+      final fields = entry.value as Map<String, dynamic>;
+      book.people[entry.key] = Person(
+        entry.key,
+        fields['alias'] as String? ?? book._newAlias(),
+        name: fields['name'] as String?,
+      );
     }
     final faces = data['faces'] as Map<String, dynamic>;
     for (final entry in faces.entries) {
@@ -482,7 +518,7 @@ class FaceBook {
       );
       final person = book.people.putIfAbsent(
         face.person,
-        () => Person(face.person),
+        () => Person(face.person, book._newAlias()),
       );
       person._add(face.embedding);
       book.faces[face.id] = face;
