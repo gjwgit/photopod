@@ -27,15 +27,17 @@ Authors: Tony Chen
 #
 #     <pod>/photopod/data/.faces-inbox/<key>.enc.ttl         the photo
 #     <pod>/photopod/data/.faces-inbox/<key>.faces.enc.ttl   the faces in it
+#     <pod>/photopod/data/.faces-inbox/done                  all answered
 #
 # and likewise in `.tags-inbox/`, answered with `<key>.tags.enc.ttl`. Each
-# inbox is shared on its own, so that People and Tags are turned on and off
-# separately.
+# inbox is shared on its own and only when asked: Identify People shares the
+# face inbox, Tag Photos the tag inbox.
 #
 # where <key> is the random part of the photo's stored name, so the name says
 # nothing about the photo. Every file in the folder is encrypted with the
 # folder's own key (solidpod's `inheritKeyFrom`), and the folder is shared with
-# the Analyser once, for reading and writing: the share puts the folder key in
+# the Analyser, for reading and writing, once the photos are in it, and for no
+# longer than it takes to answer them. The share puts the folder key in
 # the Analyser's shared-keys.ttl, which is how this service can read every
 # photo left there, and writing is what lets it remove each one once it has
 # been analysed and to write its answer. Inside the photo's encryption is
@@ -43,8 +45,9 @@ Authors: Tony Chen
 #     {"format": "photopod-face-request", "version": 1, "image": "<base64 JPEG>"}
 #
 # ("photopod-tag-request" in a tag inbox)
-# the photo's large rendition, which carries no EXIF block. The answer is
-# encrypted with the same folder key; see service.py for what it holds.
+# the photo's large rendition, its EXIF block taken out by PhotoPod. The
+# answer is encrypted with the same folder key; see service.py for what it
+# holds.
 
 from __future__ import annotations
 
@@ -60,6 +63,12 @@ REQUEST_FORMAT = 'photopod-face-request'
 RESULT_SUFFIX = '.faces.enc.ttl'
 TAG_REQUEST_FORMAT = 'photopod-tag-request'
 TAG_RESULT_SUFFIX = '.tags.enc.ttl'
+
+# Written in an inbox once every photo in it has been answered, so that
+# PhotoPod knows it can file the answers and end the share. Must match
+# `_doneName` in PhotoPod's lib/services/analyser_inbox.dart.
+
+DONE_NAME = 'done'
 _SUFFIX = '.enc.ttl'
 
 

@@ -1,18 +1,21 @@
 # PhotoPod Analyser
 
 A headless Python service that finds the faces for PhotoPod's **People**
-section and the tags for its **Tags** section. It works through Pod sharing
-alone, as HealthPod's blood pressure analyser does: a user's Pod shares a
-folder of photos with the **Analyser Pod**
+section and the tags for its **Tags** section, in the photos a user chooses,
+when they tap **Identify People** or **Tag Photos**. It works through Pod
+sharing alone, as HealthPod's blood pressure analyser does: the user's Pod
+shares a folder holding those photos with the **Analyser Pod**
 (`https://solid.dev.empwr.au/Analyser/profile/card#me`), the service looks at
 them and writes the results back into the user's Pod.
 
 - No port, no HTTP interface, nothing the app calls. The service talks only to
-  Solid servers, logged in as the Analyser, and finds its work by looking at
-  the shared folders every few seconds. The users' Pods may be on the
+  Solid servers, logged in as the Analyser. The users' Pods may be on the
   Analyser's server or any other.
+- It never looks at a user's Pod on a timer. Sharing the folder is the request:
+  the Analyser's server notifies the service the moment it happens (Solid
+  Notifications), and the service reads that folder then, and only then.
 - People and Tags each share a folder of their own, the **face inbox** and the
-  **tag inbox**, so the user turns each on and off separately.
+  **tag inbox**, each only when the user asks.
 - Photos are decrypted only in this service's memory.
 - Finds and recognises faces with InsightFace's **buffalo_l** models (SCRFD-10GF
   and ArcFace ResNet-50), the set Immich uses, and tags photos with Google's
@@ -39,30 +42,33 @@ them and writes the results back into the user's Pod.
 │                                                                      │
 │  Alice's Pod                                                         │
 │    photopod/data/<photos, renditions, faces.json>   (not shared)     │
-│    photopod/data/.faces-inbox/        shared with the Analyser (R/W) │
+│    photopod/data/.faces-inbox/   while asked: shared with Analyser   │
 │        <key>.enc.ttl         a photo, left by PhotoPod               │
 │        <key>.faces.enc.ttl   its faces, written by the Analyser      │
-│    photopod/data/.tags-inbox/         shared on its own, likewise    │
+│        done                  every photo answered                    │
+│    photopod/data/.tags-inbox/         likewise, for Tag Photos       │
 │        <key>.tags.enc.ttl    its tags, written by the Analyser       │
 │              ▲   │                                                   │
 │     answer   │   │ read, decrypt                                     │
 │              │   ▼                                                   │
 │        ┌────────────────────┐        Analyser's Pod                  │
 │        │  face_analyser     │ ◄───── photopod/shared/shared-keys.ttl │
-│        │  (this service)    │        (each inbox's folder key)       │
+│        │  (this service)    │ notified (each inbox's folder key)     │
 │        └────────────────────┘                                        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-1. **Sharing.** When the user turns People on, PhotoPod creates
-   `photopod/data/.faces-inbox/` with a folder key of its own and shares the
-   folder with the Analyser for Read and Write (solidpod `grantPermission`, as
+1. **Asking.** The user selects photos and taps **Identify People**.
+   PhotoPod creates `photopod/data/.faces-inbox/` with a folder key of its
+   own, leaves the selected photos in it, and only then shares the folder
+   with the Analyser for Read and Write (solidpod `grantPermission`, as
    HealthPod shares its blood pressure folder). solidpod seals the folder key
-   into the Analyser's `photopod/shared/shared-keys.ttl`. Turning Tags on does
-   the same for `photopod/data/.tags-inbox/`.
-2. **Looking.** Every `watch.poll_seconds` (10 s) the service reads that file
-   (opening it again only when it has changed) and lists every inbox shared
-   with it.
+   into the Analyser's `photopod/shared/shared-keys.ttl`. **Tag Photos** does
+   the same with `photopod/data/.tags-inbox/`.
+2. **Hearing.** The service subscribes to that file through the server's
+   WebSocketChannel2023 (`notify.py`), so the server tells it at once. It
+   reads the file and finds the inbox newly shared, and only that one: an
+   inbox it has already answered is not read again until it is shared again.
 3. **Analysing.** For each photo waiting there, `<key>.enc.ttl`, it reads and
    decrypts it with the folder key, in memory, and finds the faces or the
    tags, as the inbox asks.
@@ -70,12 +76,13 @@ them and writes the results back into the user's Pod.
    `<key>.faces.enc.ttl` or `<key>.tags.enc.ttl`, encrypted with the same
    folder key in exactly the form solidpod's `writePod(inheritKeyFrom:)`
    writes, so PhotoPod reads it with `readPod()` like any file of its own.
-   Then it removes the photo.
+   Then it removes the photo. Once every photo is answered it writes `done`.
 5. **Filing.** PhotoPod files each answer in the user's
-   `faces.json.enc.ttl` or `tags.json.enc.ttl` and deletes the answer.
+   `faces.json.enc.ttl` or `tags.json.enc.ttl` and the catalog, deletes it,
+   and on `done` revokes the share and removes the inbox.
 
 Nothing about any user is kept by the Analyser, neither in its Pod nor on its
-host.
+host. Requests made while the service was stopped are answered when it starts.
 
 ### The files in the inbox
 
@@ -89,7 +96,9 @@ A photo, inside its encryption:
 {"format": "photopod-face-request", "version": 1, "image": "<base64 JPEG>"}
 ```
 
-the 2048 px large rendition, which carries no EXIF data and so no location.
+the 2048 px large rendition, with its EXIF, XMP and IPTC blocks taken out by
+PhotoPod first (`withoutMetadata` in `lib/services/analyser_inbox.dart`), so that
+it says nothing of where or when it was taken.
 
 An answer, inside its encryption:
 
@@ -103,8 +112,9 @@ An answer, inside its encryption:
 ```
 
 or `"failed": "<why>"` in place of the faces for a photo that could not be
-read, which would fail the same way again. `model` must equal `faceModelId`
-in PhotoPod's `lib/models/face_book.dart`.
+read, which would fail the same way again. A photo the shared key cannot open
+is not answered at all, since it is the key and not the photo that is wrong.
+`model` must equal `faceModelId` in PhotoPod's `lib/models/face_book.dart`.
 
 In the tag inbox the photo's format is `photopod-tag-request`, and the
 answer:
@@ -128,23 +138,22 @@ failure there is a compatibility break, not a test to adjust.
 ## What PhotoPod does
 
 People and Tags work alike (`lib/services/analyser_section.dart`), each
-with its own inbox and file.
+with its own inbox (`lib/services/analyser_inbox.dart`) and file.
 
-- **Turning People or Tags on** (in its section, once per Pod, from any
-  device): creates and shares its inbox (`lib/services/analyser_inbox.dart`).
-  Nothing is shared before that. Turning it off revokes that share and empties
-  that inbox; the other section is untouched.
+- **Identify People** and **Tag Photos** (the selection toolbar, and each
+  section's Unprocessed row): create the inbox, leave the selected photos in
+  it, share it with the Analyser, file the answers as they come, and on
+  `done` revoke the share and remove the inbox
+  (`lib/services/analyser_section_scan.dart`). Nothing is shared at any other
+  time, and nothing is sent unasked: adding photos sends nothing.
 - **Entering the Pod**: the user's own `faces.json.enc.ttl` and
   `tags.json.enc.ttl` are read as soon as the security key is entered. They
   are the record of every photo already looked at.
-- **Adding photos**: each new photo's large rendition is left in every inbox
-  that is on as it is uploaded, and the app looks out for the answers.
-- **Opening People or Tags**: answers waiting from before are filed first.
-  Then every photo not in the file and not already waiting is left in the
-  inbox, and the app looks at the inbox every few seconds until all are
-  answered.
+- **Opening People or Tags**: a request cut short, as by the app closing, is
+  finished and closed.
 - **Filing**: answers are saved to the file **before** they are deleted, so a
-  crash loses nothing.
+  crash loses nothing. The people named in each photo, and its tags, are put
+  in the catalog, where Get Info shows them and the filter bar finds them.
 - **Deleting a photo** deletes its faces and tags from both files, and its
   photo or answer from either inbox if still there.
 - **Before login**, the sample album uses `assets/demo/faces.json` and
@@ -237,16 +246,17 @@ on, `.tags-inbox`) apply.
 ## Running it
 
 ```bash
-./run.sh check                 # models, Analyser Pod, shared inboxes
-./run.sh watch                 # what systemd runs
-./run.sh run-once              # one look at every shared inbox
-./run.sh run-once WEBID        # one look at one Pod's inbox
+./run.sh check                 # models, Analyser Pod, notifications
+./run.sh watch                 # what systemd runs: answer requests as made
+./run.sh run-once              # answer the requests waiting, then stop
+./run.sh run-once WEBID        # answer one Pod's inboxes now, asked or not
 ./run.sh analyse PHOTO...      # faces and tags of local photos, no Pod involved
 ./run.sh test                  # the offline test suite
 ```
 
-A look that found photos logs one line per Pod and inbox, for example
-`solid.dev.empwr.au-alice faces: 3 analysed, 0 failed, 0 pending`.
+Each request answered logs one line, for example
+`solid.dev.empwr.au-alice faces: 3 analysed, 0 failed`. `check` fails when
+the server offers no WebSocketChannel2023 subscription, which `watch` needs.
 
 ## Models and licence
 
@@ -304,15 +314,18 @@ commercial use.
 
 ## Privacy and security
 
-- **What is shared:** only the face inbox and the tag inbox, each only once the
-  user turns People or Tags on. The photos themselves, their small renditions
-  (which carry the place they were taken), names, albums and everything else
-  in PhotoPod stay as private as they were.
-- **How long:** a photo stays in the inbox until it has been analysed, usually
-  within seconds. The answer stays until PhotoPod has filed it.
+- **What is shared:** only the face inbox or the tag inbox, holding only the
+  photos the user selected, without where they were taken, and only once
+  they tap **Identify People** or **Tag Photos**. The photos themselves,
+  their renditions, names, albums and everything else in PhotoPod stay as
+  private as they were.
+- **How long:** the share lasts until the photos are answered, usually
+  seconds, and PhotoPod then revokes it and removes the inbox.
+- **When:** the service reads a user's Pod only when notified that the user
+  has just shared an inbox. It never looks on a timer.
 - **Where:** photos are decrypted only in this process's memory, never
-  written to disk and never logged; the log records how many photos each look
-  handled.
+  written to disk and never logged; the log records how many photos each
+  request held.
 - **No exposure:** the service listens on no port, so there is nothing to
   reach it by but the Pods themselves.
 - **The Analyser's security key** unlocks every key shared with the Analyser
@@ -326,10 +339,14 @@ commercial use.
 ./run.sh test
 ```
 
-- `tests/test_pipeline.py`: a full look against an in-memory Pod (photo in,
-  answer written into the user's inbox in solidpod's form and opened with the
-  user's folder key, photo removed, unreadable photos answered, batching, a
-  closed inbox passed over, the shared keys opened once).
+- `tests/test_pipeline.py`: requests answered against an in-memory Pod
+  (photo in, answer written into the user's inbox in solidpod's form and
+  opened with the user's folder key, photo removed, `done` written,
+  unreadable photos answered, a photo the key cannot open left alone, each
+  request answered once, a Pod that has not asked never read, a closed inbox
+  passed over, answering on each notification, the shared keys opened once).
+  The WebSocket itself is not exercised; `./run.sh check` and the journal
+  show it working against the server.
 - `tests/test_engine.py`: SCRFD and ArcFace on PhotoPod's sample photos
   (needs the models; skipped without them).
 - `tests/test_tagger.py`: SigLIP on the sample photos, and the shipped

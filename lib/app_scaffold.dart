@@ -154,10 +154,12 @@ class _AppScaffoldState extends State<AppScaffold> {
 
             **People**
 
-            Tap here for the people in your photos, each with every photo
-            they are in. Faces are found by the PhotoPod Analyser, from one
-            encrypted folder you share with it; what it finds comes back,
-            encrypted, to your Pod.
+            Tap here for your photos by who is in them: everyone named,
+            alphabetically, then photos with someone unknown, then those
+            not yet looked at. To find who is in some photos, select them
+            and tap **Identify People**: the PhotoPod Analyser looks at
+            those photos only, and what it finds comes back, encrypted, to
+            your Pod.
 
             ''',
           child: PeopleView(key: ValueKey(LibrarySection.people)),
@@ -170,9 +172,10 @@ class _AppScaffoldState extends State<AppScaffold> {
             **Tags**
 
             Tap here for your photos grouped by what they show, such as
-            beaches, mountains or dogs. Tags are worked out by the PhotoPod
-            Analyser, from one encrypted folder you share with it, turned on
-            apart from People.
+            beaches, mountains or dogs, then those not yet tagged. To tag
+            some photos, select them and tap **Tag Photos**: the PhotoPod
+            Analyser looks at those photos only, and what it finds comes
+            back, encrypted, to your Pod.
 
             ''',
           child: TagsView(key: ValueKey(LibrarySection.tags)),

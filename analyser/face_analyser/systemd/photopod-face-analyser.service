@@ -1,5 +1,5 @@
-# The PhotoPod face analyser: looks at every face inbox shared with the
-# Analyser Pod every few seconds, and answers into it. It listens on no port.
+# The PhotoPod face analyser: answers each face inbox a user shares with the
+# Analyser Pod, as the Solid server notifies it. It listens on no port.
 #
 # Paths follow the HealthPod analyser's layout: the project root is the working
 # directory, deployed OUTSIDE the Solid server's storage root so that none of

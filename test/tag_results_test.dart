@@ -137,7 +137,7 @@ void main() {
           (call) async => null,
         );
     final section = PhotoTags();
-    await section.scan(DemoLibrary.items, prune: false);
+    await section.analyse(DemoLibrary.items);
     final entries = section.tagsIn(DemoLibrary.items);
 
     expect(entries, isNotEmpty);

@@ -1,4 +1,4 @@
-/// The inboxes: the folders where PhotoPod leaves photos for the Analyser.
+/// The inboxes: where PhotoPod leaves photos for the Analyser.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -25,6 +25,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -53,10 +54,16 @@ import 'package:photopod/services/pod_media_service.dart';
 
 const String _photoSuffix = '.enc.ttl';
 
-/// What an inbox holds: the photos still waiting for the Analyser, and the
-/// answers it has written, each by [inboxKeyOf] key.
+/// What the Analyser writes in an inbox once it has answered every photo
+/// in it. It must match `DONE_NAME` in the analyser's inbox.py.
 
-typedef InboxListing = ({Set<String> waiting, Set<String> answered});
+const String _doneName = 'done';
+
+/// What an inbox holds: the photos still waiting for the Analyser, and the
+/// answers it has written, each by [inboxKeyOf] key, and whether it has
+/// answered them all.
+
+typedef InboxListing = ({Set<String> waiting, Set<String> answered, bool done});
 
 /// The name a photo is known by in an inbox and in the Analyser's answers:
 /// the random part of its stored name, which says nothing about it, or, for
@@ -68,8 +75,82 @@ String inboxKeyOf(String path) {
       sha256.convert(utf8.encode(path)).toString().substring(0, 32);
 }
 
-/// The face inbox, which People shares. Its folder must match `inbox.folder`
-/// in the analyser's configuration.
+/// [picture], a JPEG or PNG, without what it says about itself beyond the
+/// picture: the EXIF block, which says where and when it was taken and with
+/// what, XMP, IPTC and any comments. Everything needed to show it, colour
+/// profile included, is kept. Null when [picture] is neither, or is not
+/// well formed, so that nothing is let through unexamined.
+///
+/// Byte by byte rather than decoded and encoded again, which would cost far
+/// more and change the picture: only whole segments, or chunks, are dropped.
+
+Uint8List? withoutMetadata(Uint8List picture) {
+  if (_startsWith(picture, _jpegStart)) return _jpegWithoutMetadata(picture);
+  if (_startsWith(picture, _pngStart)) return _pngWithoutMetadata(picture);
+  return null;
+}
+
+const _jpegStart = [0xff, 0xd8];
+const _pngStart = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+
+bool _startsWith(Uint8List bytes, List<int> start) {
+  if (bytes.length < start.length) return false;
+  for (var i = 0; i < start.length; i++) {
+    if (bytes[i] != start[i]) return false;
+  }
+  return true;
+}
+
+// A JPEG is a run of segments, each a marker and its length, up to the
+// start of the scan, after which comes the picture itself. APP1 holds EXIF
+// and XMP, APP13 IPTC, and COM comments.
+
+Uint8List? _jpegWithoutMetadata(Uint8List bytes) {
+  const app1 = 0xe1, app13 = 0xed, comment = 0xfe, startOfScan = 0xda;
+  final out = BytesBuilder(copy: false)..add(bytes.sublist(0, 2));
+  var at = 2;
+  while (at + 4 <= bytes.length) {
+    if (bytes[at] != 0xff) return null;
+    final marker = bytes[at + 1];
+    if (marker == 0xff) {
+      at++;
+      continue;
+    }
+    if (marker == startOfScan) {
+      out.add(bytes.sublist(at));
+      return out.takeBytes();
+    }
+    final end = at + 2 + ((bytes[at + 2] << 8) | bytes[at + 3]);
+    if (end < at + 4 || end > bytes.length) return null;
+    if (marker != app1 && marker != app13 && marker != comment) {
+      out.add(bytes.sublist(at, end));
+    }
+    at = end;
+  }
+  return null;
+}
+
+// A PNG is a run of chunks, each its length, its type, its data and a
+// checksum of its own, so a chunk can be dropped whole.
+
+Uint8List? _pngWithoutMetadata(Uint8List bytes) {
+  const dropped = {'eXIf', 'tEXt', 'zTXt', 'iTXt'};
+  final out = BytesBuilder(copy: false)..add(bytes.sublist(0, 8));
+  var at = 8;
+  while (at + 12 <= bytes.length) {
+    final length = ByteData.sublistView(bytes, at, at + 4).getUint32(0);
+    final end = at + 12 + length;
+    if (end > bytes.length) return null;
+    final type = String.fromCharCodes(bytes.sublist(at + 4, at + 8));
+    if (!dropped.contains(type)) out.add(bytes.sublist(at, end));
+    at = end;
+    if (type == 'IEND') return out.takeBytes();
+  }
+  return null;
+}
+
+/// The face inbox, which Identify People shares. Its folder must match
+/// `inbox.folder` in the analyser's configuration.
 
 final AnalyserInbox faceInbox = AnalyserInbox(
   folderName: '.faces-inbox',
@@ -78,8 +159,8 @@ final AnalyserInbox faceInbox = AnalyserInbox(
   label: 'face inbox',
 );
 
-/// The tag inbox, which Tags shares. Its folder must match `tags.folder` in
-/// the analyser's configuration.
+/// The tag inbox, which Tag Photos shares. Its folder must match
+/// `tags.folder` in the analyser's configuration.
 
 final AnalyserInbox tagInbox = AnalyserInbox(
   folderName: '.tags-inbox',
@@ -88,14 +169,6 @@ final AnalyserInbox tagInbox = AnalyserInbox(
   label: 'tag inbox',
 );
 
-/// Leave a photo just added in every inbox that is on, for People and Tags
-/// alike ([AnalyserInbox.photoAdded]).
-
-void photoAdded(String photoPath, Uint8List jpeg) {
-  faceInbox.photoAdded(photoPath, jpeg);
-  tagInbox.photoAdded(photoPath, jpeg);
-}
-
 /// One inbox in the user's own Pod.
 ///
 /// The work is done by the Analyser, a service with a Pod of its own
@@ -103,20 +176,21 @@ void photoAdded(String photoPath, Uint8List jpeg) {
 /// never talks to the service: the two Pods share a folder, and the Analyser
 /// does the rest.
 ///
-/// Turning the inbox on makes its folder in the PhotoPod data folder and
-/// shares it with the Analyser, for reading and writing, once. Every photo
-/// added is then left there as its large rendition, `<key>.enc.ttl`,
-/// encrypted with the folder's key ([leave]); the share is what gives the
-/// Analyser that key. The Analyser, which looks at every shared inbox every
-/// few seconds, reads the photo, writes what it found beside it as
-/// `<key><resultSuffix>`, encrypted with the same key, and removes the
-/// photo. PhotoPod files each answer and deletes it ([readAnswer],
-/// [deleteAnswer]).
+/// The inbox is there only while the user is having photos looked at. Each
+/// time the user asks, with Identify People or Tag Photos, [prepare] makes
+/// the inbox's folder in the PhotoPod data folder, the photos chosen are
+/// left there as their large renditions, `<key>.enc.ttl`, encrypted with the
+/// folder's key ([leave]), and [request] then shares the folder with the
+/// Analyser, for reading and writing: the share is what gives the Analyser
+/// that key, and the server tells the Analyser of it at once. The Analyser
+/// reads each photo, writes what it found beside it as
+/// `<key><resultSuffix>`, encrypted with the same key, removes the photo,
+/// and writes `done` when all are answered. PhotoPod files each answer and
+/// deletes it ([readAnswer], [deleteAnswer]), and [close] then ends the
+/// share and removes the inbox.
 ///
-/// Each inbox is shared on its own, so People and Tags are turned on and off
-/// separately. Only the inbox is shared: the photos themselves, their small
-/// renditions with the place they were taken, and everything else stay as
-/// private as they were.
+/// Each inbox is shared on its own, and only for as long as that: the photos
+/// themselves, and everything else, stay as private as they were.
 
 class AnalyserInbox {
   AnalyserInbox({
@@ -139,23 +213,9 @@ class AnalyserInbox {
 
   final String resultSuffix;
 
-  /// What the inbox is called in messages.
+  /// What the inbox is called in messages: "face inbox", "tag inbox".
 
   final String label;
-
-  // Whether the inbox is there, known for the Pod at [_knownFor] once asked.
-
-  bool? _enabled;
-  String? _knownFor;
-
-  Future<void> _queue = Future<void>.value();
-
-  final StreamController<void> _added = StreamController<void>.broadcast();
-
-  /// Fires each time a photo is left in the inbox as it is added, so that
-  /// the section waiting on it can look out for the answer.
-
-  Stream<void> get added => _added.stream;
 
   /// The Pod-relative path of the inbox.
 
@@ -169,94 +229,114 @@ class AnalyserInbox {
     return url.endsWith('/') ? url : '$url/';
   }
 
-  /// Whether the inbox has been turned on for this Pod, from any device: it
-  /// only exists once it has been shared.
+  /// Whether the inbox is there, as it is only while photos are being looked
+  /// at, or when that was cut short, as by the app being closed.
 
-  Future<bool> isEnabled() async {
-    final url = await this.url();
-    if (_knownFor == url && _enabled != null) return _enabled!;
-    _enabled = await PodMediaService.folderExists(url);
-    _knownFor = url;
-    return _enabled!;
-  }
+  Future<bool> exists() async => PodMediaService.folderExists(await url());
 
-  /// Make the inbox and share it with the Analyser.
+  /// Make the inbox, with the key every photo left in it is encrypted with,
+  /// ready for [leave]. Nothing is shared yet.
 
-  Future<void> enable() async {
+  Future<void> prepare() async => setInheritKeyDir(await url());
+
+  /// Ask the Analyser to look at the photos left in the inbox, by sharing
+  /// the inbox with it. The share puts the inbox's key in the Analyser's
+  /// Pod, and the server tells the Analyser at once. The photos go in first
+  /// so that they are all there when it looks.
+
+  Future<void> request() async {
     final url = await this.url();
     final webId = await getWebId();
     if (webId == null) throw StateError('Not logged in.');
-
-    // The folder key has to exist before the folder is shared, or the share
-    // carries no key and the Analyser can read nothing left there.
-
-    await setInheritKeyDir(url);
 
     // grantPermission() declares the list as dynamic but reads each entry
     // as a String, so the mode names are what must be passed.
 
-    final status = await grantPermission(
-      fileName: url,
-      isFile: false,
-      permissionList: [AccessMode.read.mode, AccessMode.write.mode],
-      recipientType: RecipientType.individual,
-      recipientWebIdList: [Analyser.webId],
-      ownerWebId: webId,
-      granterWebId: webId,
-    );
-    if (status != SolidFunctionCallStatus.success) {
-      throw StateError(
-        status == SolidFunctionCallStatus.notInitialised
-            ? 'The Analyser Pod is not set up for PhotoPod yet.'
-            : 'Could not share the $label with the Analyser ($status).',
+    try {
+      final status = await grantPermission(
+        fileName: url,
+        isFile: false,
+        permissionList: [AccessMode.read.mode, AccessMode.write.mode],
+        recipientType: RecipientType.individual,
+        recipientWebIdList: [Analyser.webId],
+        ownerWebId: webId,
+        granterWebId: webId,
       );
+      if (status != SolidFunctionCallStatus.success) {
+        throw StateError(
+          status == SolidFunctionCallStatus.notInitialised
+              ? 'The Analyser Pod is not set up for PhotoPod yet.'
+              : 'Could not share the $label with the Analyser ($status).',
+        );
+      }
+    } on Object {
+      // The photos left for a request that was never made are of no use,
+      // and an inbox left behind would be taken for one cut short.
+
+      await _empty(url);
+      rethrow;
     }
-    _enabled = true;
-    _knownFor = url;
   }
 
-  /// Stop sharing the inbox with the Analyser, and empty and remove it.
-  /// What has been found already stays where it was filed.
+  /// Stop sharing the inbox with the Analyser, and empty and remove it,
+  /// along with any photo still waiting there. What has been found already
+  /// stays where it was filed.
 
-  Future<void> disable() async {
+  Future<void> close() async {
     final url = await this.url();
     final webId = await getWebId();
     if (webId == null) throw StateError('Not logged in.');
 
-    await revokePermission(
-      fileName: url,
-      isFile: false,
-      isFileUrl: true,
-      permissionList: [AccessMode.read.mode, AccessMode.write.mode],
-      recipientIndOrGroupWebId: Analyser.webId,
-      ownerWebId: webId,
-      granterWebId: webId,
-      recipientType: RecipientType.individual,
-    );
-    final listing = await list();
-    for (final key in listing.waiting) {
-      await _delete('$url$key$_photoSuffix');
+    // A revocation that fails still ends with the inbox and its access list
+    // removed below, which leaves the Analyser nothing to reach.
+
+    try {
+      await revokePermission(
+        fileName: url,
+        isFile: false,
+        isFileUrl: true,
+        permissionList: [AccessMode.read.mode, AccessMode.write.mode],
+        recipientIndOrGroupWebId: Analyser.webId,
+        ownerWebId: webId,
+        granterWebId: webId,
+        recipientType: RecipientType.individual,
+      );
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not revoke the Analyser\'s access: $e');
     }
-    for (final key in listing.answered) {
-      await _delete('$url$key$resultSuffix');
+    await _empty(url);
+  }
+
+  // Remove everything in the inbox at [url], then the inbox itself.
+
+  Future<void> _empty(String url) async {
+    try {
+      final listing = await getResourcesInContainer(url);
+      for (final file in listing.files) {
+        await _delete(file.startsWith('http') ? file : '$url$file');
+      }
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not list the $label to empty it: $e');
     }
     await _delete('$url.acl');
     await _delete(url, ResourceContentType.directory);
-    _enabled = false;
-    _knownFor = url;
   }
 
-  /// Leave the photo at [photoPath] in the inbox as [jpeg], its large
-  /// rendition, for the Analyser to look at.
+  /// Leave the photo at [photoPath] in the inbox as [picture], its large
+  /// rendition, for the Analyser to look at. What the photo's EXIF block and
+  /// the like say, such as where it was taken, is taken out first
+  /// ([withoutMetadata]): the Analyser needs only the picture.
 
-  Future<void> leave(String photoPath, Uint8List jpeg) async {
+  Future<void> leave(String photoPath, Uint8List picture) async {
+    final bare = withoutMetadata(picture);
+    if (bare == null) throw StateError('not a JPEG or PNG picture');
     final inbox = await path();
     await writePod(
       '$inbox/${inboxKeyOf(photoPath)}$_photoSuffix',
       jsonEncode({
         'format': requestFormat,
         'version': 1,
-        'image': base64Encode(jpeg),
+        'image': base64Encode(bare),
       }),
       pathType: PathType.relativeToPod,
       createAcl: false,
@@ -265,32 +345,18 @@ class AnalyserInbox {
     );
   }
 
-  /// Leave a photo just added, when the inbox is on, and tell [added]. The
-  /// photos of a batch are left one after another, behind the upload rather
-  /// than holding it up. A failure is only logged: the next scan leaves the
-  /// photo instead.
-
-  void photoAdded(String photoPath, Uint8List jpeg) {
-    _queue = _queue.then((_) async {
-      try {
-        if (!await isEnabled()) return;
-        await leave(photoPath, jpeg);
-        _added.add(null);
-      } on Object catch (e) {
-        debugPrint('PhotoPod: could not leave $photoPath in the $label: $e');
-      }
-    });
-  }
-
   /// What the inbox holds.
 
   Future<InboxListing> list() async {
     final listing = await getResourcesInContainer(await url());
     final waiting = <String>{};
     final answered = <String>{};
+    var done = false;
     for (final file in listing.files) {
       final name = file.substring(file.lastIndexOf('/') + 1);
-      if (name.endsWith(resultSuffix)) {
+      if (name == _doneName) {
+        done = true;
+      } else if (name.endsWith(resultSuffix)) {
         answered.add(name.substring(0, name.length - resultSuffix.length));
       } else if (name.endsWith(_photoSuffix)) {
         final key = name.substring(0, name.length - _photoSuffix.length);
@@ -301,7 +367,7 @@ class AnalyserInbox {
         if (!key.contains('.')) waiting.add(key);
       }
     }
-    return (waiting: waiting, answered: answered);
+    return (waiting: waiting, answered: answered, done: done);
   }
 
   /// The Analyser's answer for the photo known by [key], decrypted.
@@ -320,7 +386,7 @@ class AnalyserInbox {
   /// as when they are deleted before the Analyser or the app got to them.
 
   Future<void> remove(Iterable<String> paths) async {
-    if (!await isEnabled()) return;
+    if (!await exists()) return;
     final url = await this.url();
     final listing = await list();
     for (final key in paths.map(inboxKeyOf)) {
@@ -331,13 +397,6 @@ class AnalyserInbox {
         await _delete('$url$key$resultSuffix');
       }
     }
-  }
-
-  /// Forget what is known about the Pod, as on logout.
-
-  void reset() {
-    _enabled = null;
-    _knownFor = null;
   }
 
   static Future<void> _delete(

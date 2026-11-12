@@ -40,7 +40,7 @@ import logging
 import sys
 from pathlib import Path
 
-from . import __version__
+from . import __version__, notify
 from .config import Config, ConfigError, load
 from .engine import FaceEngine, ImageError
 from .inbox import shared_inboxes
@@ -65,11 +65,12 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument('--verbose', '-v', action='store_true')
     parser.add_argument('--version', action='version', version=__version__)
     commands = parser.add_subparsers(dest='command', required=True)
-    commands.add_parser('watch', help='look at the shared inboxes every few '
-                                      'seconds, for ever (systemd\'s mode)')
+    commands.add_parser('watch', help='answer each request as it is made, '
+                                      'for ever (systemd\'s mode)')
     commands.add_parser('check', help='verify the models and the Analyser Pod')
-    once = commands.add_parser('run-once', help='one look at the inboxes of '
-                                                'the Pods named, or at all')
+    once = commands.add_parser('run-once', help='answer the requests waiting, '
+                                                'or the inboxes of the Pods '
+                                                'named')
     once.add_argument('web_ids', nargs='*')
     commands.add_parser('fetch-models', help='download the face and tag models')
     commands.add_parser('embed-tags', help='describe tag_vocabulary.json '
@@ -171,17 +172,22 @@ def _check(config: Config, service: AnalyserService) -> int:
         return 1
     for kind in service.kinds:
         inboxes = shared_inboxes(shared, config, kind.fragment)
-        print(f'OK    {len(inboxes)} Pod(s) share a {kind.name} inbox')
+        print(f'OK    {len(inboxes)} Pod(s) share a {kind.name} inbox now')
         for url in sorted(inboxes):
             print(f'      {url}')
-    print(f'INFO  looking every {config.watch.poll_seconds:g} s, at most '
-          f'{config.inbox.max_per_run} photos per Pod per look')
+    try:
+        channel = notify.subscription_service(
+            service.client, config.analyser.pod_root)
+    except SolidError as e:
+        print(f'FAIL  the server cannot say when requests are made: {e}')
+        return 1
+    print(f'OK    requests are notified through {channel}')
     return 0
 
 
 def _run_once(service: AnalyserService, web_ids: list[str]) -> int:
     if not web_ids:
-        reports = service.sweep()
+        reports = service.respond()
     else:
         reports = []
         for web_id in web_ids:

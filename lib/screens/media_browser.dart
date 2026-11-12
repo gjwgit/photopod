@@ -53,7 +53,7 @@ import 'package:photopod/models/media_filter.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
-import 'package:photopod/services/analyser_inbox.dart';
+import 'package:photopod/services/analyser_section.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_index.dart';
@@ -83,6 +83,7 @@ import 'package:photopod/widgets/pagination_bar.dart';
 part 'media_browser_actions.dart';
 part 'media_browser_albums.dart';
 part 'media_browser_body.dart';
+part 'media_browser_delete.dart';
 part 'media_browser_drop.dart';
 part 'media_browser_transfers.dart';
 

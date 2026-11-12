@@ -51,24 +51,21 @@ analyser:
 inbox:
 
   # The folder in PhotoPod's data folder that users share with the Analyser.
-  # Must match faceInboxFolderName in lib/services/face_inbox.dart.
+  # Must match faceInbox in lib/services/analyser_inbox.dart.
 
   folder: .faces-inbox
 
-  # The most photos analysed per Pod in one look; the rest wait for the next.
-
-  max_per_run: 40
-
 # ---------------------------------------------------------------------------
-# How often the shared inboxes are looked at.
+# Listening for requests. The service never looks at a user's Pod on a timer:
+# the Solid server tells it when a user shares an inbox with the Analyser.
 # ---------------------------------------------------------------------------
 
 watch:
 
-  # Seconds between looks. A photo is usually analysed within this long of
-  # being added.
+  # Seconds to wait before listening again when the server closes the
+  # notification channel or cannot be reached.
 
-  poll_seconds: 10
+  reconnect_seconds: 30
 
 # ---------------------------------------------------------------------------
 # The analysis: InsightFace's buffalo_l models (SCRFD-10GF + ArcFace R50).
@@ -92,8 +89,8 @@ engine:
 
 # ---------------------------------------------------------------------------
 # Tags: Google's SigLIP ViT-B/16, kept in engine.models_dir. The tag inbox is
-# shared separately from the face inbox, so users turn Tags on and off on
-# their own. The defaults are in face_analyser/tagger.py.
+# shared on its own, when a user taps Tag Photos, as the face inbox is when
+# they tap Identify People. The defaults are in face_analyser/tagger.py.
 # ---------------------------------------------------------------------------
 
 tags:

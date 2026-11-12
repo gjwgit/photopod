@@ -87,15 +87,10 @@ class InboxConfig:
     """Where in each user's Pod PhotoPod leaves photos for the analyser."""
 
     # The folder inside PhotoPod's data folder. PhotoPod shares it, and only
-    # it, with the Analyser. Must match `faceInboxFolderName` in PhotoPod's
-    # lib/services/face_inbox.dart.
+    # it, with the Analyser. Must match `faceInbox` in PhotoPod's
+    # lib/services/analyser_inbox.dart.
 
     folder: str = '.faces-inbox'
-
-    # The most photos analysed per Pod in one look, so that one large
-    # backlog cannot hold up everybody else. The rest wait for the next look.
-
-    max_per_run: int = 40
 
     @property
     def fragment(self) -> str:
@@ -106,13 +101,13 @@ class InboxConfig:
 
 @dataclass
 class WatchConfig:
-    """How often the shared inboxes are looked at."""
+    """How the service listens for requests."""
 
-    # Seconds between looks. Each look reads the Analyser's shared-keys file
-    # and lists every shared inbox, for faces and for tags, so a short interval costs little and is
-    # what makes a new photo be analysed moments after it is added.
+    # Seconds to wait before subscribing again when the server closes the
+    # notification channel, or cannot be reached. Requests made meanwhile
+    # are answered as soon as the service is listening again.
 
-    poll_seconds: float = 10.0
+    reconnect_seconds: float = 30.0
 
 
 @dataclass

@@ -29,57 +29,71 @@ import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
 import 'package:photopod/constants/analyser.dart';
+import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/screens/analyser_section_view.dart';
 import 'package:photopod/services/tags.dart';
+import 'package:photopod/widgets/person_section.dart';
 import 'package:photopod/widgets/tag_section.dart';
+
+/// What Tags shows: every tag on the album's photos, and the photos the
+/// Analyser has not looked at.
+
+typedef TagsContent = ({List<TagEntry> tags, List<MediaItem> unprocessed});
 
 /// The Tags section: every tag the Analyser has put on the album's photos,
 /// those on the most photos first, each above a row of its photos, with a
-/// row of categories along the top to narrow them down.
+/// row of categories along the top to narrow them down; then the photos not
+/// yet looked at.
 ///
-/// Nothing is shared until the user turns Tags on here, which shares the
-/// tag inbox, and only that, with the Analyser; People has an inbox of its
-/// own, turned on apart. See [AnalyserSectionView].
+/// Opening the section sends nothing anywhere. Photos are tagged only when
+/// the user asks, with Tag Photos, in the Library or here. See
+/// [AnalyserSectionView].
 
 class TagsView extends StatelessWidget {
   const TagsView({super.key});
 
   @override
   Widget build(BuildContext context) =>
-      AnalyserSectionView<PhotoTags, TagEntry>(
-        name: 'Tags',
-        icon: Icons.sell_outlined,
-        offIcon: Icons.label_off_outlined,
-        consentTitle: 'Sort your photos by what they show',
-        consentText:
-            'Tags are worked out by the ${Analyser.displayName}. Only one '
-            'folder of your Pod is shared with it, and every photo in it '
-            'stays encrypted. The Analyser opens a photo only to see what it '
-            'shows, keeps no copy, and returns its tags to your Pod, '
-            'encrypted. Nothing else in your Pod is shared, and you can turn '
-            'Tags off at any time, which ends the share.',
-        keyPrompt: 'Please enter your security key to tag your photos',
+      AnalyserSectionView<PhotoTags, TagsContent>(
+        keyPrompt: 'Please enter your security key to see your photos\' tags',
         lookingFor: 'tags',
-        entriesOf: (tags, photos) => tags.tagsIn(photos),
-        summary: (tags, count) => count == 0
-            ? 'No tags yet'
-            : '$count ${count == 1 ? 'tag' : 'tags'} on '
-                  '${tags.scannedCount} photos looked at',
+        contentOf: (tags, photos) => (
+          tags: tags.tagsIn(photos),
+          unprocessed: tags.unprocessedIn(photos),
+        ),
+        isEmpty: (content) =>
+            content.tags.isEmpty && content.unprocessed.isEmpty,
+        summary: (tags, content) {
+          final count = content.tags.length;
+          return '$count ${count == 1 ? 'tag' : 'tags'}, '
+              '${content.unprocessed.length} photos not yet looked at';
+        },
+        errorTitle: 'Could not read the tags',
+        emptyIcon: Icons.sell_outlined,
+        emptyTitle: 'No photos yet',
         emptyText:
-            'A photo is tagged when the ${Analyser.displayName} is sure '
-            'what it shows.',
-        builder: (context, tags, entries) => _TagList(entries: entries),
+            'Add photos in the Library, then select some and tap Tag Photos '
+            'to have the ${Analyser.displayName} say what they show.',
+        builder: (context, tags, content, refresh) =>
+            _TagList(tags: tags, content: content, onPreviewClosed: refresh),
       );
 }
 
-/// The tags, under a row of their categories. Choosing a category shows
-/// only its tags; choosing it again shows them all.
+/// The tags, under a row of their categories, then the photos not yet
+/// looked at. Choosing a category shows only its tags; choosing it again
+/// shows them all.
 
 class _TagList extends StatefulWidget {
-  const _TagList({required this.entries});
+  const _TagList({
+    required this.tags,
+    required this.content,
+    required this.onPreviewClosed,
+  });
 
-  final List<TagEntry> entries;
+  final PhotoTags tags;
+  final TagsContent content;
+  final VoidCallback onPreviewClosed;
 
   @override
   State<_TagList> createState() => _TagListState();
@@ -91,10 +105,12 @@ class _TagListState extends State<_TagList> {
   @override
   Widget build(BuildContext context) {
     final extent = context.watch<ViewPrefs>().tileSize.extent;
-    final categories = PhotoTags.categoriesOf(widget.entries);
+    final entries = widget.content.tags;
+    final unprocessed = widget.content.unprocessed;
+    final categories = PhotoTags.categoriesOf(entries);
     final category = categories.contains(_category) ? _category : null;
     final shown = [
-      for (final entry in widget.entries)
+      for (final entry in entries)
         if (category == null || entry.category == category) entry,
     ];
 
@@ -126,6 +142,28 @@ class _TagListState extends State<_TagList> {
             key: ValueKey(entry.tag),
             entry: entry,
             tileExtent: extent,
+          ),
+        if (unprocessed.isNotEmpty && category == null)
+          PersonSection(
+            key: const ValueKey('unprocessed'),
+            title: 'Unprocessed',
+            icon: Icons.hourglass_empty,
+            items: unprocessed,
+            tileExtent: extent,
+            onPreviewClosed: widget.onPreviewClosed,
+            action: FilledButton.tonalIcon(
+              icon: const Icon(Icons.sell_outlined),
+              label: const Text('Tag Photos'),
+              onPressed: widget.tags.isScanning
+                  ? null
+                  : () => askToAnalyse(
+                      context,
+                      widget.tags,
+                      unprocessed,
+                      action: 'Tag Photos',
+                      finding: 'say what is shown in',
+                    ),
+            ),
           ),
       ],
     );

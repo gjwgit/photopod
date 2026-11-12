@@ -25,12 +25,13 @@ library;
 
 /// The Analyser, set up as HealthPod's blood pressure analyser is.
 ///
-/// The Analyser is a Pod, on the user's Solid server or any other. Turning
-/// People or Tags on shares one folder of the user's Pod, the face inbox or
-/// the tag inbox, with its WebID; a service logged in as the Analyser
-/// (analyser/face_analyser in this repository) looks at every shared inbox
-/// and writes what it finds back into it. The app never talks to that
-/// service, so it needs no address of it: [webId] is all there is to know.
+/// The Analyser is a Pod, on the user's Solid server or any other. Identify
+/// People, or Tag Photos, shares the user's face inbox, or tag inbox, holding
+/// the photos chosen, with its WebID until they are answered; the Solid
+/// server tells a service logged in as the Analyser (analyser/face_analyser
+/// in this repository), which writes what it finds back into the inbox. The
+/// app never talks to that service, so it needs no address of it: [webId]
+/// is all there is to know.
 ///
 /// Another Analyser is chosen at build time with
 /// `--dart-define=ANALYSER_WEBID=https://.../profile/card#me`.
@@ -49,8 +50,9 @@ class Analyser {
 
   static const String displayName = 'PhotoPod Analyser';
 
-  /// Who the catalog says suggested the tags the Analyser found, shown as
-  /// [displayName].
+  /// Who the catalog credits with the people and the tags the Analyser
+  /// found, as suggestions the user may keep, change or remove in Get Info.
+  /// Shown as [displayName].
 
-  static const String tagSource = 'photopod:analyser';
+  static const String source = 'photopod:analyser';
 }

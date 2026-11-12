@@ -37,28 +37,25 @@ import 'package:photopod/services/thumbnail_cache.dart';
 
 part 'analyser_section_scan.dart';
 
-/// A section of the album whose contents the Analyser works out, one photo
-/// at a time, through an [AnalyserInbox]: People, from the faces in the
-/// photos, and Tags, from what they show.
+/// A section of the album whose contents the Analyser works out: People,
+/// from the faces in the photos, and Tags, from what they show.
 ///
 /// What has been worked out already is kept in an encrypted file in the
 /// Pod, read first, as soon as the security key is to hand: it is the record
-/// of every photo already looked at. Each photo not yet in it is left in the
-/// inbox, a folder of the user's Pod shared only with the Analyser, and the
-/// Analyser writes what it found back into the same folder. Each answer is
-/// filed here and saved to the file before it is deleted. Photos added while
-/// the section is on are left in the inbox as they are added, and their
-/// answers looked out for.
+/// of every photo already looked at.
+///
+/// Photos are looked at only when the user asks ([analyse]), with Identify
+/// People or Tag Photos: those photos are left in the section's inbox, a
+/// folder of the user's Pod shared with the Analyser for just as long as it
+/// takes, and the Analyser writes what it found back into the same folder.
+/// Each answer is filed here and saved to the file before it is deleted.
+/// Opening the section sends nothing ([refresh]).
 ///
 /// Deleting a photo deletes what was found in it from the file too
 /// ([forget]), and takes it out of the inbox if it is still waiting there.
-///
-/// Each section has its own inbox, turned on and off on its own.
 
 abstract class AnalyserSection extends ChangeNotifier {
-  AnalyserSection(this.inbox) {
-    _added = inbox.added.listen((_) => _soon());
-  }
+  AnalyserSection(this.inbox);
 
   /// The inbox this section's photos are left in.
 
@@ -66,8 +63,11 @@ abstract class AnalyserSection extends ChangeNotifier {
 
   bool _loaded = false;
   Future<void>? _loading;
-  late final StreamSubscription<void> _added;
-  Timer? _debounce;
+
+  // The photos chosen to be looked at and not yet left in the inbox. More
+  // can be chosen while a look is under way, and join it.
+
+  final List<MediaItem> _queue = [];
 
   // Whether what is shown is the sample album shown before login, kept in
   // memory only.
@@ -76,7 +76,7 @@ abstract class AnalyserSection extends ChangeNotifier {
   bool _scanning = false;
   bool _cancelled = false;
 
-  // The photos deleted while a scan is running, which it must not file
+  // The photos deleted while a look is under way, which it must not file
   // again if their answers arrive afterwards.
 
   final Set<String> _forgotten = {};
@@ -87,22 +87,16 @@ abstract class AnalyserSection extends ChangeNotifier {
   final Map<String, String> _pathOf = {};
   final Map<String, String> _urlOf = {};
 
-  // Whether [_pathOf] holds every photo in the album, as during a scan of a
-  // complete album index.
-
-  bool _knowsAll = false;
-
   int _done = 0;
   int _toDo = 0;
   int _failed = 0;
   int _waiting = 0;
   String? _status;
   String? _error;
-  bool _needsConsent = false;
 
   // -- What each section supplies -----------------------------------------
 
-  /// What the Analyser looks for, for the status line: "faces", "tags".
+  /// What the Analyser looks for, for messages: "faces", "tags".
 
   @protected
   String get lookingFor;
@@ -145,16 +139,27 @@ abstract class AnalyserSection extends ChangeNotifier {
 
   /// File the Analyser's answer [content] for the photo at [path], returning
   /// whether the Analyser could not read the photo. An answer this app
-  /// cannot use is passed over, and the photo looked at again later.
+  /// cannot use is passed over, and the photo can be asked about again.
 
   @protected
   bool fileAnswer(String path, String content, {String? url});
 
   /// Whether the section holds something not yet saved, such as work a
-  /// file from an earlier version still needs, which a scan saves first.
+  /// file from an earlier version still needs, which [refresh] saves.
 
   @protected
   bool get hasUnsaved => false;
+
+  /// Take on what the user has said in Get Info since, returning the photos
+  /// whose entries changed. Called by [refresh] and after answers are filed.
+
+  @protected
+  Future<Set<String>> fromCatalog() async => const {};
+
+  /// Tell the catalog what was found in the photos at [paths], once saved.
+
+  @protected
+  Future<void> toCatalog(Iterable<String> paths) async {}
 
   /// File what is known in advance for the sample photos in [todo].
 
@@ -168,9 +173,11 @@ abstract class AnalyserSection extends ChangeNotifier {
   @protected
   bool get isDemo => _demo;
 
+  /// Whether photos are being looked at, or the file read.
+
   bool get isScanning => _scanning;
 
-  /// How far the current scan has got leaving photos for the Analyser.
+  /// How far the current look has got leaving photos for the Analyser.
 
   int get done => _done;
   int get toDo => _toDo;
@@ -179,24 +186,34 @@ abstract class AnalyserSection extends ChangeNotifier {
 
   int get waiting => _waiting;
 
-  /// How many photos the last scan could not read.
+  /// How many photos the last look could not read.
 
   int get failed => _failed;
 
-  /// What the scan is doing, for the status line.
+  /// What the look is doing, for the status line.
 
   String? get status => _status;
 
   String? get error => _error;
 
-  /// Whether the section has to be turned on, sharing its inbox with the
-  /// Analyser, before any photo can be looked at.
-
-  bool get needsConsent => _needsConsent;
-
   /// How many of the user's photos have been looked at.
 
   int get scannedCount;
+
+  /// The user's own photos among [photos] not yet looked at, newest first.
+
+  List<MediaItem> unprocessedIn(List<MediaItem> photos) => newestFirst(
+    photos.where(
+      (item) => item.isPhoto && !item.isShared && !hasLookedAt(item.path),
+    ),
+  );
+
+  /// [items] with the most recently taken first.
+
+  static List<MediaItem> newestFirst(Iterable<MediaItem> items) =>
+      items.toList()..sort(
+        (a, b) => (b.date ?? DateTime(0)).compareTo(a.date ?? DateTime(0)),
+      );
 
   // -- Reading -------------------------------------------------------------
 
@@ -241,25 +258,20 @@ abstract class AnalyserSection extends ChangeNotifier {
     notifyListeners();
   }
 
-  // -- Scanning ------------------------------------------------------------
+  // -- Asking --------------------------------------------------------------
 
-  /// Look at every photo in [photos] not yet looked at.
+  /// Bring the section up to date with the album, [photos], as when it is
+  /// opened: read the file, take on what was said in Get Info since, and
+  /// finish a look at some photos that was cut short, as by the app being
+  /// closed. Nothing new is sent to the Analyser; see [analyse].
   ///
   /// With [prune], photos no longer in [photos] are forgotten, which is how
   /// photos deleted elsewhere leave the section; it is left off when the
   /// album index is incomplete, so that a truncated walk forgets nothing.
 
-  Future<void> scan(List<MediaItem> photos, {bool prune = true}) async {
+  Future<void> refresh(List<MediaItem> photos, {bool prune = true}) async {
     if (_scanning) return;
-    _scanning = true;
-    _cancelled = false;
-    _forgotten.clear();
-    _error = null;
-    _needsConsent = false;
-    _failed = 0;
-    _done = 0;
-    _toDo = 0;
-    notifyListeners();
+    _begin();
 
     try {
       await load();
@@ -267,51 +279,91 @@ abstract class AnalyserSection extends ChangeNotifier {
       final own = photos
           .where((item) => item.isPhoto && !item.isShared)
           .toList();
-      for (final item in own) {
-        _pathOf[inboxKeyOf(item.path)] = item.path;
-        _urlOf[item.path] = item.url;
-      }
-      if ((prune && retainOnly({for (final i in own) i.path})) ||
-          (hasUnsaved && !_demo)) {
+      _know(own);
+      final changed = prune && retainOnly({for (final i in own) i.path});
+
+      final named = await fromCatalog();
+      if (changed || named.isNotEmpty || (hasUnsaved && !_demo)) {
         await save();
       }
+      await toCatalog(named);
 
-      final todo = own.where((item) => !hasLookedAt(item.path)).toList();
-      _knowsAll = prune;
-      if (_demo) {
-        await lookAtSamples(todo);
-      } else {
-        await _scanWithAnalyser(todo);
-      }
+      if (!_demo && await inbox.exists()) await _finishEarlier();
     } on Object catch (e) {
       _error = '$e';
-      debugPrint('PhotoPod: $lookingFor scan stopped: $e');
+      debugPrint('PhotoPod: $lookingFor could not be brought up to date: $e');
     } finally {
-      _status = null;
-      _scanning = false;
-      _knowsAll = false;
-      notifyListeners();
+      _end();
     }
   }
 
-  /// Turn the section on: share its inbox with the Analyser.
+  /// Have the Analyser look at [photos], the user's own photos among them,
+  /// whether or not they have been looked at before. The inbox is shared
+  /// with the Analyser for the look and no longer, and photos chosen while a
+  /// look is under way join it.
 
-  Future<void> enable() async {
-    await inbox.enable();
-    _needsConsent = false;
+  Future<void> analyse(Iterable<MediaItem> photos) async {
+    final own = [
+      for (final item in photos)
+        if (item.isPhoto && !item.isShared) item,
+    ];
+    if (own.isEmpty) return;
+    _know(own);
+
+    if (_scanning) {
+      _queue.addAll(own);
+      _toDo += own.length;
+      notifyListeners();
+      return;
+    }
+
+    _begin();
+    _queue.addAll(own);
+    _toDo = own.length;
+    try {
+      await load();
+      if (_demo) {
+        await lookAtSamples(own);
+        _queue.clear();
+      } else {
+        await _runAnalyser();
+      }
+    } on Object catch (e) {
+      _error = '$e';
+      debugPrint('PhotoPod: the $lookingFor were not found: $e');
+    } finally {
+      _end();
+    }
+  }
+
+  // Remember which photo each key in the inbox stands for.
+
+  void _know(List<MediaItem> photos) {
+    for (final item in photos) {
+      _pathOf[inboxKeyOf(item.path)] = item.path;
+      _urlOf[item.path] = item.url;
+    }
+  }
+
+  void _begin() {
+    _scanning = true;
+    _cancelled = false;
+    _forgotten.clear();
+    _error = null;
+    _status = null;
+    _failed = 0;
+    _done = 0;
+    _toDo = 0;
     notifyListeners();
   }
 
-  /// Turn the section off: stop sharing its inbox and empty it. What has
-  /// been found already stays.
-
-  Future<void> disable() async {
-    _cancelled = true;
-    await inbox.disable();
-    _waiting = 0;
-    _needsConsent = true;
+  void _end() {
+    _queue.clear();
+    _scanning = false;
     notifyListeners();
   }
+
+  // -- Forgetting ----------------------------------------------------------
 
   /// Delete what was found in the photos in [items], and in every photo in
   /// the folders among them, from the file in the Pod, as when they are
@@ -319,7 +371,7 @@ abstract class AnalyserSection extends ChangeNotifier {
   ///
   /// The file is read first if it has not been yet. When it cannot be, as
   /// when the security key has not been entered, what was found stays until
-  /// the next scan, which forgets every photo no longer in the album.
+  /// the next refresh, which forgets every photo no longer in the album.
 
   Future<void> forget(Iterable<MediaItem> items) async {
     final gone = {
@@ -365,23 +417,22 @@ abstract class AnalyserSection extends ChangeNotifier {
 
   void reset() {
     _cancelled = true;
-    _debounce?.cancel();
+    _queue.clear();
     clear();
     _loaded = false;
     _error = null;
-    _needsConsent = false;
     _pathOf.clear();
     _urlOf.clear();
     _waiting = 0;
-    inbox.reset();
     notifyListeners();
   }
 
-  @override
-  void dispose() {
-    _debounce?.cancel();
-    unawaited(_added.cancel());
-    super.dispose();
+  /// Report [message] as what went wrong, in the section's status.
+
+  @protected
+  void reportError(String message) {
+    _error = message;
+    notifyListeners();
   }
 
   /// Write the file, unless the section shows the samples, reporting a

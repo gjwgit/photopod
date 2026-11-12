@@ -1,4 +1,4 @@
-/// The frame People and Tags share: status line, consent and turning off.
+/// The frame People and Tags share: the Analyser's sections of the album.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -39,107 +39,104 @@ import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/widgets/demo_banner.dart';
 
 /// What a section of the album worked out by the Analyser looks like around
-/// its own content: a status line, the screen that turns the section on,
-/// the button that turns it off, and the messages shown while there is
-/// nothing to list.
+/// its own content: a status line, the button that reads the album again,
+/// and the messages shown while there is nothing to list.
 ///
-/// Opening the section is what starts the scan, as opening Maps starts the
-/// search for places. What is already in the Pod is read first, and only
-/// the photos not looked at before are left in the section's inbox for the
-/// Analyser. The scan carries on in the background if the user moves
-/// elsewhere.
+/// Opening the section sends nothing anywhere: it reads what is in the Pod
+/// already and finishes a request cut short ([AnalyserSection.refresh]).
+/// Photos are looked at only when the user asks, with Identify People or
+/// Tag Photos, in the Library or in the section's Unprocessed row.
 ///
-/// Nothing is shared until the user turns the section on here, which shares
-/// its inbox, and only that, with the Analyser. [T] is the section, read
-/// from the provider; [E] is what it lists.
+/// [T] is the section, read from the provider; [C] is what it shows.
 
-class AnalyserSectionView<T extends AnalyserSection, E> extends StatefulWidget {
+class AnalyserSectionView<T extends AnalyserSection, C> extends StatefulWidget {
   const AnalyserSectionView({
     super.key,
-    required this.name,
-    required this.icon,
-    required this.offIcon,
-    required this.consentTitle,
-    required this.consentText,
     required this.keyPrompt,
     required this.lookingFor,
-    required this.entriesOf,
+    required this.contentOf,
+    required this.isEmpty,
     required this.summary,
+    required this.errorTitle,
+    required this.emptyIcon,
+    required this.emptyTitle,
     required this.emptyText,
     required this.builder,
   });
-
-  /// The section's name, as on its button: "People", "Tags".
-
-  final String name;
-
-  final IconData icon;
-
-  /// The icon of the button that turns the section off.
-
-  final IconData offIcon;
-
-  /// What turning the section on offers, and what it means.
-
-  final String consentTitle;
-  final String consentText;
 
   /// Why the security key is asked for.
 
   final String keyPrompt;
 
-  /// What the scan looks for, as in "Looking for faces".
+  /// What the Analyser looks for, as in "Looking for faces".
 
   final String lookingFor;
 
-  /// What the section lists among the album's photos.
+  /// What the section shows of the album's photos.
 
-  final List<E> Function(T section, List<MediaItem> photos) entriesOf;
+  final C Function(T section, List<MediaItem> photos) contentOf;
 
-  /// The status line once a scan is done, for [count] entries.
+  /// Whether [C] has nothing to show at all.
 
-  final String Function(T section, int count) summary;
+  final bool Function(C content) isEmpty;
 
-  /// What is said while nothing has been found.
+  /// The status line while nothing is under way.
 
+  final String Function(T section, C content) summary;
+
+  /// What is said when the section could not be read.
+
+  final String errorTitle;
+
+  /// What is said while there is nothing to show.
+
+  final IconData emptyIcon;
+  final String emptyTitle;
   final String emptyText;
 
-  /// The list itself, for entries that are there.
+  /// The list itself, given a way to read the album again, as after Get
+  /// Info has changed a photo.
 
-  final Widget Function(BuildContext context, T section, List<E> entries)
+  final Widget Function(
+    BuildContext context,
+    T section,
+    C content,
+    VoidCallback refresh,
+  )
   builder;
 
   @override
-  State<AnalyserSectionView<T, E>> createState() => _AnalyserSectionViewState();
+  State<AnalyserSectionView<T, C>> createState() =>
+      _AnalyserSectionViewState<T, C>();
 }
 
-class _AnalyserSectionViewState<T extends AnalyserSection, E>
-    extends State<AnalyserSectionView<T, E>> {
+class _AnalyserSectionViewState<T extends AnalyserSection, C>
+    extends State<AnalyserSectionView<T, C>> {
   String? _keyError;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scan());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refresh());
   }
 
-  Future<void> _scan({bool force = false}) async {
+  Future<void> _refresh({bool force = false}) async {
     final index = context.read<MediaIndex>();
     final section = context.read<T>();
 
     await index.refresh(force: force);
     if (!mounted) return;
 
-    // The section's file and the photos are both encrypted, so the security
-    // key has to be in hand before either can be read. The samples shown
-    // before login are neither.
+    // The section's file and the catalog are both encrypted, so the
+    // security key has to be in hand before either can be read. The samples
+    // shown before login are neither.
 
     if (!index.isDemo) {
       if (!await _unlock()) return;
       if (!mounted) return;
     }
 
-    await section.scan(
+    await section.refresh(
       index.photos,
       prune: !index.isTruncated && index.error == null,
     );
@@ -167,14 +164,14 @@ class _AnalyserSectionViewState<T extends AnalyserSection, E>
   Widget build(BuildContext context) {
     final index = context.watch<MediaIndex>();
     final section = context.watch<T>();
-    final entries = widget.entriesOf(section, index.photos);
+    final content = widget.contentOf(section, index.photos);
 
     return Column(
       children: [
         if (index.isDemo) const DemoBanner(),
-        _buildStatusBar(context, index, section, entries.length),
+        _buildStatusBar(context, index, section, content),
         const Divider(height: 1),
-        Expanded(child: _buildBody(context, index, section, entries)),
+        Expanded(child: _buildBody(context, index, section, content)),
       ],
     );
   }
@@ -183,7 +180,7 @@ class _AnalyserSectionViewState<T extends AnalyserSection, E>
     BuildContext context,
     MediaIndex index,
     T section,
-    int count,
+    C content,
   ) {
     final busy = section.isScanning || index.isLoading;
     final summary =
@@ -193,7 +190,7 @@ class _AnalyserSectionViewState<T extends AnalyserSection, E>
                   ? 'Leaving photos for the ${Analyser.displayName}...  '
                         '${section.done} of ${section.toDo}'
                   : 'Looking for ${widget.lookingFor}...'
-            : '${widget.summary(section, count)}'
+            : '${widget.summary(section, content)}'
                   '${section.failed > 0 ? ' (${section.failed} unreadable)' : ''}');
 
     return Padding(
@@ -214,17 +211,9 @@ class _AnalyserSectionViewState<T extends AnalyserSection, E>
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Look for new photos again',
-            onPressed: busy ? null : () => _scan(force: true),
+            tooltip: 'Read the album again',
+            onPressed: busy ? null : () => _refresh(force: true),
           ),
-          if (!index.isDemo && !section.needsConsent)
-            IconButton(
-              icon: Icon(widget.offIcon),
-              tooltip:
-                  'Turn ${widget.name} off and stop sharing with the '
-                  '${Analyser.displayName}',
-              onPressed: busy ? null : () => _disable(context),
-            ),
         ],
       ),
     );
@@ -234,110 +223,55 @@ class _AnalyserSectionViewState<T extends AnalyserSection, E>
     BuildContext context,
     MediaIndex index,
     T section,
-    List<E> entries,
+    C content,
   ) {
-    if (section.needsConsent && !index.isDemo) return _consent(context);
-
     final error = _keyError ?? section.error ?? index.error;
-    if (error != null && entries.isEmpty) {
+    final empty = widget.isEmpty(content);
+    if (error != null && empty) {
       return analyserMessage(
         context,
         Icons.cloud_off,
-        'Could not look for ${widget.lookingFor}',
+        widget.errorTitle,
         error,
       );
     }
-
-    if (entries.isEmpty) {
+    if (empty) {
       return analyserMessage(
         context,
-        widget.icon,
-        section.isScanning
-            ? 'Looking for ${widget.lookingFor}'
-            : 'No ${widget.name.toLowerCase()} yet',
-        section.isScanning
-            ? '${widget.name} appear here as the ${Analyser.displayName} '
-                  'finds them.'
-            : widget.emptyText,
+        widget.emptyIcon,
+        widget.emptyTitle,
+        widget.emptyText,
       );
     }
-
-    return widget.builder(context, section, entries);
+    return widget.builder(context, section, content, _refresh);
   }
+}
 
-  // What turning the section on means, and the button that does it.
+/// Have the Analyser look at [photos], every photo not yet looked at, once
+/// the user agrees to how many that is. [action] names the request, as on
+/// its button ("Identify People"); [finding] says what it does ("find the
+/// people in").
 
-  Widget _consent(BuildContext context) => Center(
-    child: Padding(
-      padding: const EdgeInsets.all(32),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              widget.icon,
-              size: 56,
-              color: Theme.of(context).colorScheme.outline,
-            ),
-            const Gap(16),
-            Text(
-              widget.consentTitle,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const Gap(8),
-            Text(widget.consentText, textAlign: TextAlign.center),
-            const Gap(24),
-            FilledButton.icon(
-              icon: Icon(widget.icon),
-              label: Text('Turn on ${widget.name}'),
-              onPressed: () => _enable(context),
-            ),
-          ],
-        ),
-      ),
-    ),
+Future<void> askToAnalyse(
+  BuildContext context,
+  AnalyserSection section,
+  List<MediaItem> photos, {
+  required String action,
+  required String finding,
+}) async {
+  final count = photos.length == 1 ? 'one photo' : '${photos.length} photos';
+  final agreed = await showConfirmDialog(
+    context,
+    title: action,
+    message:
+        'Have the ${Analyser.displayName} $finding $count not yet looked at? '
+        'They are sent without where they were taken, and the Analyser '
+        'keeps no copy.',
+    confirmLabel: action,
+    destructive: false,
   );
-
-  Future<void> _enable(BuildContext context) async {
-    try {
-      await context.read<T>().enable();
-    } on Object catch (e) {
-      if (context.mounted) {
-        await showErrorDialog(
-          context,
-          'Could not turn ${widget.name} on',
-          '$e',
-        );
-      }
-      return;
-    }
-    if (mounted) await _scan();
-  }
-
-  Future<void> _disable(BuildContext context) async {
-    final confirmed = await showConfirmDialog(
-      context,
-      title: 'Turn ${widget.name} off?',
-      message:
-          'Your photos will no longer be shared with the '
-          '${Analyser.displayName} for ${widget.name}, and any still waiting '
-          'are removed. What has been found already stays.',
-      confirmLabel: 'Turn off',
-    );
-    if (!confirmed || !context.mounted) return;
-    try {
-      await context.read<T>().disable();
-    } on Object catch (e) {
-      if (context.mounted) {
-        await showErrorDialog(
-          context,
-          'Could not turn ${widget.name} off',
-          '$e',
-        );
-      }
-    }
-  }
+  if (!agreed || !context.mounted) return;
+  await section.analyse(photos);
 }
 
 /// A large icon, a title and a few words, in the middle of the section.

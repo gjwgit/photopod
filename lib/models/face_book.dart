@@ -27,6 +27,8 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'package:photopod/models/catalog_entry.dart';
+
 /// The cosine similarity at or above which two ArcFace embeddings are taken
 /// to be the same person. On the sample photos a person matched themselves
 /// at 0.64 to 0.84 and strangers at no more than 0.07; 0.40 leaves room for
@@ -48,11 +50,6 @@ const String faceModelId = 'buffalo_l:scrfd-10g+arcface-w600k-r50';
 /// again to fill those in, keeping each face with the person it was under.
 
 const int faceBookVersion = 2;
-
-/// How far a face found again in the same photo may have moved, as overlap
-/// of the two boxes, and still be taken as the same face.
-
-const double _sameFaceOverlap = 0.5;
 
 /// A face as the engine hands it over: where it is, as fractions of the
 /// photo's size, how sure the detector is, its unit-length embedding, and a
@@ -158,12 +155,22 @@ class Person {
 
   String? name;
 
+  /// What they go by until named: a short code chosen at random when they
+  /// are first found, and kept with them, so that an unknown person is the
+  /// same group every time and can be named all at once.
+
+  final String alias;
+
+  /// What People calls them: their name, or [unknownPerson] and their alias.
+
+  String get label => name ?? '$unknownPerson $alias';
+
   /// The running sum of the person's embeddings. Its direction is the
   /// centre of their faces, which is what a new face is compared with.
 
   final Float64List _sum;
 
-  Person(this.id, {this.name}) : _sum = Float64List(_dimensions);
+  Person(this.id, this.alias, {this.name}) : _sum = Float64List(_dimensions);
 
   void _add(Float32List embedding) {
     for (var i = 0; i < _sum.length; i++) {
@@ -190,6 +197,10 @@ class Person {
     return norm == 0 ? 0 : dot / math.sqrt(norm);
   }
 }
+
+/// What a person not yet named is called, before their alias.
+
+const String unknownPerson = 'Unknown';
 
 /// ArcFace embeddings have 512 values.
 
@@ -238,7 +249,7 @@ class FaceBook {
     for (var i = 0; i < found.length; i++) {
       final face = found[i];
       final previous = before
-          .where((old) => _overlap(old.box, face.box) >= _sameFaceOverlap)
+          .where((old) => boxOverlap(old.box, face.box) >= sameFaceOverlap)
           .firstOrNull;
       final person =
           people[previous?.person] ?? _closest(face.embedding) ?? _newPerson();
@@ -321,14 +332,84 @@ class FaceBook {
     return best;
   }
 
-  // Intersection over union of two boxes given as left, top, width, height.
+  /// The photos the faces of [persons] are in.
 
-  static double _overlap(List<double> a, List<double> b) {
-    final w = math.min(a[0] + a[2], b[0] + b[2]) - math.max(a[0], b[0]);
-    final h = math.min(a[1] + a[3], b[1] + b[3]) - math.max(a[1], b[1]);
-    if (w <= 0 || h <= 0) return 0;
-    final shared = w * h;
-    return shared / (a[2] * a[3] + b[2] * b[3] - shared);
+  Set<String> photosOf(Iterable<String> persons) {
+    final wanted = persons.toSet();
+    return {
+      for (final face in faces.values)
+        if (wanted.contains(face.person)) face.path,
+    };
+  }
+
+  /// The named people in each photo in [paths], as the catalog lists who is
+  /// in a photo, credited to [source]. A photo with no one named is listed
+  /// with no one, so that what was said of it before is taken back.
+
+  Map<String, List<PhotoFace>> namedFaces(
+    Iterable<String> paths,
+    String source,
+  ) {
+    final found = {for (final path in paths) path: <PhotoFace>[]};
+    for (final face in faces.values) {
+      final name = people[face.person]?.name;
+      if (name == null) continue;
+      found[face.path]?.add(PhotoFace(name, box: face.box, source: source));
+    }
+    return found;
+  }
+
+  /// Name the people not yet named after whoever the user has said is in
+  /// their photos: [given] lists, by path, the people the user named. A name
+  /// counts for a face when its box is where the face is, or, without a box,
+  /// when it is the only name given for a photo with only one face. The name
+  /// most often given to a person's faces is theirs, unless another is given
+  /// as often or someone else already has it. Returns who was named.
+
+  Set<String> nameFrom(Map<String, List<PhotoFace>> given) {
+    final taken = {
+      for (final person in people.values)
+        if (person.name != null) person.name!.toLowerCase(),
+    };
+    final facesIn = <String, List<FaceRecord>>{};
+    for (final face in faces.values) {
+      (facesIn[face.path] ??= []).add(face);
+    }
+
+    final votes = <String, Map<String, int>>{};
+    for (final MapEntry(key: path, value: names) in given.entries) {
+      final here = facesIn[path] ?? const [];
+      final loose = names.where((name) => name.box == null).toList();
+      for (final face in here) {
+        final name =
+            names
+                .where(
+                  (name) =>
+                      name.box != null &&
+                      boxOverlap(name.box!, face.box) >= sameFaceOverlap,
+                )
+                .firstOrNull
+                ?.name ??
+            (here.length == 1 && loose.length == 1 ? loose.single.name : null);
+        if (name == null) continue;
+        final count = votes[face.person] ??= {};
+        count[name] = (count[name] ?? 0) + 1;
+      }
+    }
+
+    final named = <String>{};
+    for (final MapEntry(key: id, value: count) in votes.entries) {
+      final person = people[id];
+      if (person == null || person.name != null) continue;
+      final ranked = count.entries.toList()
+        ..sort((a, b) => b.value.compareTo(a.value));
+      if (ranked.length > 1 && ranked[1].value == ranked.first.value) continue;
+      final name = ranked.first.key;
+      if (!taken.add(name.toLowerCase())) continue;
+      person.name = name;
+      named.add(id);
+    }
+    return named;
   }
 
   Person? _closest(Float32List embedding) {
@@ -349,7 +430,24 @@ class FaceBook {
     while (people.containsKey(id)) {
       id = 'p${_nextPerson++}';
     }
-    return people[id] = Person(id);
+    return people[id] = Person(id, _newAlias());
+  }
+
+  // Four letters and digits, leaving out those easily taken for others, and
+  // none another person in the book already has.
+
+  static const _aliasCharacters = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  static final _random = math.Random();
+
+  String _newAlias() {
+    final used = {for (final person in people.values) person.alias};
+    while (true) {
+      final alias = String.fromCharCodes([
+        for (var i = 0; i < 4; i++)
+          _aliasCharacters.codeUnitAt(_random.nextInt(_aliasCharacters.length)),
+      ]);
+      if (!used.contains(alias)) return alias;
+    }
   }
 
   void _dropEmpty() {
@@ -371,6 +469,7 @@ class FaceBook {
       for (final person in people.values)
         person.id: {
           if (person.name != null) 'name': person.name,
+          'alias': person.alias,
           'portrait': portraitOf(person.id)?.id,
           'photos': _photosOf(person.id),
         },
@@ -404,8 +503,12 @@ class FaceBook {
     book.scanned.addAll((data['scanned'] as List).cast<String>());
     final people = data['people'] as Map<String, dynamic>;
     for (final entry in people.entries) {
-      final name = (entry.value as Map<String, dynamic>)['name'] as String?;
-      book.people[entry.key] = Person(entry.key, name: name);
+      final fields = entry.value as Map<String, dynamic>;
+      book.people[entry.key] = Person(
+        entry.key,
+        fields['alias'] as String? ?? book._newAlias(),
+        name: fields['name'] as String?,
+      );
     }
     final faces = data['faces'] as Map<String, dynamic>;
     for (final entry in faces.entries) {
@@ -415,7 +518,7 @@ class FaceBook {
       );
       final person = book.people.putIfAbsent(
         face.person,
-        () => Person(face.person),
+        () => Person(face.person, book._newAlias()),
       );
       person._add(face.embedding);
       book.faces[face.id] = face;

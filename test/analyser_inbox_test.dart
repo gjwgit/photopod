@@ -25,12 +25,16 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:image/image.dart' as img;
 
 import 'package:photopod/models/face_book.dart';
 import 'package:photopod/services/analyser_inbox.dart';
 import 'package:photopod/services/face_results.dart';
+import 'package:photopod/services/media_renditions.dart' show PhotoRenditions;
+import 'package:photopod/services/thumbnail_cache.dart' show renderPhoto;
 
 void main() {
   group('inboxKeyOf', () {
@@ -47,6 +51,63 @@ void main() {
       final key = inboxKeyOf('photopod/data/Holiday/beach.jpg.enc.ttl');
       expect(key, matches(RegExp(r'^[0-9a-f]{32}$')));
       expect(key, isNot(inboxKeyOf('photopod/data/Work/beach.jpg.enc.ttl')));
+    });
+  });
+
+  group('withoutMetadata', () {
+    // A picture whose EXIF block says where it was taken, as a phone's
+    // does, made into renditions as a photo added to PhotoPod is.
+
+    PhotoRenditions rendered({bool alpha = false}) {
+      final source = img.Image(
+        width: 2400,
+        height: 1600,
+        numChannels: alpha ? 4 : 3,
+      );
+      source.exif.imageIfd['Make'] = img.IfdValueAscii('Camera');
+      source.exif.gpsIfd['GPSLatitude'] = img.IfdValueRational(35, 1);
+      final bytes = alpha ? img.encodePng(source) : img.encodeJpg(source);
+      return renderPhoto((bytes: bytes, keepOriginal: false))!;
+    }
+
+    test('takes the location out of a large rendition', () {
+      final large = rendered().large!;
+      expect(img.decodeJpg(large)!.exif.gpsIfd.isEmpty, isFalse);
+
+      final bare = img.decodeJpg(withoutMetadata(large)!)!;
+      expect(bare.exif.isEmpty, isTrue);
+      expect([bare.width, bare.height], [2048, 1365]);
+    });
+
+    test('takes it out of a PNG too', () {
+      // A PNG with an eXIf and a tEXt chunk after its header. Their
+      // checksums are left blank, as nothing reads them once dropped.
+
+      final png = img.encodePng(img.Image(width: 64, height: 48));
+      Uint8List chunk(String type, String data) {
+        final bytes = ByteData(12 + data.length)..setUint32(0, data.length);
+        final out = bytes.buffer.asUint8List()
+          ..setRange(4, 8, type.codeUnits)
+          ..setRange(8, 8 + data.length, data.codeUnits);
+        return out;
+      }
+
+      final marked = Uint8List.fromList([
+        ...png.sublist(0, 33),
+        ...chunk('eXIf', 'MM*GPS'),
+        ...chunk('tEXt', 'Location\u0000Canberra'),
+        ...png.sublist(33),
+      ]);
+
+      final bare = withoutMetadata(marked)!;
+      expect(bare, png);
+      expect(img.decodePng(bare)!.width, 64);
+    });
+
+    test('lets nothing through it cannot examine', () {
+      expect(withoutMetadata(Uint8List.fromList([1, 2, 3])), isNull);
+      final large = rendered().large!;
+      expect(withoutMetadata(large.sublist(0, 40)), isNull);
     });
   });
 

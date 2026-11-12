@@ -357,6 +357,50 @@ class MediaCatalog {
         }
       });
 
+  /// Replace the faces [source] found in each photo in [found], by path,
+  /// with those listed for it there, keeping everyone else's
+  /// ([withFoundFaces]). All the photos are changed in one write.
+
+  static Future<void> setFoundFaces(
+    String source,
+    Map<String, List<PhotoFace>> found,
+  ) => _change((entries) {
+    for (final MapEntry(key: path, value: faces) in found.entries) {
+      if (faces.isEmpty && _at(entries, path) == null) continue;
+      final entry = _forUpdate(entries, path);
+      if (entry == null) continue;
+      entries[catalogKeyOf(path)] = entry.copyWith(
+        faces: withFoundFaces(entry.faces, source, faces),
+      );
+    }
+  });
+
+  /// Call whoever is named [from], in every photo and whoever named them,
+  /// [to] instead. A photo that already has someone called [to] keeps the
+  /// one, so that naming someone after another person makes them one.
+
+  static Future<void> renamePerson(String from, String to) =>
+      _change((entries) {
+        final old = from.toLowerCase();
+        for (final MapEntry(:key, value: entry) in entries.entries.toList()) {
+          if (!entry.faces.any((face) => face.name.toLowerCase() == old)) {
+            continue;
+          }
+          final faces = <PhotoFace>[];
+          for (final face in entry.faces) {
+            final renamed = face.name.toLowerCase() == old
+                ? PhotoFace(to, box: face.box, source: face.source)
+                : face;
+            final name = renamed.name.toLowerCase();
+            if (faces.any((other) => other.name.toLowerCase() == name)) {
+              continue;
+            }
+            faces.add(renamed);
+          }
+          entries[key] = entry.copyWith(faces: faces);
+        }
+      });
+
   /// Forget [paths], and everything beneath those that are folders, for items
   /// that have been deleted. Nothing that goes wrong is reported: an entry
   /// left behind belongs to a path no file will ever have again.

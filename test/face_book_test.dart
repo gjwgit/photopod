@@ -29,6 +29,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:photopod/models/catalog_entry.dart';
 import 'package:photopod/models/face_book.dart';
 
 /// A unit-length embedding pointing mostly along [axis], nudged by [jitter]
@@ -197,5 +198,152 @@ void main() {
       json.replaceFirst('"scanned":[]', '"scanned":["a.jpg"]'),
     );
     expect(book.scanned, isEmpty);
+  });
+
+  group('someone not yet named', () {
+    test('goes by Unknown and a code of their own', () {
+      final book = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0)), _found(_face(10), left: 0.6)]);
+      final people = book.people.values.toList();
+
+      for (final person in people) {
+        expect(person.label, matches(RegExp(r'^Unknown [A-Z2-9]{4}$')));
+      }
+      expect(people[0].alias, isNot(people[1].alias));
+
+      people[0].name = 'Alice';
+      expect(people[0].label, 'Alice');
+    });
+
+    test('keeps their code, so they stay the same group', () {
+      final old = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0))])
+        ..addPhoto('b.jpg', [_found(_face(0, 0.2))]);
+      final person = old.faces['a.jpg#0']!.person;
+      final alias = old.people[person]!.alias;
+
+      final book = FaceBook.fromJson(old.toJson());
+      expect(book.people[person]!.alias, alias);
+
+      // Found again, their faces stay with them, code and all.
+
+      book.addPhoto('c.jpg', [_found(_face(0, 0.1))]);
+      expect(book.faces['c.jpg#0']!.person, person);
+      expect(book.people, hasLength(1));
+    });
+
+    test('given a name, is that name in every photo', () {
+      final book = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0))])
+        ..addPhoto('b.jpg', [_found(_face(0, 0.2))]);
+      final person = book.faces['a.jpg#0']!.person;
+
+      book.people[person]!.name = 'Alice';
+      final found = book.namedFaces(['a.jpg', 'b.jpg'], 's');
+      expect(
+        [for (final face in found.values) face.single.name],
+        ['Alice', 'Alice'],
+      );
+    });
+  });
+
+  group('names from Get Info', () {
+    test('a name boxed where a face is names its person', () {
+      final book = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0)), _found(_face(10), left: 0.6)])
+        ..addPhoto('b.jpg', [_found(_face(0, 0.3))]);
+      final alice = book.faces['a.jpg#0']!.person;
+
+      final named = book.nameFrom({
+        'a.jpg': [
+          const PhotoFace('Alice', box: [0.1, 0.1, 0.2, 0.2]),
+        ],
+      });
+
+      expect(named, {alice});
+      expect(book.people[alice]!.name, 'Alice');
+      expect(book.people[book.faces['a.jpg#1']!.person]!.name, isNull);
+    });
+
+    test('a name without a box names the only face in its photo', () {
+      final book = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0))])
+        ..addPhoto('b.jpg', [_found(_face(10)), _found(_face(20), left: 0.6)]);
+
+      book.nameFrom({
+        'a.jpg': [const PhotoFace('Alice')],
+        'b.jpg': [const PhotoFace('Bob')],
+      });
+
+      expect(book.people[book.faces['a.jpg#0']!.person]!.name, 'Alice');
+      expect(book.people[book.faces['b.jpg#0']!.person]!.name, isNull);
+      expect(book.people[book.faces['b.jpg#1']!.person]!.name, isNull);
+    });
+
+    test('a person already named, or a name already taken, is left', () {
+      final book = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0))])
+        ..addPhoto('b.jpg', [_found(_face(10))]);
+      final alice = book.faces['a.jpg#0']!.person;
+      book.people[alice]!.name = 'Alice';
+
+      final named = book.nameFrom({
+        'a.jpg': [const PhotoFace('Carol')],
+        'b.jpg': [const PhotoFace('alice')],
+      });
+
+      expect(named, isEmpty);
+      expect(book.people[alice]!.name, 'Alice');
+      expect(book.people[book.faces['b.jpg#0']!.person]!.name, isNull);
+    });
+
+    test('the named people are listed for the catalog, by photo', () {
+      final book = FaceBook()
+        ..addPhoto('a.jpg', [_found(_face(0)), _found(_face(10), left: 0.6)])
+        ..addPhoto('b.jpg', [_found(_face(10))]);
+      final alice = book.faces['a.jpg#0']!.person;
+      book.people[alice]!.name = 'Alice';
+
+      final found = book.namedFaces(['a.jpg', 'b.jpg'], 'test:faces');
+
+      expect(found['a.jpg'], hasLength(1));
+      expect(found['a.jpg']!.single.name, 'Alice');
+      expect(found['a.jpg']!.single.box, [0.1, 0.1, 0.2, 0.2]);
+      expect(found['a.jpg']!.single.source, 'test:faces');
+      expect(found['b.jpg'], isEmpty);
+      expect(book.photosOf([alice]), {'a.jpg'});
+    });
+  });
+
+  group('faces found, in the catalog', () {
+    const user = PhotoFace('Alice', box: [0.1, 0.1, 0.2, 0.2]);
+    const old = PhotoFace('Bob', box: [0.6, 0.1, 0.2, 0.2], source: 's');
+
+    test('replace what the same service found before', () {
+      final faces = withFoundFaces(
+        [user, old],
+        's',
+        const [
+          PhotoFace('Robert', box: [0.6, 0.1, 0.2, 0.2], source: 's'),
+        ],
+      );
+      expect([for (final face in faces) face.name], ['Alice', 'Robert']);
+    });
+
+    test('never repeat or overrule the user, by name or by place', () {
+      final faces = withFoundFaces(
+        [user],
+        's',
+        const [
+          PhotoFace('Alicia', box: [0.11, 0.1, 0.2, 0.2], source: 's'),
+          PhotoFace('alice', box: [0.6, 0.1, 0.2, 0.2], source: 's'),
+        ],
+      );
+      expect(faces, [user]);
+    });
+
+    test('found to be no one, take back what was found', () {
+      expect(withFoundFaces([user, old], 's', const []), [user]);
+    });
   });
 }

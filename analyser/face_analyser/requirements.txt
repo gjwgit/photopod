@@ -9,6 +9,7 @@
 # rdflib        - parsing the turtle documents a Pod is made of.
 # PyYAML        - the configuration file.
 # tokenizers    - SigLIP's text tokeniser, used only by `embed-tags`.
+# websockets    - hearing from the Solid server when a request is made.
 
 onnxruntime>=1.18
 opencv-python-headless>=4.10,<5
@@ -19,3 +20,4 @@ argon2-cffi>=23.1
 rdflib>=7.0
 PyYAML>=6.0
 tokenizers>=0.20
+websockets>=13.0

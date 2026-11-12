@@ -83,11 +83,11 @@ class TagEntry {
 /// Tags the user's own photos with what they show, such as Beach, Dog or
 /// Receipt, each filed under a category such as Nature, Animals or
 /// Documents. The tags come from the Analyser through the tag inbox
-/// ([tagInbox]), turned on and off apart from People's; see
-/// [AnalyserSection] for how.
+/// ([tagInbox]), and only for the photos the user chooses with Tag Photos;
+/// see [AnalyserSection] for how.
 ///
 /// Every tag found is also put in the photo's catalog entry, as suggested by
-/// [Analyser.tagSource], so that Get Info shows it beside the user's own and
+/// [Analyser.source], so that Get Info shows it beside the user's own and
 /// the filter finds it. The catalog then has the last word: a tag the user
 /// takes off a photo there leaves it here too, and a tag they add there is
 /// listed here under [yourTagsCategory].
@@ -226,12 +226,12 @@ class PhotoTags extends AnalyserSection {
         if (!_catalogued.contains(path))
           path: [
             for (final t in tags)
-              PhotoTag(t.tag, source: Analyser.tagSource, confidence: t.score),
+              PhotoTag(t.tag, source: Analyser.source, confidence: t.score),
           ],
     };
     if (pending.isEmpty) return;
     try {
-      await MediaCatalog.suggestTags(pending, Analyser.tagSource);
+      await MediaCatalog.suggestTags(pending, Analyser.source);
       _catalogued.addAll(pending.keys);
     } on Object catch (e) {
       debugPrint('PhotoPod: tags not put in the catalog yet: $e');

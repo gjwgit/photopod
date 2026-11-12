@@ -23,6 +23,8 @@
 
 library;
 
+import 'dart:math' as math;
+
 import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/media_names.dart' show encodeDate;
 
@@ -134,6 +136,50 @@ class PhotoFace {
       source: source is String && source.isNotEmpty ? source : userSource,
     );
   }
+}
+
+/// How much two boxes may differ, as [boxOverlap], and still be taken as
+/// the same face.
+
+const double sameFaceOverlap = 0.5;
+
+/// How much two boxes, each `[left, top, width, height]`, overlap: the area
+/// they share over the area they cover between them, from 0 to 1.
+
+double boxOverlap(List<double> a, List<double> b) {
+  final w = math.min(a[0] + a[2], b[0] + b[2]) - math.max(a[0], b[0]);
+  final h = math.min(a[1] + a[3], b[1] + b[3]) - math.max(a[1], b[1]);
+  if (w <= 0 || h <= 0) return 0;
+  final shared = w * h;
+  return shared / (a[2] * a[3] + b[2] * b[3] - shared);
+}
+
+/// The people in a photo once [source] says it found [found] in it: what
+/// [source] found before is replaced, and everyone else's faces stay. A face
+/// found under a name already given, or where someone is already named, is
+/// left out, so that the user's word stands and no one is listed twice.
+
+List<PhotoFace> withFoundFaces(
+  List<PhotoFace> faces,
+  String source,
+  List<PhotoFace> found,
+) {
+  final kept = [
+    for (final face in faces)
+      if (face.source != source) face,
+  ];
+  bool known(PhotoFace face) => kept.any(
+    (other) =>
+        other.name.toLowerCase() == face.name.toLowerCase() ||
+        (other.box != null &&
+            face.box != null &&
+            boxOverlap(other.box!, face.box!) >= sameFaceOverlap),
+  );
+  return [
+    ...kept,
+    for (final face in found)
+      if (!known(face)) face,
+  ];
 }
 
 /// A short title for a photo, such as `Sunset over the harbour`, and who

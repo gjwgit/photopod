@@ -129,7 +129,7 @@ class _LabelEditorState extends State<LabelEditor> {
                 Tooltip(
                   message: label.source == userSource
                       ? 'Added by you'
-                      : 'Suggested by ${label.source == Analyser.tagSource ? Analyser.displayName : label.source}'
+                      : 'Suggested by ${label.source == Analyser.source ? Analyser.displayName : label.source}'
                             '${label.confidence == null ? '' : ' (${(label.confidence! * 100).round()}% sure)'}'
                             '. Take it off if it is wrong.',
                   child: InputChip(

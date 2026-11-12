@@ -27,85 +27,118 @@ import 'package:flutter/material.dart';
 
 import 'package:provider/provider.dart';
 
-import 'package:photopod/constants/analyser.dart';
 import 'package:photopod/dialogs/person_dialogs.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/screens/analyser_section_view.dart';
 import 'package:photopod/services/people.dart';
 import 'package:photopod/widgets/person_section.dart';
 
-/// The People section: everyone whose face turns up in the album, those in
-/// the most photos first, each above a row of the photos they are in.
+/// The People section: the user's photos arranged by who is in them. First
+/// everyone named, by the user or the Analyser, alphabetically, each above a
+/// row of the photos they are in; then everyone the Analyser found and no
+/// one has named, each as Unknown and a code of their own, most photos
+/// first, so that naming one names them in all their photos; then the
+/// photos the Analyser has not looked at.
 ///
-/// Nothing is shared until the user turns People on here, which shares the
-/// face inbox, and only that, with the Analyser; Tags has an inbox of its
-/// own, turned on apart. See [AnalyserSectionView].
+/// Opening the section sends nothing anywhere. Photos are looked at only when
+/// the user asks, with Identify People, in the Library or here. See
+/// [AnalyserSectionView].
 
 class PeopleView extends StatelessWidget {
   const PeopleView({super.key});
 
   @override
   Widget build(BuildContext context) =>
-      AnalyserSectionView<People, PersonEntry>(
-        name: 'People',
-        icon: Icons.face_outlined,
-        offIcon: Icons.face_retouching_off,
-        consentTitle: 'Find the people in your photos',
-        consentText:
-            'Faces are found by the ${Analyser.displayName}. Only one '
-            'folder of your Pod is shared with it, and every photo in it '
-            'stays encrypted. The Analyser opens a photo only to find the '
-            'faces in it, keeps no copy, and returns what it found to your '
-            'Pod, encrypted. Nothing else in your Pod is shared, and you '
-            'can turn People off at any time, which ends the share.',
+      AnalyserSectionView<People, PeopleSections>(
         keyPrompt:
-            'Please enter your security key to find the people in your photos',
+            'Please enter your security key to see the people in your photos',
         lookingFor: 'faces',
-        entriesOf: (people, photos) => people.peopleIn(photos),
-        summary: (people, count) => count == 0
-            ? 'No people found yet'
-            : '$count ${count == 1 ? 'person' : 'people'} in '
-                  '${people.scannedCount} photos looked at',
-        emptyText:
-            'Someone is listed once they are in at least '
-            '$minPhotosPerPerson of your photos.',
-        builder: (context, people, entries) {
-          final extent = context.watch<ViewPrefs>().tileSize.extent;
-          return ListView(
-            padding: const EdgeInsets.only(bottom: 24),
-            children: [
-              for (final entry in entries)
-                PersonSection(
-                  key: ValueKey(entry.id),
-                  person: entry,
-                  tileExtent: extent,
-                  onRename: () => _rename(context, entry),
-                  onMerge: entries.length < 2
-                      ? null
-                      : () => _merge(context, entry, entries),
-                ),
-            ],
-          );
+        contentOf: (people, photos) => people.sectionsOf(photos),
+        isEmpty: (sections) =>
+            sections.named.isEmpty &&
+            sections.unknown.isEmpty &&
+            sections.unprocessed.isEmpty,
+        summary: (people, sections) {
+          final count = sections.named.length;
+          return '$count ${count == 1 ? 'person' : 'people'} named, '
+              '${sections.unknown.length} unknown, '
+              '${sections.unprocessed.length} not yet looked at';
         },
+        errorTitle: 'Could not find people',
+        emptyIcon: Icons.face_outlined,
+        emptyTitle: 'No photos yet',
+        emptyText:
+            'Add photos in the Library, then select some and tap Identify '
+            'People to find who is in them.',
+        builder: _buildList,
       );
+
+  Widget _buildList(
+    BuildContext context,
+    People people,
+    PeopleSections sections,
+    VoidCallback refresh,
+  ) {
+    final extent = context.watch<ViewPrefs>().tileSize.extent;
+    return ListView(
+      padding: const EdgeInsets.only(bottom: 24),
+      children: [
+        for (final entry in sections.named)
+          PersonSection(
+            key: ValueKey('person:${entry.id}'),
+            title: entry.title,
+            person: entry,
+            items: entry.items,
+            tileExtent: extent,
+            onRename: () => _rename(context, entry),
+            onPreviewClosed: refresh,
+          ),
+        for (final entry in sections.unknown)
+          PersonSection(
+            key: ValueKey(entry.id),
+            title: entry.title,
+            person: entry,
+            unnamed: true,
+            items: entry.items,
+            tileExtent: extent,
+            onRename: () => _rename(context, entry),
+            onPreviewClosed: refresh,
+          ),
+        if (sections.unprocessed.isNotEmpty)
+          PersonSection(
+            key: const ValueKey('unprocessed'),
+            title: 'Unprocessed',
+            icon: Icons.hourglass_empty,
+            items: sections.unprocessed,
+            tileExtent: extent,
+            onPreviewClosed: refresh,
+            action: FilledButton.tonalIcon(
+              icon: const Icon(Icons.face_outlined),
+              label: const Text('Identify People'),
+              onPressed: people.isScanning
+                  ? null
+                  : () => askToAnalyse(
+                      context,
+                      people,
+                      sections.unprocessed,
+                      action: 'Identify People',
+                      finding: 'find the people in',
+                    ),
+            ),
+          ),
+      ],
+    );
+  }
 
   Future<void> _rename(BuildContext context, PersonEntry entry) async {
     final name = await showPersonNameDialog(context, entry);
     if (name == null || !context.mounted) return;
-    await context.read<People>().rename(entry.id, name);
-  }
-
-  // Two groups that are really one person, as happens when someone's looks
-  // change over the years, are put together by hand.
-
-  Future<void> _merge(
-    BuildContext context,
-    PersonEntry entry,
-    List<PersonEntry> entries,
-  ) async {
-    final others = entries.where((other) => other.id != entry.id).toList();
-    final target = await showMergePersonDialog(context, entry, others);
-    if (target == null || !context.mounted) return;
-    await context.read<People>().merge(entry.id, target.id);
+    final people = context.read<People>();
+    final person = entry.person;
+    if (person != null) {
+      await people.namePerson(person, name);
+    } else {
+      await people.renamePerson(entry.title, name);
+    }
   }
 }
