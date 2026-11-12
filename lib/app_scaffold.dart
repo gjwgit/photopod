@@ -35,9 +35,11 @@ import 'package:photopod/models/library_section.dart';
 import 'package:photopod/screens/map_view.dart';
 import 'package:photopod/screens/media_browser.dart';
 import 'package:photopod/screens/people_view.dart';
+import 'package:photopod/screens/tags_view.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/people.dart';
 import 'package:photopod/services/pod_keys.dart';
+import 'package:photopod/services/tags.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
 final _scaffoldController = SolidScaffoldController();
@@ -92,6 +94,7 @@ class _AppScaffoldState extends State<AppScaffold> {
         PodKeys.reset();
         ThumbnailCache.instance.clear();
         context.read<People>().reset();
+        context.read<PhotoTags>().reset();
         SolidAuthHandler.instance.handleLogout(context);
       },
       menu: const [
@@ -160,6 +163,22 @@ class _AppScaffoldState extends State<AppScaffold> {
 
             ''',
           child: PeopleView(key: ValueKey(LibrarySection.people)),
+        ),
+        SolidMenuItem(
+          icon: Icons.sell_outlined,
+          title: 'Tags',
+          tooltip: '''
+
+            **Tags**
+
+            Tap here for your photos grouped by what they show, such as
+            beaches, mountains or dogs, then those not yet tagged. To tag
+            some photos, select them and tap **Tag Photos**: the PhotoPod
+            Analyser looks at those photos only, and what it finds comes
+            back, encrypted, to your Pod.
+
+            ''',
+          child: TagsView(key: ValueKey(LibrarySection.tags)),
         ),
         SolidMenuItem(
           icon: Icons.movie_outlined,
@@ -231,6 +250,8 @@ class _AppScaffoldState extends State<AppScaffold> {
         📚 Gather photos and videos into albums of your own;
 
         🙂 Find the people in your photos, with their faces kept in your Pod;
+
+        🏷️ Find your photos by what they show, with their tags kept in your Pod;
 
         🗺️ See where your photos were taken, on a map;
 

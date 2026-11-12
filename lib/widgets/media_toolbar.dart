@@ -77,6 +77,10 @@ class MediaActions {
 
   final VoidCallback onIdentifyPeople;
 
+  /// Have the PhotoPod Analyser tag the selected photos with what they show.
+
+  final VoidCallback onTagPhotos;
+
   /// Add a heart to the selected files, or take it away.
 
   final VoidCallback onToggleFavourite;
@@ -116,6 +120,7 @@ class MediaActions {
     required this.onGetInfo,
     required this.onDownload,
     required this.onIdentifyPeople,
+    required this.onTagPhotos,
     required this.onToggleFavourite,
     required this.onAddToAlbum,
     required this.onCreateAlbum,
@@ -320,6 +325,23 @@ class MediaToolbar extends StatelessWidget {
           Info and in People; the others are listed as Unknown in People,
           for you to name in Get Info. Only the photos selected are sent,
           without where they were taken, and the Analyser keeps no copy.
+
+          ''',
+            ),
+          if (!hasShared && section != LibrarySection.videos)
+            _button(
+              icon: Icons.sell_outlined,
+              label: 'Tag Photos',
+              onPressed: actions.onTagPhotos,
+              tooltip: '''
+
+          **Tag Photos**
+
+          Have the PhotoPod Analyser say what the selected photos show, such
+          as Beach, Dog or Receipt. The tags show in Get Info, where you can
+          keep or remove each one, and in Tags. Only the photos selected are
+          sent, without where they were taken, and the Analyser keeps no
+          copy.
 
           ''',
             ),

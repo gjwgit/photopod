@@ -1,4 +1,4 @@
-/// The Analyser: the service that finds the faces in PhotoPod photos.
+/// The Analyser, which finds the faces and the tags in PhotoPod photos.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -23,25 +23,26 @@
 
 library;
 
-/// The face Analyser, set up as HealthPod's blood pressure analyser is.
+/// The Analyser, set up as HealthPod's blood pressure analyser is.
 ///
 /// The Analyser is a Pod, on the user's Solid server or any other. Identify
-/// People shares the user's face inbox, holding the photos chosen, with its
-/// WebID until they are answered; the Solid server tells a service logged in
-/// as the Analyser (analyser/face_analyser in this repository), which writes
-/// the faces it finds back into the inbox. The app never talks to that
-/// service, so it needs no address of it: [webId] is all there is to know.
+/// People, or Tag Photos, shares the user's face inbox, or tag inbox, holding
+/// the photos chosen, with its WebID until they are answered; the Solid
+/// server tells a service logged in as the Analyser (analyser/face_analyser
+/// in this repository), which writes what it finds back into the inbox. The
+/// app never talks to that service, so it needs no address of it: [webId]
+/// is all there is to know.
 ///
 /// Another Analyser is chosen at build time with
-/// `--dart-define=FACE_ANALYSER_WEBID=https://.../profile/card#me`.
+/// `--dart-define=ANALYSER_WEBID=https://.../profile/card#me`.
 
-class FaceAnalyser {
-  const FaceAnalyser._();
+class Analyser {
+  const Analyser._();
 
-  /// The WebID the face inbox is shared with.
+  /// The WebID the inboxes are shared with.
 
   static const String webId = String.fromEnvironment(
-    'FACE_ANALYSER_WEBID',
+    'ANALYSER_WEBID',
     defaultValue: 'https://solid.dev.empwr.au/Analyser/profile/card#me',
   );
 
@@ -49,8 +50,9 @@ class FaceAnalyser {
 
   static const String displayName = 'PhotoPod Analyser';
 
-  /// Who the catalog credits with the people the Analyser found, as a
-  /// suggestion the user may keep, change or remove in Get Info.
+  /// Who the catalog credits with the people and the tags the Analyser
+  /// found, as suggestions the user may keep, change or remove in Get Info.
+  /// Shown as [displayName].
 
   static const String source = 'photopod:analyser';
 }

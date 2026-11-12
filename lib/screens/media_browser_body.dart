@@ -431,6 +431,7 @@ extension MediaBrowserBody on MediaBrowserState {
       'There are no videos anywhere in your album yet. Use Add in the '
           'Library to put some in.',
     LibrarySection.people => 'Nobody to show.',
+    LibrarySection.tags => 'No tags to show.',
     LibrarySection.maps => 'Nothing to map.',
   };
 

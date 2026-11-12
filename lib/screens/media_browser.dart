@@ -53,6 +53,7 @@ import 'package:photopod/models/media_filter.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/analyser_section.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/media_index.dart';
@@ -65,6 +66,7 @@ import 'package:photopod/services/pod_media_ops.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/services/shared_with_me.dart';
 import 'package:photopod/services/storage_upgrade.dart';
+import 'package:photopod/services/tags.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/services/video_frame.dart';
 import 'package:photopod/utils/formatting.dart';
@@ -81,6 +83,7 @@ import 'package:photopod/widgets/pagination_bar.dart';
 part 'media_browser_actions.dart';
 part 'media_browser_albums.dart';
 part 'media_browser_body.dart';
+part 'media_browser_delete.dart';
 part 'media_browser_drop.dart';
 part 'media_browser_transfers.dart';
 
@@ -202,12 +205,14 @@ class MediaBrowserState extends State<MediaBrowser> {
       // security key is to hand.
 
       //
-      // The faces already found are read from the Pod at the same point, so
-      // that People opens on them and sends only the photos added since.
+      // The faces and tags already found are read from the Pod at the same
+      // point, so that People and Tags open on them and send only the photos
+      // added since.
 
       unawaited(
         PodKeys.unlocked().then((_) async {
           if (mounted) unawaited(context.read<People>().preload());
+          if (mounted) unawaited(context.read<PhotoTags>().preload());
           if (mounted) await _upgradeStorage(context);
         }),
       );
@@ -350,6 +355,7 @@ class MediaBrowserState extends State<MediaBrowser> {
       case LibrarySection.videos:
         return context.read<MediaIndex>().videos;
       case LibrarySection.people:
+      case LibrarySection.tags:
       case LibrarySection.maps:
         return const [];
     }

@@ -1,0 +1,257 @@
+{
+ "model": "siglip-b16-webli:tags-v1",
+ "tags": {
+  "adam_riess_2006.jpg": [
+   {
+    "tag": "Portrait",
+    "category": "People",
+    "score": 0.94
+   }
+  ],
+  "adam_riess_2008.jpg": [
+   {
+    "tag": "Portrait",
+    "category": "People",
+    "score": 0.773
+   },
+   {
+    "tag": "Selfie",
+    "category": "People",
+    "score": 0.134
+   }
+  ],
+  "adam_riess_2009.jpg": [
+   {
+    "tag": "Telescope",
+    "category": "Things",
+    "score": 0.437
+   },
+   {
+    "tag": "Portrait",
+    "category": "People",
+    "score": 0.346
+   }
+  ],
+  "david_wineland_2008.jpg": [
+   {
+    "tag": "Portrait",
+    "category": "People",
+    "score": 0.5
+   },
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.24
+   }
+  ],
+  "david_wineland_2013.jpg": [
+   {
+    "tag": "Portrait",
+    "category": "People",
+    "score": 0.941
+   }
+  ],
+  "david_wineland_laboratory_2012.jpg": [
+   {
+    "tag": "Laboratory",
+    "category": "Places",
+    "score": 0.862
+   }
+  ],
+  "grand_canyon.jpg": [
+   {
+    "tag": "Canyon",
+    "category": "Nature",
+    "score": 0.981
+   }
+  ],
+  "great_ocean_road.jpg": [
+   {
+    "tag": "Beach",
+    "category": "Nature",
+    "score": 0.985
+   }
+  ],
+  "ha_long_bay.jpg": [
+   {
+    "tag": "Island",
+    "category": "Nature",
+    "score": 0.434
+   },
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.382
+   }
+  ],
+  "iceland_waterfall.jpg": [
+   {
+    "tag": "Waterfall",
+    "category": "Nature",
+    "score": 0.939
+   }
+  ],
+  "john_mather_2012.jpg": [
+   {
+    "tag": "Portrait",
+    "category": "People",
+    "score": 0.705
+   },
+   {
+    "tag": "Laboratory",
+    "category": "Places",
+    "score": 0.202
+   }
+  ],
+  "john_mather_2016.jpg": [
+   {
+    "tag": "Portrait",
+    "category": "People",
+    "score": 0.988
+   }
+  ],
+  "john_mather_houston_2017.jpg": [],
+  "john_mather_webb_2016.jpg": [
+   {
+    "tag": "Telescope",
+    "category": "Things",
+    "score": 0.37
+   },
+   {
+    "tag": "Selfie",
+    "category": "People",
+    "score": 0.286
+   },
+   {
+    "tag": "Laboratory",
+    "category": "Places",
+    "score": 0.213
+   }
+  ],
+  "kilimanjaro.jpg": [
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.633
+   }
+  ],
+  "machu_picchu.jpg": [
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.499
+   },
+   {
+    "tag": "Ruins",
+    "category": "Places",
+    "score": 0.294
+   },
+   {
+    "tag": "Canyon",
+    "category": "Nature",
+    "score": 0.12
+   }
+  ],
+  "matterhorn.jpg": [
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.777
+   },
+   {
+    "tag": "Sunset",
+    "category": "Nature",
+    "score": 0.123
+   }
+  ],
+  "milford_sound.jpg": [
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.346
+   },
+   {
+    "tag": "Island",
+    "category": "Nature",
+    "score": 0.252
+   },
+   {
+    "tag": "Lake",
+    "category": "Nature",
+    "score": 0.221
+   }
+  ],
+  "moraine_lake.jpg": [
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.604
+   },
+   {
+    "tag": "Lake",
+    "category": "Nature",
+    "score": 0.209
+   },
+   {
+    "tag": "Glacier",
+    "category": "Nature",
+    "score": 0.128
+   }
+  ],
+  "mount_fuji.jpg": [
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.466
+   },
+   {
+    "tag": "Lake",
+    "category": "Nature",
+    "score": 0.194
+   },
+   {
+    "tag": "Sunset",
+    "category": "Nature",
+    "score": 0.141
+   }
+  ],
+  "nordfjord.jpg": [
+   {
+    "tag": "Coast",
+    "category": "Nature",
+    "score": 0.336
+   },
+   {
+    "tag": "Lake",
+    "category": "Nature",
+    "score": 0.281
+   }
+  ],
+  "perito_moreno.jpg": [
+   {
+    "tag": "Glacier",
+    "category": "Nature",
+    "score": 0.945
+   }
+  ],
+  "sahara.jpg": [
+   {
+    "tag": "Desert",
+    "category": "Nature",
+    "score": 0.907
+   }
+  ],
+  "yosemite.jpg": [
+   {
+    "tag": "Canyon",
+    "category": "Nature",
+    "score": 0.627
+   },
+   {
+    "tag": "Mountains",
+    "category": "Nature",
+    "score": 0.295
+   }
+  ]
+ }
+}

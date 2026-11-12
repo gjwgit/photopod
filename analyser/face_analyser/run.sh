@@ -26,8 +26,9 @@
 #   ./run.sh check            verify the models and the Analyser Pod
 #   ./run.sh watch            look at the shared inboxes, for ever (systemd)
 #   ./run.sh run-once [WEBID] one look at a Pod's inbox, or at every one
-#   ./run.sh fetch-models     download the two models into var/models
-#   ./run.sh analyse PHOTO... the faces in local photos, as JSON
+#   ./run.sh fetch-models     download the face and tag models into var/models
+#   ./run.sh embed-tags       describe tag_vocabulary.json again, after a change
+#   ./run.sh analyse PHOTO... the faces in, and tags for, local photos, as JSON
 #   ./run.sh test             the offline test suite
 #
 # Everything runs from this directory, the project root: it holds the

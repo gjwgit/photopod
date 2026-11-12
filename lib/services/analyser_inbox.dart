@@ -1,4 +1,4 @@
-/// The face inbox: where PhotoPod leaves photos for the Analyser.
+/// The inboxes: where PhotoPod leaves photos for the Analyser.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -46,47 +46,30 @@ import 'package:solidpod/solidpod.dart'
         setInheritKeyDir,
         writePod;
 
-import 'package:photopod/constants/face_analyser.dart';
-import 'package:photopod/services/face_results.dart';
+import 'package:photopod/constants/analyser.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/pod_media_service.dart';
 
-/// The folder, in PhotoPod's data folder, that is shared with the Analyser.
-/// The leading full stop keeps it out of the album. It must match
-/// `inbox.folder` in the analyser's configuration.
-
-const String faceInboxFolderName = '.faces-inbox';
-
-/// What each photo left in the inbox holds, inside its encryption.
-
-const String faceRequestFormat = 'photopod-face-request';
-
-/// The end of the name of a photo left in the inbox, and of the answer the
-/// Analyser writes beside it.
+/// The end of the name of a photo left in an inbox.
 
 const String _photoSuffix = '.enc.ttl';
-const String _resultSuffix = '.faces.enc.ttl';
 
-/// What the Analyser writes in the inbox once it has answered every photo
+/// What the Analyser writes in an inbox once it has answered every photo
 /// in it. It must match `DONE_NAME` in the analyser's inbox.py.
 
 const String _doneName = 'done';
 
-/// What the inbox holds: the photos still waiting for the Analyser, and the
-/// answers it has written, each by [faceKeyOf] key, and whether it has
+/// What an inbox holds: the photos still waiting for the Analyser, and the
+/// answers it has written, each by [inboxKeyOf] key, and whether it has
 /// answered them all.
 
-typedef FaceInboxListing = ({
-  Set<String> waiting,
-  Set<String> answered,
-  bool done,
-});
+typedef InboxListing = ({Set<String> waiting, Set<String> answered, bool done});
 
-/// The name a photo is known by in the inbox and in the Analyser's answers:
+/// The name a photo is known by in an inbox and in the Analyser's answers:
 /// the random part of its stored name, which says nothing about it, or, for
 /// a photo stored before random names, a digest of its path.
 
-String faceKeyOf(String path) {
+String inboxKeyOf(String path) {
   final name = path.substring(path.lastIndexOf('/') + 1);
   return randomKeyOf(name) ??
       sha256.convert(utf8.encode(path)).toString().substring(0, 32);
@@ -166,40 +149,82 @@ Uint8List? _pngWithoutMetadata(Uint8List bytes) {
   return null;
 }
 
-/// The face inbox in the user's own Pod.
+/// The face inbox, which Identify People shares. Its folder must match
+/// `inbox.folder` in the analyser's configuration.
+
+final AnalyserInbox faceInbox = AnalyserInbox(
+  folderName: '.faces-inbox',
+  requestFormat: 'photopod-face-request',
+  resultSuffix: '.faces.enc.ttl',
+  label: 'face inbox',
+);
+
+/// The tag inbox, which Tag Photos shares. Its folder must match
+/// `tags.folder` in the analyser's configuration.
+
+final AnalyserInbox tagInbox = AnalyserInbox(
+  folderName: '.tags-inbox',
+  requestFormat: 'photopod-tag-request',
+  resultSuffix: '.tags.enc.ttl',
+  label: 'tag inbox',
+);
+
+/// One inbox in the user's own Pod.
 ///
-/// Face recognition runs in the Analyser, a service beside the Solid server
-/// with a Pod of its own ([FaceAnalyser.webId]), as HealthPod's blood
-/// pressure analyser does. PhotoPod never talks to the service: the two Pods
-/// share a folder, and the Analyser does the rest.
+/// The work is done by the Analyser, a service with a Pod of its own
+/// ([Analyser.webId]), as HealthPod's blood pressure analyser is. PhotoPod
+/// never talks to the service: the two Pods share a folder, and the Analyser
+/// does the rest.
 ///
 /// The inbox is there only while the user is having photos looked at. Each
-/// time the user taps Identify People, [prepare] makes `.faces-inbox/` in
-/// the PhotoPod data folder, the photos chosen are left there as their large
-/// renditions, `<key>.enc.ttl`, encrypted with the folder's key ([leave]),
-/// and [request] then shares the folder with the Analyser, for reading and
-/// writing: the share is what gives the Analyser that key, and the server
-/// tells the Analyser of it at once. The Analyser reads each photo, writes
-/// the faces it found beside it as `<key>.faces.enc.ttl`, encrypted with the
-/// same key, removes the photo, and writes `done` when all are answered.
-/// PhotoPod files each answer in the faces file and deletes it
-/// ([readAnswer], [deleteAnswer]), and [close] then ends the share and
-/// removes the inbox.
+/// time the user asks, with Identify People or Tag Photos, [prepare] makes
+/// the inbox's folder in the PhotoPod data folder, the photos chosen are
+/// left there as their large renditions, `<key>.enc.ttl`, encrypted with the
+/// folder's key ([leave]), and [request] then shares the folder with the
+/// Analyser, for reading and writing: the share is what gives the Analyser
+/// that key, and the server tells the Analyser of it at once. The Analyser
+/// reads each photo, writes what it found beside it as
+/// `<key><resultSuffix>`, encrypted with the same key, removes the photo,
+/// and writes `done` when all are answered. PhotoPod files each answer and
+/// deletes it ([readAnswer], [deleteAnswer]), and [close] then ends the
+/// share and removes the inbox.
 ///
-/// Only the inbox is shared, and only for as long as that: the photos
+/// Each inbox is shared on its own, and only for as long as that: the photos
 /// themselves, and everything else, stay as private as they were.
 
-class FaceInbox {
-  const FaceInbox._();
+class AnalyserInbox {
+  AnalyserInbox({
+    required this.folderName,
+    required this.requestFormat,
+    required this.resultSuffix,
+    required this.label,
+  });
+
+  /// The folder, in PhotoPod's data folder, that is shared with the
+  /// Analyser. The leading full stop keeps it out of the album.
+
+  final String folderName;
+
+  /// What each photo left in the inbox holds, inside its encryption.
+
+  final String requestFormat;
+
+  /// The end of the name of the answer the Analyser writes beside a photo.
+
+  final String resultSuffix;
+
+  /// What the inbox is called in messages: "face inbox", "tag inbox".
+
+  final String label;
 
   /// The Pod-relative path of the inbox.
 
-  static Future<String> path() async =>
-      '${await PodMediaService.rootPath()}/$faceInboxFolderName';
+  Future<String> path() async =>
+      '${await PodMediaService.rootPath()}/$folderName';
 
   /// The URL of the inbox, with its trailing slash.
 
-  static Future<String> url() async {
+  Future<String> url() async {
     final url = await PodMediaService.folderUrl(await path());
     return url.endsWith('/') ? url : '$url/';
   }
@@ -207,21 +232,20 @@ class FaceInbox {
   /// Whether the inbox is there, as it is only while photos are being looked
   /// at, or when that was cut short, as by the app being closed.
 
-  static Future<bool> exists() async =>
-      PodMediaService.folderExists(await url());
+  Future<bool> exists() async => PodMediaService.folderExists(await url());
 
   /// Make the inbox, with the key every photo left in it is encrypted with,
   /// ready for [leave]. Nothing is shared yet.
 
-  static Future<void> prepare() async => setInheritKeyDir(await url());
+  Future<void> prepare() async => setInheritKeyDir(await url());
 
   /// Ask the Analyser to look at the photos left in the inbox, by sharing
   /// the inbox with it. The share puts the inbox's key in the Analyser's
   /// Pod, and the server tells the Analyser at once. The photos go in first
   /// so that they are all there when it looks.
 
-  static Future<void> request() async {
-    final url = await FaceInbox.url();
+  Future<void> request() async {
+    final url = await this.url();
     final webId = await getWebId();
     if (webId == null) throw StateError('Not logged in.');
 
@@ -234,7 +258,7 @@ class FaceInbox {
         isFile: false,
         permissionList: [AccessMode.read.mode, AccessMode.write.mode],
         recipientType: RecipientType.individual,
-        recipientWebIdList: [FaceAnalyser.webId],
+        recipientWebIdList: [Analyser.webId],
         ownerWebId: webId,
         granterWebId: webId,
       );
@@ -242,7 +266,7 @@ class FaceInbox {
         throw StateError(
           status == SolidFunctionCallStatus.notInitialised
               ? 'The Analyser Pod is not set up for PhotoPod yet.'
-              : 'Could not share the face inbox with the Analyser ($status).',
+              : 'Could not share the $label with the Analyser ($status).',
         );
       }
     } on Object {
@@ -256,10 +280,10 @@ class FaceInbox {
 
   /// Stop sharing the inbox with the Analyser, and empty and remove it,
   /// along with any photo still waiting there. What has been found already
-  /// stays in the user's faces file.
+  /// stays where it was filed.
 
-  static Future<void> close() async {
-    final url = await FaceInbox.url();
+  Future<void> close() async {
+    final url = await this.url();
     final webId = await getWebId();
     if (webId == null) throw StateError('Not logged in.');
 
@@ -272,7 +296,7 @@ class FaceInbox {
         isFile: false,
         isFileUrl: true,
         permissionList: [AccessMode.read.mode, AccessMode.write.mode],
-        recipientIndOrGroupWebId: FaceAnalyser.webId,
+        recipientIndOrGroupWebId: Analyser.webId,
         ownerWebId: webId,
         granterWebId: webId,
         recipientType: RecipientType.individual,
@@ -285,14 +309,14 @@ class FaceInbox {
 
   // Remove everything in the inbox at [url], then the inbox itself.
 
-  static Future<void> _empty(String url) async {
+  Future<void> _empty(String url) async {
     try {
       final listing = await getResourcesInContainer(url);
       for (final file in listing.files) {
         await _delete(file.startsWith('http') ? file : '$url$file');
       }
     } on Object catch (e) {
-      debugPrint('PhotoPod: could not list the face inbox to empty it: $e');
+      debugPrint('PhotoPod: could not list the $label to empty it: $e');
     }
     await _delete('$url.acl');
     await _delete(url, ResourceContentType.directory);
@@ -303,14 +327,14 @@ class FaceInbox {
   /// the like say, such as where it was taken, is taken out first
   /// ([withoutMetadata]): the Analyser needs only the picture.
 
-  static Future<void> leave(String photoPath, Uint8List picture) async {
+  Future<void> leave(String photoPath, Uint8List picture) async {
     final bare = withoutMetadata(picture);
     if (bare == null) throw StateError('not a JPEG or PNG picture');
     final inbox = await path();
     await writePod(
-      '$inbox/${faceKeyOf(photoPath)}$_photoSuffix',
+      '$inbox/${inboxKeyOf(photoPath)}$_photoSuffix',
       jsonEncode({
-        'format': faceRequestFormat,
+        'format': requestFormat,
         'version': 1,
         'image': base64Encode(bare),
       }),
@@ -323,7 +347,7 @@ class FaceInbox {
 
   /// What the inbox holds.
 
-  static Future<FaceInboxListing> list() async {
+  Future<InboxListing> list() async {
     final listing = await getResourcesInContainer(await url());
     final waiting = <String>{};
     final answered = <String>{};
@@ -332,43 +356,45 @@ class FaceInbox {
       final name = file.substring(file.lastIndexOf('/') + 1);
       if (name == _doneName) {
         done = true;
-      } else if (name.endsWith(_resultSuffix)) {
-        answered.add(name.substring(0, name.length - _resultSuffix.length));
+      } else if (name.endsWith(resultSuffix)) {
+        answered.add(name.substring(0, name.length - resultSuffix.length));
       } else if (name.endsWith(_photoSuffix)) {
-        waiting.add(name.substring(0, name.length - _photoSuffix.length));
+        final key = name.substring(0, name.length - _photoSuffix.length);
+
+        // An answer of another kind is never left here, but would not be a
+        // photo either.
+
+        if (!key.contains('.')) waiting.add(key);
       }
     }
     return (waiting: waiting, answered: answered, done: done);
   }
 
-  /// The Analyser's answer for the photo known by [key], or null when it is
-  /// not one this app can use.
+  /// The Analyser's answer for the photo known by [key], decrypted.
 
-  static Future<FaceResult?> readAnswer(String key) async => FaceResult.parse(
-    await readPod(
-      '${await path()}/$key$_resultSuffix',
-      pathType: PathType.relativeToPod,
-    ),
+  Future<String> readAnswer(String key) async => readPod(
+    '${await path()}/$key$resultSuffix',
+    pathType: PathType.relativeToPod,
   );
 
-  /// Delete the answer for [key], once it is filed in the faces file.
+  /// Delete the answer for [key], once it is filed.
 
-  static Future<void> deleteAnswer(String key) async =>
-      _delete('${await url()}$key$_resultSuffix');
+  Future<void> deleteAnswer(String key) async =>
+      _delete('${await url()}$key$resultSuffix');
 
   /// Take the photos at [paths] out of the inbox, and any answers for them,
   /// as when they are deleted before the Analyser or the app got to them.
 
-  static Future<void> remove(Iterable<String> paths) async {
+  Future<void> remove(Iterable<String> paths) async {
     if (!await exists()) return;
-    final url = await FaceInbox.url();
+    final url = await this.url();
     final listing = await list();
-    for (final key in paths.map(faceKeyOf)) {
+    for (final key in paths.map(inboxKeyOf)) {
       if (listing.waiting.contains(key)) {
         await _delete('$url$key$_photoSuffix');
       }
       if (listing.answered.contains(key)) {
-        await _delete('$url$key$_resultSuffix');
+        await _delete('$url$key$resultSuffix');
       }
     }
   }

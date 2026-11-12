@@ -56,6 +56,30 @@ class PhotoTag {
     'confidence': ?confidence,
   };
 
+  /// The tags a photo ends up with when [source] suggests [incoming] and
+  /// it has [current].
+  ///
+  /// What [source] suggested before is replaced, and everything else kept:
+  /// the user's own tags, and other services'. A suggestion the photo
+  /// already carries, whatever its case, is not added twice.
+
+  static List<PhotoTag> merge(
+    List<PhotoTag> current,
+    List<PhotoTag> incoming,
+    String source,
+  ) {
+    final kept = [
+      for (final tag in current)
+        if (tag.source != source) tag,
+    ];
+    final labels = {for (final tag in kept) tag.label.toLowerCase()};
+    return [
+      ...kept,
+      for (final tag in incoming)
+        if (labels.add(tag.label.toLowerCase())) tag,
+    ];
+  }
+
   /// The tag [toJson] wrote, or null when [json] is not one.
 
   static PhotoTag? fromJson(Object? json) {
