@@ -23,8 +23,9 @@
 
 library;
 
+import 'package:flutter/material.dart';
+
 import 'package:markdown_tooltip/markdown_tooltip.dart';
-import 'package:material_ui/material_ui.dart';
 
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;

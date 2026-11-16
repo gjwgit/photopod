@@ -25,6 +25,20 @@ linter:
 # Identify directories to ignore.
 
 analyzer:
+
+  # Flutter deprecates package:flutter/material.dart in favour of
+  # package:material_ui, and `dart fix --apply` (run by `make prep`) moves
+  # every import across. Its Material, Theme and ScaffoldMessenger are
+  # distinct classes from those of package:flutter/material.dart, which
+  # solidui's SolidThemeApp and SolidScaffold are built from, so a migrated
+  # TextField asserts "No Material widget found" (see the same note on
+  # flutter_form_builder in solidui's pubspec.yaml). Silencing the
+  # deprecation keeps `dart fix` from migrating. Remove this once solidui has
+  # moved to package:material_ui, and migrate with it.
+
+  errors:
+    deprecated_member_use: ignore
+
   exclude:
     - ignore/**
     - ignore/

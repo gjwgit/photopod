@@ -25,7 +25,7 @@ library;
 
 import 'dart:typed_data';
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
 
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/thumbnail_cache.dart';

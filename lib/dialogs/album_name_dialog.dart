@@ -23,8 +23,9 @@
 
 library;
 
+import 'package:flutter/material.dart';
+
 import 'package:gap/gap.dart';
-import 'package:material_ui/material_ui.dart';
 
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/models/albums.dart';

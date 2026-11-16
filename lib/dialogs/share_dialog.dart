@@ -23,7 +23,8 @@
 
 library;
 
-import 'package:material_ui/material_ui.dart';
+import 'package:flutter/material.dart';
+
 import 'package:solidpod/solidpod.dart' show KeyManager, getWebId;
 import 'package:solidui/solidui.dart'
     show GrantPermissionUi, getKeyFromUserIfRequired;
