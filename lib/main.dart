@@ -31,6 +31,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:photopod/app.dart';
 import 'package:photopod/constants/app.dart';
+import 'package:photopod/services/place_regions.dart';
 
 /// Start PhotoPod.
 ///
@@ -47,6 +48,12 @@ void main() async {
   // that the first video the user previews starts without a stutter.
 
   MediaKit.ensureInitialized();
+
+  // The cities and regions photos are grouped under when sorted by
+  // location are bundled with the app and read once, here, so that sorting
+  // never has to wait for them.
+
+  await PlaceRegions.load();
 
   if (isDesktop) {
     await windowManager.ensureInitialized();
