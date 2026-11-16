@@ -31,7 +31,7 @@ part of 'people.dart';
 /// * A name the user gave in Get Info names the person whose face is there,
 ///   so that People starts from what the user has already said.
 /// * Each named person is listed in the catalog for the photos they are in,
-///   credited to [FaceAnalyser.source], so that Get Info shows them as a
+///   credited to [Analyser.source], so that Get Info shows them as a
 ///   suggestion and the filter finds them. The user's own names always
 ///   stand; see [withFoundFaces].
 
@@ -67,10 +67,10 @@ extension _PeopleCatalog on People {
 
   Future<void> _toCatalog(Iterable<String> paths) async {
     if (_demo) return;
-    final found = _book.namedFaces(paths, FaceAnalyser.source);
+    final found = _book.namedFaces(paths, Analyser.source);
     if (found.isEmpty) return;
     try {
-      await MediaCatalog.setFoundFaces(FaceAnalyser.source, found);
+      await MediaCatalog.setFoundFaces(Analyser.source, found);
     } on Object catch (e) {
       debugPrint(
         'PhotoPod: could not list the people found in the catalog: $e',

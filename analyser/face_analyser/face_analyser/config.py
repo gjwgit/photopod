@@ -45,6 +45,7 @@ import yaml
 
 from . import pod_paths as paths
 from .engine import EngineConfig
+from .tagger import TagConfig
 
 ENV_SECURITY_KEY = 'PHOTOPOD_FACE_ANALYSER_SECURITY_KEY'
 ENV_CLIENT_ID = 'PHOTOPOD_FACE_ANALYSER_CLIENT_ID'
@@ -86,8 +87,8 @@ class InboxConfig:
     """Where in each user's Pod PhotoPod leaves photos for the analyser."""
 
     # The folder inside PhotoPod's data folder. PhotoPod shares it, and only
-    # it, with the Analyser. Must match `faceInboxFolderName` in PhotoPod's
-    # lib/services/face_inbox.dart.
+    # it, with the Analyser. Must match `faceInbox` in PhotoPod's
+    # lib/services/analyser_inbox.dart.
 
     folder: str = '.faces-inbox'
 
@@ -115,6 +116,7 @@ class Config:
     inbox: InboxConfig
     watch: WatchConfig
     engine: EngineConfig
+    tags: TagConfig | None = None
     source_path: Path | None = None
     warnings: list[str] = field(default_factory=list)
 
@@ -184,11 +186,15 @@ def load(path: Path) -> Config:
     engine['models_dir'] = (models_dir if models_dir.is_absolute()
                             else base / models_dir)
 
+    tags = _section(data, 'tags')
+    tags['models_dir'] = engine['models_dir']
+
     config = Config(
         analyser=_build(AnalyserConfig, analyser, 'analyser'),
         inbox=_build(InboxConfig, _section(data, 'inbox'), 'inbox'),
         watch=_build(WatchConfig, _section(data, 'watch'), 'watch'),
         engine=_build(EngineConfig, engine, 'engine'),
+        tags=_build(TagConfig, tags, 'tags'),
         source_path=path.resolve(),
     )
     # A file holding the security key must not be readable by others.

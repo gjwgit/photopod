@@ -1,4 +1,4 @@
-/// People through the Analyser: photos into the face inbox, answers back.
+/// How a section asks the Analyser about photos and files the answers.
 ///
 /// Copyright (C) 2026, Togaware Pty Ltd.
 ///
@@ -21,7 +21,7 @@
 ///
 /// Authors: Tony Chen
 
-part of 'people.dart';
+part of 'analyser_section.dart';
 
 /// How often PhotoPod looks in its own inbox for answers while a request is
 /// under way. The Analyser is told of the request by the server, and does
@@ -35,7 +35,7 @@ const Duration _lookEvery = Duration(seconds: 3);
 
 const Duration _patience = Duration(minutes: 2);
 
-extension _PeopleAnalyser on People {
+extension _Scan on AnalyserSection {
   /// Ask the Analyser about every photo queued, a request at a time: leave
   /// them in the inbox, share it with the Analyser, file the answers as they
   /// come, and once it is done, end the share and remove the inbox. Photos
@@ -43,13 +43,13 @@ extension _PeopleAnalyser on People {
 
   Future<void> _runAnalyser() async {
     while (_queue.isNotEmpty && !_cancelled) {
-      await FaceInbox.prepare();
+      await inbox.prepare();
       try {
         await _leaveQueued();
         if (_cancelled) break;
-        _status = 'Asking the ${FaceAnalyser.displayName}...';
+        _status = 'Asking the ${Analyser.displayName}...';
         _changed();
-        await FaceInbox.request();
+        await inbox.request();
         await _waitUntilDone();
       } finally {
         await _close();
@@ -85,7 +85,7 @@ extension _PeopleAnalyser on People {
         final image =
             await MediaRenditions.readLarge(item) ?? await _renderLarge(item);
         if (image == null) throw StateError('no picture');
-        await FaceInbox.leave(item.path, image);
+        await inbox.leave(item.path, image);
       } on Object catch (e) {
         _failed++;
         debugPrint(
@@ -100,7 +100,7 @@ extension _PeopleAnalyser on People {
   /// A large rendition of [item] made from its original, for a photo with
   /// none stored: one added before renditions were kept, or a GIF, whose
   /// preview is its original. Never the original itself, which can be many
-  /// megabytes and in a format [FaceInbox.leave] cannot clean.
+  /// megabytes and in a format [AnalyserInbox.leave] cannot clean.
 
   Future<Uint8List?> _renderLarge(MediaItem item) async {
     final original = await ThumbnailCache.instance.original(item);
@@ -131,7 +131,7 @@ extension _PeopleAnalyser on People {
       if (DateTime.now().difference(lastProgress) > _patience) {
         final count = listing.waiting.length;
         _status =
-            'The ${FaceAnalyser.displayName} did not answer, so $count '
+            'The ${Analyser.displayName} did not answer, so $count '
             '${count == 1 ? 'photo was' : 'photos were'} not looked at, and '
             '${count == 1 ? 'stays' : 'stay'} under Unprocessed.';
         return;
@@ -143,25 +143,25 @@ extension _PeopleAnalyser on People {
 
   Future<void> _close() async {
     try {
-      await FaceInbox.close();
+      await inbox.close();
     } on Object catch (e) {
-      // Left there, it is closed the next time People is opened.
-      debugPrint('PhotoPod: could not close the face inbox: $e');
+      // Left there, it is closed the next time the section is opened.
+      debugPrint('PhotoPod: could not close the ${inbox.label}: $e');
     }
     _waiting = 0;
   }
 
-  /// File every answer in the inbox in the faces file, save it, and only
-  /// then delete the answers, returning what the inbox held. An answer for
-  /// a photo not known here, as from a request made on another device, is
-  /// left, and goes when the inbox is closed.
+  /// File every answer in the inbox, save the file, and only then delete
+  /// the answers, returning what the inbox held. An answer for a photo not
+  /// known here, as from a request made on another device, is left, and
+  /// goes when the inbox is closed.
 
-  Future<FaceInboxListing> _collect() async {
-    final listing = await FaceInbox.list();
+  Future<InboxListing> _collect() async {
+    final listing = await inbox.list();
     _waiting = listing.waiting.length;
     if (!listing.done) {
       _status = _waiting > 0
-          ? 'The ${FaceAnalyser.displayName} has $_waiting '
+          ? 'The ${Analyser.displayName} has $_waiting '
                 '${_waiting == 1 ? 'photo' : 'photos'} still to look at'
           : null;
     }
@@ -173,11 +173,10 @@ extension _PeopleAnalyser on People {
       final path = _pathOf[key];
       if (path == null) continue;
       try {
-        final answer = await FaceInbox.readAnswer(key);
-        if (answer != null && !_forgotten.contains(path)) {
-          _book.addPhoto(path, answer.faces, url: _urlOf[path]);
+        final answer = await inbox.readAnswer(key);
+        if (!_forgotten.contains(path)) {
+          if (fileAnswer(path, answer, url: _urlOf[path])) _failed++;
           photos.add(path);
-          if (answer.failed != null) _failed++;
         }
         filed.add(key);
       } on Object catch (e) {
@@ -187,15 +186,15 @@ extension _PeopleAnalyser on People {
 
     if (filed.isEmpty) return listing;
 
-    // A face found where the user has named someone in Get Info takes that
-    // name, and the people named in these photos are listed in the catalog.
+    // What the user has said in Get Info is taken on, and what was found in
+    // these photos is told to the catalog.
 
-    photos.addAll(await _nameFromCatalog());
-    await _save();
-    await _toCatalog(photos);
+    photos.addAll(await fromCatalog());
+    await save();
+    await toCatalog(photos);
     for (final key in filed) {
       try {
-        await FaceInbox.deleteAnswer(key);
+        await inbox.deleteAnswer(key);
       } on Object catch (e) {
         debugPrint('PhotoPod: could not delete the answer for $key: $e');
       }

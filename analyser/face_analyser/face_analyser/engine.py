@@ -123,6 +123,35 @@ class ImageError(ValueError):
     """Raised when an upload is not a picture the engine can read."""
 
 
+def decode_image(data: bytes, max_side: int) -> np.ndarray:
+    """[data], an encoded JPEG, PNG or similar, as a BGR array no longer
+    than [max_side] on either side."""
+
+    if not data:
+        raise ImageError('The upload is empty.')
+    buffer = np.frombuffer(data, dtype=np.uint8)
+
+    # IMREAD_COLOR applies the EXIF orientation, so an original is analysed
+    # the way up it is shown, as the renditions already are.
+
+    try:
+        image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
+    except cv2.error as e:
+        raise ImageError(f'The picture could not be read: {e}') from e
+    if image is None:
+        raise ImageError(
+            'The upload is not a picture OpenCV can read, or is too large.')
+
+    longest = max(image.shape[:2])
+    if longest > max_side:
+        scale = max_side / longest
+        image = cv2.resize(
+            image,
+            (round(image.shape[1] * scale), round(image.shape[0] * scale)),
+            interpolation=cv2.INTER_AREA)
+    return image
+
+
 class FaceEngine:
     """Both models, loaded once and used for every photo, one at a time."""
 
@@ -167,29 +196,7 @@ class FaceEngine:
     # -- Reading the picture ---------------------------------------------
 
     def _decode(self, data: bytes) -> np.ndarray:
-        if not data:
-            raise ImageError('The upload is empty.')
-        buffer = np.frombuffer(data, dtype=np.uint8)
-
-        # IMREAD_COLOR applies the EXIF orientation, so an original is
-        # analysed the way up it is shown, as the renditions already are.
-
-        try:
-            image = cv2.imdecode(buffer, cv2.IMREAD_COLOR)
-        except cv2.error as e:
-            raise ImageError(f'The picture could not be read: {e}') from e
-        if image is None:
-            raise ImageError(
-                'The upload is not a picture OpenCV can read, or is too large.')
-
-        longest = max(image.shape[:2])
-        if longest > self.config.max_side:
-            scale = self.config.max_side / longest
-            image = cv2.resize(
-                image,
-                (round(image.shape[1] * scale), round(image.shape[0] * scale)),
-                interpolation=cv2.INTER_AREA)
-        return image
+        return decode_image(data, self.config.max_side)
 
     # -- Finding the faces ------------------------------------------------
 

@@ -34,6 +34,11 @@ Authors: Tony Chen
 # Licence: InsightFace's code is MIT, but its pretrained models are released
 # "for non-commercial research purposes only". See README.md, section
 # "Models and licence", before any commercial deployment.
+#
+# The tags come from Google's SigLIP ViT-B/16 (WebLI, 224 pixels), released
+# under the Apache License 2.0, in the ONNX export Immich publishes. Only its
+# image half is needed to tag photos; the text half is fetched only by
+# `embed-tags`, which describes the tag vocabulary once (see tagger.py).
 
 from __future__ import annotations
 
@@ -71,6 +76,37 @@ RECOGNISER = Model(
     'w600k_r50.onnx',
     '4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43',
 )
+
+
+# The SigLIP export, pinned to one revision so that what is fetched is what
+# the digests below describe.
+
+SIGLIP_URL = ('https://huggingface.co/immich-app/ViT-B-16-SigLIP__webli/'
+              'resolve/c3b037a9ef99ed5f116440790f1e098fb388db49/')
+SIGLIP_DIR = 'siglip-b16-webli'
+
+
+@dataclass(frozen=True)
+class Download:
+    """One file fetched on its own, where it comes from and what it holds."""
+
+    remote: str
+    file_name: str
+    sha256: str
+    megabytes: int
+
+
+TAG_IMAGE_MODEL = Download(
+    'visual/model.onnx', 'visual.onnx',
+    '0981d03d194baa6153106d41b5a5ca73faa514e8d9a007a3332eecb63be2c74a', 372)
+
+TAG_TEXT_MODEL = Download(
+    'textual/model.onnx', 'textual.onnx',
+    '3983f96348daba5024f5e3085d2ea8cc67c11ce553e4061f193e8ea37aabd792', 441)
+
+TAG_TOKENISER = Download(
+    'textual/tokenizer.json', 'tokenizer.json',
+    'ec6fe74c37f2a65be3857ef5e8fbca7662ebb15fcfa569a845a59958db969f76', 3)
 
 
 class ModelError(Exception):
@@ -136,3 +172,43 @@ def ensure_all(folder: Path, *, download: bool = True) -> tuple[Path, Path]:
                 './run.sh fetch-models.')
         _fetch_pack(folder)
     return folder / DETECTOR.file_name, folder / RECOGNISER.file_name
+
+
+def _fetch(item: Download, folder: Path) -> None:
+    url = SIGLIP_URL + item.remote
+    log.info('Downloading %s (%d MB)', url, item.megabytes)
+    path = folder / item.file_name
+    partial = path.with_suffix(path.suffix + '.part')
+    h = hashlib.sha256()
+    try:
+        with urllib.request.urlopen(url, timeout=600) as response, \
+                partial.open('wb') as out:
+            for chunk in iter(lambda: response.read(1 << 20), b''):
+                h.update(chunk)
+                out.write(chunk)
+    except OSError as e:
+        partial.unlink(missing_ok=True)
+        raise ModelError(f'Could not download {url}: {e}') from e
+    if h.hexdigest() != item.sha256:
+        partial.unlink(missing_ok=True)
+        raise ModelError(f'{url} did not download intact.')
+    os.replace(partial, path)
+
+
+def ensure_siglip(folder: Path, items: tuple[Download, ...], *,
+                  download: bool = True) -> tuple[Path, ...]:
+    """The paths of [items] of the SigLIP export, in order, fetching any
+    that is missing or damaged."""
+
+    folder = folder / SIGLIP_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    for item in items:
+        path = folder / item.file_name
+        if path.exists() and _file_digest(path) == item.sha256:
+            continue
+        if not download:
+            raise ModelError(
+                f'The tag model {path} is missing or damaged. Run '
+                './run.sh fetch-models.')
+        _fetch(item, folder)
+    return tuple(folder / item.file_name for item in items)

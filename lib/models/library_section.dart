@@ -27,12 +27,12 @@ import 'package:flutter/material.dart';
 
 import 'package:photopod/constants/media.dart';
 
-/// The six ways PhotoPod offers to look at an album, one per entry in the
+/// The seven ways PhotoPod offers to look at an album, one per entry in the
 /// navigation rail down the left hand side.
 ///
 /// Every section is a view over the whole album at once, read from the
 /// album index: everything, two filters, the albums, the people in the
-/// photos and a map.
+/// photos, the tags on them and a map.
 
 enum LibrarySection {
   /// Every photo and video in the album, and everything shared with the
@@ -54,6 +54,11 @@ enum LibrarySection {
   /// are in, found by the PhotoPod Analyser.
 
   people('People', Icons.face_outlined),
+
+  /// Every tag on the photos in the album, such as Beach or Dog, each with
+  /// the photos that carry it, worked out by the PhotoPod Analyser.
+
+  tags('Tags', Icons.sell_outlined),
 
   /// Every video in the album, whichever folder it is filed under.
 
@@ -95,6 +100,7 @@ enum LibrarySection {
     LibrarySection.favourites => 'favourites',
     LibrarySection.albums => 'albums',
     LibrarySection.people => 'people',
+    LibrarySection.tags => 'tags',
     LibrarySection.videos => 'videos',
     LibrarySection.maps => 'places',
   };
