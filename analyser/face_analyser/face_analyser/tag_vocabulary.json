@@ -1,0 +1,105 @@
+{
+  "version": 1,
+  "template": "a photo of {}",
+  "categories": {
+    "Nature": {
+      "Beach": "a beach",
+      "Coast": "a rocky coastline",
+      "Sea": "the open sea",
+      "Mountains": "mountains",
+      "Snow": "snow",
+      "Glacier": "a glacier",
+      "Lake": "a lake",
+      "River": "a river",
+      "Waterfall": "a waterfall",
+      "Forest": "a forest",
+      "Desert": "a desert",
+      "Canyon": "a canyon",
+      "Island": "an island",
+      "Countryside": "the countryside and farmland",
+      "Flowers": "flowers",
+      "Garden": "a garden",
+      "Sunset": "a sunset",
+      "Night sky": "the night sky with stars"
+    },
+    "Places": {
+      "City": "a city skyline",
+      "Street": "a street",
+      "Architecture": "a building",
+      "Bridge": "a bridge",
+      "Church": "a church",
+      "Temple": "a temple",
+      "Castle": "a castle",
+      "Ruins": "ancient ruins",
+      "Museum": "a museum exhibition",
+      "Home": "the inside of a home",
+      "Kitchen": "a kitchen",
+      "Office": "an office",
+      "Classroom": "a classroom or lecture",
+      "Laboratory": "a laboratory",
+      "Restaurant": "a restaurant",
+      "Park": "a park",
+      "Stadium": "a stadium",
+      "Airport": "an airport"
+    },
+    "People": {
+      "Portrait": "a portrait of a person",
+      "Selfie": "a selfie",
+      "Group": "a group of people",
+      "Crowd": "a crowd",
+      "Baby": "a baby",
+      "Children": "children",
+      "Wedding": "a wedding",
+      "Party": "a party",
+      "Concert": "a concert",
+      "Sport": "people playing sport",
+      "Hiking": "people hiking"
+    },
+    "Animals": {
+      "Dog": "a dog",
+      "Cat": "a cat",
+      "Bird": "a bird",
+      "Horse": "a horse",
+      "Farm animals": "farm animals",
+      "Fish": "fish",
+      "Insect": "an insect",
+      "Wildlife": "wild animals"
+    },
+    "Food and drink": {
+      "Food": "a plate of food",
+      "Dessert": "a dessert",
+      "Cake": "a cake",
+      "Fruit": "fruit",
+      "Coffee": "a cup of coffee",
+      "Drinks": "drinks"
+    },
+    "Things": {
+      "Car": "a car",
+      "Bicycle": "a bicycle",
+      "Boat": "a boat",
+      "Aeroplane": "an aeroplane",
+      "Train": "a train",
+      "Computer": "a computer",
+      "Books": "books",
+      "Art": "a painting or artwork",
+      "Sculpture": "a sculpture",
+      "Telescope": "a telescope",
+      "Toys": "toys"
+    },
+    "Occasions": {
+      "Christmas": "Christmas decorations",
+      "Birthday": "a birthday celebration",
+      "Fireworks": "fireworks",
+      "Graduation": "a graduation ceremony",
+      "Award": "an award ceremony"
+    },
+    "Documents": {
+      "Screenshot": "a screenshot of a phone or computer screen",
+      "Document": "a document with text",
+      "Receipt": "a receipt",
+      "Whiteboard": "a whiteboard",
+      "Poster": "a poster",
+      "Map": "a map"
+    }
+  }
+}

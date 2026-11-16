@@ -39,6 +39,7 @@ import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/people.dart';
 import 'package:photopod/services/shared_with_me.dart';
+import 'package:photopod/services/tags.dart';
 
 /// The root of the application.
 ///
@@ -75,6 +76,7 @@ class App extends StatelessWidget {
         ),
         ChangeNotifierProvider<MediaFilter>(create: (context) => MediaFilter()),
         ChangeNotifierProvider<People>(create: (context) => People()),
+        ChangeNotifierProvider<PhotoTags>(create: (context) => PhotoTags()),
       ],
       child: SolidThemeApp(
         title: appTitle,
