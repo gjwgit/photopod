@@ -53,6 +53,7 @@ extension MediaBrowserActions on MediaBrowserState {
     onPreview: () => _previewFirst(context),
     onGetInfo: () => _getInfo(context),
     onDownload: () => downloadMedia(context, _selectedFiles),
+    onIdentifyPeople: () => _identifyPeople(context),
     onToggleFavourite: () => _toggleFavourite(context, _selectedFiles),
     onAddToAlbum: (album) => _addToAlbum(context, album, _selectedFiles),
     onCreateAlbum: () => _createAlbum(context, _selectedFiles),
@@ -501,6 +502,7 @@ extension MediaBrowserActions on MediaBrowserState {
     final albums = context.read<Albums>();
     final index = context.read<MediaIndex>();
     final sharedWithMe = context.read<SharedWithMe>();
+    final people = context.read<People>();
 
     final failed = await showWorking(context, 'Deleting...', () async {
       return {
@@ -524,6 +526,11 @@ extension MediaBrowserActions on MediaBrowserState {
     ];
     await favourites.forget(gone);
     await albums.forget(gone);
+
+    // The faces found in a deleted photo, or in any photo of a deleted
+    // folder, are deleted from the faces file in the Pod along with it.
+
+    await people.forget(own.where((item) => !failed.containsKey(item)));
 
     // Deleting a file already took away everyone's access to it, so album
     // sharing only has to stop remembering it.
@@ -575,6 +582,38 @@ extension MediaBrowserActions on MediaBrowserState {
       }
     }
     return failed;
+  }
+
+  /// Have the PhotoPod Analyser find the people in the selected photos, and
+  /// only those. The faces come back in the background, and show in People
+  /// and in Get Info as they do.
+
+  Future<void> _identifyPeople(BuildContext context) async {
+    final photos = [
+      for (final item in _selectedFiles)
+        if (item.isPhoto && !item.isShared) item,
+    ];
+    if (photos.isEmpty) {
+      await showErrorDialog(
+        context,
+        'No photos selected',
+        'People are found in your own photos. Select one or more of them.',
+      );
+      return;
+    }
+    if (!_demo && !await _ensureSecurityKey(context)) return;
+    if (!context.mounted) return;
+
+    unawaited(context.read<People>().analyse(photos));
+    final count = photos.length == 1 ? 'one photo' : '${photos.length} photos';
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Identifying the people in $count. They show in People, and in '
+          'Get Info, as they are found.',
+        ),
+      ),
+    );
   }
 
   /// Make sure the security key is available before reading or writing

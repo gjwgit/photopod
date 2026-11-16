@@ -1,0 +1,56 @@
+# The PhotoPod face analyser: answers each face inbox a user shares with the
+# Analyser Pod, as the Solid server notifies it. It listens on no port.
+#
+# Paths follow the HealthPod analyser's layout: the project root is the working
+# directory, deployed OUTSIDE the Solid server's storage root so that none of
+# it becomes a Pod resource.
+#
+# Install:
+#   sudo cp systemd/photopod-face-analyser.service /etc/systemd/system/
+#   sudo cp systemd/photopod-face-analyser.env /etc/photopod-face-analyser.env
+#   sudo chmod 600 /etc/photopod-face-analyser.env
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now photopod-face-analyser
+
+[Unit]
+Description=PhotoPod face analyser
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+# An unprivileged account of its own: the analyser holds the Analyser Pod's
+# security key and needs nothing the Solid server has. Create it with
+#   useradd --system --home /opt/solid/analyser --shell /usr/sbin/nologin photopod
+User=photopod
+Group=photopod
+
+WorkingDirectory=/opt/solid/analyser/face_analyser
+# Optional, so that a deployment keeping its secrets in config.yaml starts.
+EnvironmentFile=-/etc/photopod-face-analyser.env
+ExecStart=/opt/solid/analyser/face_analyser/.venv/bin/python -m face_analyser \
+    --config /opt/solid/analyser/face_analyser/config.yaml watch
+
+Restart=always
+RestartSec=15s
+
+# Exit status 2 is a configuration error, such as missing models, missing
+# credentials or a security key that does not unlock the Analyser Pod. Restarting cannot fix it, so stop and let the operator look.
+RestartPreventExitStatus=2
+
+# The service writes nothing on this host: setup.sh fetched the models, and
+# the photos it reads from the Pods stay in memory.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+RestrictSUIDSGID=true
+LockPersonality=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target

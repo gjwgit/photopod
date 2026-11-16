@@ -73,6 +73,10 @@ class MediaActions {
 
   final VoidCallback onDownload;
 
+  /// Have the PhotoPod Analyser find the people in the selected photos.
+
+  final VoidCallback onIdentifyPeople;
+
   /// Add a heart to the selected files, or take it away.
 
   final VoidCallback onToggleFavourite;
@@ -111,6 +115,7 @@ class MediaActions {
     required this.onPreview,
     required this.onGetInfo,
     required this.onDownload,
+    required this.onIdentifyPeople,
     required this.onToggleFavourite,
     required this.onAddToAlbum,
     required this.onCreateAlbum,
@@ -301,6 +306,23 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
+          if (!hasShared && section != LibrarySection.videos)
+            _button(
+              icon: Icons.face_outlined,
+              label: 'Identify People',
+              onPressed: actions.onIdentifyPeople,
+              tooltip: '''
+
+          **Identify People**
+
+          Have the PhotoPod Analyser find the faces in the selected photos.
+          Each face of someone you have named comes back named, shown in Get
+          Info and in People; the others are listed as Unknown in People,
+          for you to name in Get Info. Only the photos selected are sent,
+          without where they were taken, and the Analyser keeps no copy.
+
+          ''',
+            ),
         ],
         if (canChange) ...[
           if (!mixed)

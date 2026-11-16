@@ -34,7 +34,9 @@ import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/screens/map_view.dart';
 import 'package:photopod/screens/media_browser.dart';
+import 'package:photopod/screens/people_view.dart';
 import 'package:photopod/services/album_sharing.dart';
+import 'package:photopod/services/people.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
@@ -89,6 +91,7 @@ class _AppScaffoldState extends State<AppScaffold> {
 
         PodKeys.reset();
         ThumbnailCache.instance.clear();
+        context.read<People>().reset();
         SolidAuthHandler.instance.handleLogout(context);
       },
       menu: const [
@@ -140,6 +143,23 @@ class _AppScaffoldState extends State<AppScaffold> {
             key: ValueKey(LibrarySection.albums),
             section: LibrarySection.albums,
           ),
+        ),
+        SolidMenuItem(
+          icon: Icons.face_outlined,
+          title: 'People',
+          tooltip: '''
+
+            **People**
+
+            Tap here for your photos by who is in them: everyone named,
+            alphabetically, then photos with someone unknown, then those
+            not yet looked at. To find who is in some photos, select them
+            and tap **Identify People**: the PhotoPod Analyser looks at
+            those photos only, and what it finds comes back, encrypted, to
+            your Pod.
+
+            ''',
+          child: PeopleView(key: ValueKey(LibrarySection.people)),
         ),
         SolidMenuItem(
           icon: Icons.movie_outlined,
@@ -209,6 +229,8 @@ class _AppScaffoldState extends State<AppScaffold> {
         ❤️ Put a heart on anything and find it again under Favourites;
 
         📚 Gather photos and videos into albums of your own;
+
+        🙂 Find the people in your photos, with their faces kept in your Pod;
 
         🗺️ See where your photos were taken, on a map;
 

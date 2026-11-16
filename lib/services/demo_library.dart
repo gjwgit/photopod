@@ -336,6 +336,11 @@ class DemoLibrary {
         _byPath[item.path]?.longitude != null,
   );
 
+  /// The people known to be in the sample at [path].
+
+  static List<String> peopleAt(String path) =>
+      _byPath[path]?.people ?? const [];
+
   /// The paths of the samples hearted from the start.
 
   static Set<String> get favourites => {
