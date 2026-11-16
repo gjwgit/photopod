@@ -30,6 +30,10 @@ then please show some ❤️ and tap on the star at
 This app is authored by Tony Chen and [Graham
 Williams](https://togaware.com/Graham.Williams.html).
 
+## 1.3 AI Tools - Face and Tag
+
++ Add facial recognition [1.3.0 20261116 tonypioneer]
+
 ## 1.2 Single Photo Store
 
 + Support sort by name locations [1.2.7 20261116 gjwgit]
