@@ -86,6 +86,7 @@ part 'media_browser_albums.dart';
 part 'media_browser_body.dart';
 part 'media_browser_delete.dart';
 part 'media_browser_drop.dart';
+part 'media_browser_header.dart';
 part 'media_browser_transfers.dart';
 
 /// The Library, Favourites, Albums or Videos section of the app.

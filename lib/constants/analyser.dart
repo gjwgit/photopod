@@ -23,6 +23,10 @@
 
 library;
 
+import 'dart:convert';
+
+import 'package:flutter/services.dart' show rootBundle;
+
 /// The Analyser, set up as HealthPod's blood pressure analyser is.
 ///
 /// The Analyser is a Pod, on the user's Solid server or any other. Identify
@@ -33,18 +37,44 @@ library;
 /// app never talks to that service, so it needs no address of it: [webId]
 /// is all there is to know.
 ///
-/// Another Analyser is chosen at build time with
-/// `--dart-define=ANALYSER_WEBID=https://.../profile/card#me`.
+/// The WebID is configured in [configAsset], so that moving the Analyser to
+/// another Solid server means editing that file alone. A build may instead
+/// choose another Analyser with
+/// `--dart-define=ANALYSER_WEBID=https://.../profile/card#me`, which takes
+/// precedence over the file.
 
 class Analyser {
   const Analyser._();
 
-  /// The WebID the inboxes are shared with.
+  /// The configuration file holding the Analyser's WebID, as `webId`.
 
-  static const String webId = String.fromEnvironment(
-    'ANALYSER_WEBID',
-    defaultValue: 'https://solid.dev.empwr.au/Analyser/profile/card#me',
-  );
+  static const String configAsset = 'assets/config/analyser.json';
+
+  /// The WebID chosen at build time, if any.
+
+  static const String _webIdOverride = String.fromEnvironment('ANALYSER_WEBID');
+
+  static Future<String>? _webId;
+
+  /// The WebID the inboxes are shared with, read once from [configAsset]
+  /// unless chosen at build time.
+
+  static Future<String> webId() => _webId ??= _loadWebId();
+
+  static Future<String> _loadWebId() async {
+    if (_webIdOverride.isNotEmpty) return _webIdOverride;
+    try {
+      final config = jsonDecode(await rootBundle.loadString(configAsset));
+      final webId = config is Map<String, dynamic> ? config['webId'] : null;
+      if (webId is String && webId.isNotEmpty) return webId;
+      throw const FormatException('webId is missing or empty');
+    } on Object catch (e) {
+      // Let a later call try again rather than keep the failure.
+
+      _webId = null;
+      throw StateError('The Analyser is not configured in $configAsset: $e');
+    }
+  }
 
   /// Name shown in the interface, in place of the raw WebID.
 

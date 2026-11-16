@@ -5,8 +5,8 @@ section and the tags for its **Tags** section, in the photos a user chooses,
 when they tap **Identify People** or **Tag Photos**. It works through Pod
 sharing alone, as HealthPod's blood pressure analyser does: the user's Pod
 shares a folder holding those photos with the **Analyser Pod**
-(`https://solid.dev.empwr.au/Analyser/profile/card#me`), the service looks at
-them and writes the results back into the user's Pod.
+(`https://pods.dev.solidcommunity.au/analyser/profile/card#me`), the service
+looks at them and writes the results back into the user's Pod.
 
 - No port, no HTTP interface, nothing the app calls. The service talks only to
   Solid servers, logged in as the Analyser. The users' Pods may be on the
@@ -162,86 +162,316 @@ with its own inbox (`lib/services/analyser_inbox.dart`) and file.
 
 ## Preparing the Analyser Pod
 
-The same Pod and account as HealthPod's analyser. It needs the **PhotoPod**
-folder structure as well as HealthPod's.
+The Analyser is an ordinary Pod with an ordinary account on a Community Solid
+Server (CSS):
 
-1. **Initialise it with PhotoPod.** Log in to PhotoPod as the Analyser account
-   **once** and enter its security key. PhotoPod creates
-   `Analyser/photopod/encryption/`, `sharing/public-key.ttl`, `shared/` and
-   `logs/`. Until then PhotoPod cannot share an inbox with it ("The Analyser
-   Pod is not set up for PhotoPod yet"), and `./run.sh check` reports that
-   `photopod/encryption/enc-keys.ttl` does not exist. Check with:
+- Solid server: `https://pods.dev.solidcommunity.au`
+- Analyser WebID: `https://pods.dev.solidcommunity.au/analyser/profile/card#me`
+
+The WebID is configured in two places, which must agree:
+`assets/config/analyser.json` in PhotoPod, and `analyser.web_id` in this
+service's `config.yaml`. The service needs three secrets, gathered in the steps
+below: the Analyser Pod's **security key** (step 2) and a pair of **client
+credentials** (step 3).
+
+### 0. Check the server
+
+All three should print `200`, and the last `"client_credentials"`:
+
+```bash
+SERVER=https://pods.dev.solidcommunity.au
+curl -s -o /dev/null -w '%{http_code}\n' "$SERVER/.account/" \
+     -H 'Accept: application/json'
+curl -s -o /dev/null -w '%{http_code}\n' \
+     "$SERVER/.well-known/openid-configuration"
+curl -s -o /dev/null -w '%{http_code}\n' \
+     "$SERVER/.notifications/WebSocketChannel2023/"
+curl -s "$SERVER/.well-known/openid-configuration" \
+  | grep -o '"client_credentials"'
+```
+
+Run every command of steps 0 and 3 in the **same** terminal: the variables do
+not outlive it. Do not name a variable `HOST`, which zsh already sets to the
+local machine's name.
+
+### 1. Create the account and the Pod
+
+1. Register at
+   `https://pods.dev.solidcommunity.au/.account/login/password/register/`
+   with an e-mail address kept for the Analyser, and keep the password: step 3
+   needs it.
+2. On the account page, create a Pod named **`analyser`**, in lower case. Pod
+   names are case-sensitive, and the WebID depends on it.
+3. The profile must now be public. This prints `200`:
 
    ```bash
-   curl -sI \
-     https://solid.dev.empwr.au/Analyser/photopod/sharing/public-key.ttl
+   curl -s -o /dev/null -w '%{http_code}\n' \
+        https://pods.dev.solidcommunity.au/analyser/profile/card
    ```
 
-2. **Client credentials.** The pair issued for HealthPod's analyser works,
-   since both log in as the same WebID. A pair of its own is better, so that
-   either can be revoked alone: see `healthpod/analyser/bp_analyser/README.md`,
-   section "Issue client credentials", with `"name": "face-analyser"`.
+### 2. Initialise it with PhotoPod
+
+The service reads keys that only PhotoPod creates. Log in to PhotoPod as the
+Analyser account **once**, with the server
+`https://pods.dev.solidcommunity.au`, and choose a security key when asked.
+Keep it: the service needs it, and it cannot be recovered from the server.
+PhotoPod then creates `analyser/photopod/encryption/`,
+`sharing/public-key.ttl`, `shared/` and `logs/`.
+
+Until then PhotoPod cannot share an inbox with the Analyser ("The Analyser Pod
+is not set up for PhotoPod yet"), and `./run.sh check` reports that
+`photopod/encryption/enc-keys.ttl` does not exist. Log out, then check; this
+prints `200`:
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' \
+  https://pods.dev.solidcommunity.au/analyser/photopod/sharing/public-key.ttl
+```
+
+If HealthPod's analyser shares this Pod, initialise it with HealthPod as well.
+
+### 3. Issue client credentials
+
+PhotoPod logs in through a browser; a service cannot. CSS issues long-lived
+client credentials for exactly this case: an id and a secret bound to the
+Analyser's WebID, which the service exchanges for an access token at
+`https://pods.dev.solidcommunity.au/.oidc/token` whenever it needs one.
+
+On your own machine, a step at a time, checking each output before going on.
+
+**a. The account and its password.** The password is neither shown nor kept
+in the shell's history:
+
+```bash
+SERVER=https://pods.dev.solidcommunity.au
+WEBID="$SERVER/analyser/profile/card#me"
+EMAIL='analyser@example.org'          # the address registered in step 1
+printf 'Password: '; read -rs PASSWORD; echo
+```
+
+**b. Log in to the account API:**
+
+```bash
+LOGIN=$(curl -s "$SERVER/.account/" -H 'Accept: application/json' \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["controls"]["password"]["login"])')
+echo "$LOGIN"    # https://pods.dev.solidcommunity.au/.account/login/password/
+
+TOKEN=$(curl -s -X POST "$LOGIN" -H 'Content-Type: application/json' \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["authorization"])')
+echo "${TOKEN:0:8}..."
+```
+
+`KeyError: 'authorization'` means the e-mail address or the password is wrong.
+
+**c. Find where credentials are issued:**
+
+```bash
+CC=$(curl -s "$SERVER/.account/" -H 'Accept: application/json' \
+  -H "Authorization: CSS-Account-Token $TOKEN" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["controls"]["account"]["clientCredentials"])')
+echo "$CC"       # .../.account/account/<id>/client-credentials/
+```
+
+**d. Issue them:**
+
+```bash
+curl -s -X POST "$CC" -H 'Content-Type: application/json' \
+  -H "Authorization: CSS-Account-Token $TOKEN" \
+  -d "{\"name\":\"face-analyser\",\"webId\":\"$WEBID\"}"
+```
+
+The answer is `{"id": "...", "secret": "...", "resource": "..."}`. **The secret
+is shown only this once**: put all three in a password manager. A pair of its
+own, rather than HealthPod's analyser's, means either can be revoked alone.
+
+**e. Forget the secrets:**
+
+```bash
+unset PASSWORD TOKEN
+```
+
+To revoke the pair later, log in again as in a and b, then:
+
+```bash
+curl -s -X DELETE '<the resource URL from d>' \
+     -H "Authorization: CSS-Account-Token $TOKEN"
+```
 
 ## Installing on the Solid server
 
-Outside the Solid server's storage root (`/opt/solid/server`), for the reasons
-given in HealthPod's analyser README: anything under it would become a Pod
-resource.
+The service goes in `/opt/photopod`, a folder of its own, apart from the Solid
+server's `/opt/solid`, for two reasons: anything under the server's storage
+root would become a Pod resource, and `/opt/solid` is closed to every account
+but the server's own (`drwxr-x--- solid solid`), so the `photopod` account
+could not reach the service inside it.
 
-From the PhotoPod folder on your own machine:
+It needs Python 3.10 or later with `venv` (the server has 3.12), outbound
+HTTPS to the Solid servers, and PyPI, GitHub and Hugging Face while `setup.sh`
+runs. No firewall rule, reverse proxy or certificate is needed: it opens no
+port. Both models together take about 1 GB of memory.
+
+### 4. Copy it to the server
+
+From the PhotoPod folder on your own machine, with your own account on the
+server in place of `you`:
 
 ```bash
-rsync -av --exclude='.venv' --exclude='var' --exclude='config.yaml' \
+TARGET=pods.dev.solidcommunity.au
+rsync -av --delete --exclude='.venv' --exclude='var' --exclude='config.yaml' \
       --exclude='__pycache__' --exclude='.DS_Store' \
-      analyser/face_analyser/ you@solid.dev.empwr.au:/tmp/face_analyser/
+      analyser/face_analyser/ you@$TARGET:/tmp/face_analyser/
 ```
+
+`TARGET=...` goes on a line of its own. Written in front of `rsync` with a
+trailing backslash, it would set the variable for `rsync` alone, after
+`$TARGET` had already been expanded.
+
+### 5. Install it
 
 On the server:
 
 ```bash
-sudo useradd --system --home /opt/solid/analyser \
-    --shell /usr/sbin/nologin photopod
-sudo mkdir -p /opt/solid/analyser
-sudo rsync -a /tmp/face_analyser/ /opt/solid/analyser/face_analyser/
-sudo chown -R photopod:photopod /opt/solid/analyser/face_analyser
-sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh   # 647 MB of models
+sudo useradd --system --home /opt/photopod --shell /usr/sbin/nologin photopod
+sudo mkdir -p /opt/photopod
+sudo rsync -a /tmp/face_analyser/ /opt/photopod/face_analyser/
+sudo chown -R photopod:photopod /opt/photopod
 
-sudo cp /opt/solid/analyser/face_analyser/systemd/photopod-face-analyser.env \
-        /etc/photopod-face-analyser.env
-sudo chmod 600 /etc/photopod-face-analyser.env
-sudo nano /etc/photopod-face-analyser.env    # security key, client credentials
+# Every folder on the way must be open to photopod.
+sudo -u photopod namei -l /opt/photopod/face_analyser/setup.sh
 
-sudo systemd-run --pipe --wait -p User=photopod \
-    -p EnvironmentFile=/etc/photopod-face-analyser.env \
-    -p WorkingDirectory=/opt/solid/analyser/face_analyser \
-    /opt/solid/analyser/face_analyser/run.sh check
+# The virtual environment, the models (647 MB) and config.yaml.
+sudo -u photopod bash /opt/photopod/face_analyser/setup.sh
 
-sudo cp \
-    /opt/solid/analyser/face_analyser/systemd/photopod-face-analyser.service \
-        /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now photopod-face-analyser
-journalctl -u photopod-face-analyser -f
+sudo grep web_id /opt/photopod/face_analyser/config.yaml
+# web_id: https://pods.dev.solidcommunity.au/analyser/profile/card#me
 ```
 
-No firewall rule, reverse proxy or certificate is needed: the service opens no
-port. It needs outbound HTTPS to the Solid servers only, plus PyPI, GitHub
-and Hugging Face while `setup.sh` runs. Both models together take about 1 GB
-of memory.
+`setup.sh` writes `config.yaml` from `config.example.yaml` only when there is
+none, so on a host that had an older version, correct `web_id` by hand.
+
+### 6. Give it its secrets
+
+```bash
+sudo cp /opt/photopod/face_analyser/systemd/photopod-face-analyser.env \
+        /etc/photopod-face-analyser.env
+sudo chmod 600 /etc/photopod-face-analyser.env
+sudo nano /etc/photopod-face-analyser.env
+```
+
+```bash
+PHOTOPOD_FACE_ANALYSER_SECURITY_KEY=<the security key from step 2>
+PHOTOPOD_FACE_ANALYSER_CLIENT_ID=<the id from step 3>
+PHOTOPOD_FACE_ANALYSER_CLIENT_SECRET=<the secret from step 3>
+```
+
+### 7. Check it
+
+```bash
+sudo systemd-run --pipe --wait -p User=photopod \
+    -p EnvironmentFile=/etc/photopod-face-analyser.env \
+    -p WorkingDirectory=/opt/photopod/face_analyser \
+    /opt/photopod/face_analyser/run.sh check
+```
+
+| `check` says | Cause |
+| --- | --- |
+| `invalid_client` | the client id or secret is wrong (step 3) |
+| `enc-keys.ttl` does not exist | not initialised with PhotoPod (step 2) |
+| the security key does not unlock the Pod | not the key chosen in step 2 |
+| no WebSocketChannel2023 | the server's notifications are off |
+| a connection timeout | the host cannot reach the Solid server |
+
+### 8. Start it
+
+```bash
+sudo cp /opt/photopod/face_analyser/systemd/photopod-face-analyser.service \
+        /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl reset-failed photopod-face-analyser 2>/dev/null
+sudo systemctl enable --now photopod-face-analyser
+systemctl status photopod-face-analyser --no-pager      # active (running)
+journalctl -u photopod-face-analyser -f --since now
+```
+
+`--since now` leaves out the journal of earlier attempts.
+
+### 9. Try it from PhotoPod
+
+Build and release PhotoPod with the WebID in `assets/config/analyser.json`.
+Log in as an ordinary user, not the Analyser, select a few photos and tap
+**Identify People**, then **Tag Photos**. The journal shows a line for each:
+
+```text
+pods.dev.solidcommunity.au-alice faces: 3 analysed, 0 failed
+pods.dev.solidcommunity.au-alice tags: 3 analysed, 0 failed
+```
+
+Faces and tags are both answered by this one service; there is nothing else
+to deploy.
+
+### When it will not start
+
+`status=203/EXEC` means systemd could not run the interpreter at all: the unit
+in `/etc/systemd/system/` names a path that does not exist. Compare the two:
+
+```bash
+systemctl cat photopod-face-analyser | grep -E 'WorkingDirectory|ExecStart'
+ls -l /opt/photopod/face_analyser/.venv/bin/python
+sudo -u photopod /opt/photopod/face_analyser/.venv/bin/python -c 'print("ok")'
+```
+
+An installed unit still naming `/opt/solid/analyser` is an old copy: copy the
+unit again, as in step 8, and run `systemctl daemon-reload`. A missing
+`.venv` means `setup.sh` did not finish; run it again. A `.venv` whose
+interpreter (`readlink -f .venv/bin/python`) lies under `/root` or `/home`
+cannot be run by `photopod`; remove `.venv` and run
+`sudo -u photopod env PYTHON=/usr/bin/python3 bash setup.sh`.
+
+`Permission denied` from `setup.sh` means a folder above it is closed to
+`photopod`; `namei -l` names it. The service must not be installed under
+`/opt/solid`.
+
+Exit status 2 is a configuration error, such as missing models, missing
+credentials or a security key that does not unlock the Pod. systemd does not
+restart the service after it; `run.sh check` says which.
 
 ### Updating
 
+Copy the new version to `/tmp/face_analyser` as in step 4, then on the server:
+
 ```bash
 sudo systemctl stop photopod-face-analyser
-sudo rsync -a /tmp/face_analyser/ /opt/solid/analyser/face_analyser/
-sudo chown -R photopod:photopod /opt/solid/analyser/face_analyser
-sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh
+sudo rsync -a /tmp/face_analyser/ /opt/photopod/face_analyser/
+sudo chown -R photopod:photopod /opt/photopod
+sudo -u photopod bash /opt/photopod/face_analyser/setup.sh
+sudo cp /opt/photopod/face_analyser/systemd/photopod-face-analyser.service \
+        /etc/systemd/system/
+sudo systemctl daemon-reload
 sudo systemctl start photopod-face-analyser
 ```
 
 `config.yaml` and `/etc/photopod-face-analyser.env` are never overwritten. A
 `config.yaml` from before Tags has no `tags` section, and the defaults (Tags
 on, `.tags-inbox`) apply.
+
+### Removing it
+
+```bash
+sudo systemctl disable --now photopod-face-analyser
+sudo rm /etc/systemd/system/photopod-face-analyser.service
+sudo systemctl daemon-reload
+sudo systemctl reset-failed
+sudo shred -u /etc/photopod-face-analyser.env
+sudo rm -rf /opt/photopod/face_analyser
+sudo userdel photopod
+```
+
+Then revoke its client credentials, as at the end of step 3. On a host where
+an older version lived under `/opt/solid/analyser`, remove
+`/opt/solid/analyser/face_analyser` instead, leaving anything else there, such
+as HealthPod's analyser, alone, and run `userdel` without `-r`, which would
+remove the home folder with everything in it.
 
 ## Running it
 
@@ -255,8 +485,9 @@ on, `.tags-inbox`) apply.
 ```
 
 Each request answered logs one line, for example
-`solid.dev.empwr.au-alice faces: 3 analysed, 0 failed`. `check` fails when
-the server offers no WebSocketChannel2023 subscription, which `watch` needs.
+`pods.dev.solidcommunity.au-alice faces: 3 analysed, 0 failed`. `check` fails
+when the server offers no WebSocketChannel2023 subscription, which `watch`
+needs.
 
 ## Models and licence
 

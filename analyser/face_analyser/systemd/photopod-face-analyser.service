@@ -1,9 +1,9 @@
 # The PhotoPod face analyser: answers each face inbox a user shares with the
 # Analyser Pod, as the Solid server notifies it. It listens on no port.
 #
-# Paths follow the HealthPod analyser's layout: the project root is the working
-# directory, deployed OUTSIDE the Solid server's storage root so that none of
-# it becomes a Pod resource.
+# The project root is the working directory, deployed in /opt/photopod, apart
+# from the Solid server's /opt/solid: none of it may become a Pod resource,
+# and /opt/solid is commonly closed to every account but the server's own.
 #
 # Install:
 #   sudo cp systemd/photopod-face-analyser.service /etc/systemd/system/
@@ -22,15 +22,15 @@ Type=simple
 
 # An unprivileged account of its own: the analyser holds the Analyser Pod's
 # security key and needs nothing the Solid server has. Create it with
-#   useradd --system --home /opt/solid/analyser --shell /usr/sbin/nologin photopod
+#   useradd --system --home /opt/photopod --shell /usr/sbin/nologin photopod
 User=photopod
 Group=photopod
 
-WorkingDirectory=/opt/solid/analyser/face_analyser
+WorkingDirectory=/opt/photopod/face_analyser
 # Optional, so that a deployment keeping its secrets in config.yaml starts.
 EnvironmentFile=-/etc/photopod-face-analyser.env
-ExecStart=/opt/solid/analyser/face_analyser/.venv/bin/python -m face_analyser \
-    --config /opt/solid/analyser/face_analyser/config.yaml watch
+ExecStart=/opt/photopod/face_analyser/.venv/bin/python -m face_analyser \
+    --config /opt/photopod/face_analyser/config.yaml watch
 
 Restart=always
 RestartSec=15s

@@ -111,6 +111,10 @@ flutter:
     # location, from GeoNames (CC BY 4.0). See support/make_place_regions.py.
 
     - assets/places/regions.tsv
+
+    # Where the Analyser is: its WebID. See lib/constants/analyser.dart.
+
+    - assets/config/analyser.json
   uses-material-design: true
 
 # 20260830 gjw Define launcher icons for all platforms (except Linux)

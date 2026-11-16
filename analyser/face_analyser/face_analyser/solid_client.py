@@ -358,7 +358,7 @@ class SolidClient:
     def ensure_container(self, url: str) -> None:
         """Create a container if it is absent, including its parents.
 
-        The empwr server does not create intermediate containers implicitly,
+        The Solid server does not create intermediate containers implicitly,
         so each level is provisioned in turn.
         """
 

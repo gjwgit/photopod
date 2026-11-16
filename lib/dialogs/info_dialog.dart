@@ -29,7 +29,7 @@ import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
-import 'package:photopod/constants/media.dart';
+import 'package:photopod/dialogs/info_details.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/dialogs/person_dialogs.dart';
 import 'package:photopod/models/albums.dart';
@@ -41,7 +41,6 @@ import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/people.dart';
-import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/services/thumbnail_cache.dart';
 import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/face_avatar.dart';
@@ -157,10 +156,10 @@ class _InfoDialogState extends State<_InfoDialog> {
                 ),
               ),
               const Gap(20),
-              ..._buildSection(
+              ...infoSection(
                 context,
                 item.isShared ? 'Shared with you' : 'On your Pod',
-                _podRows(),
+                podDetails(widget.item, context.read<Albums>()),
               ),
               if (_labellable) ..._buildLabels(context),
               ..._buildPhotoSection(context),
@@ -180,52 +179,6 @@ class _InfoDialogState extends State<_InfoDialog> {
         ),
       ],
     );
-  }
-
-  // What the Solid server says about the resource.
-
-  List<(String, String)> _podRows() {
-    final item = widget.item;
-    final albums = context.read<Albums>();
-    final inAlbums = [
-      for (final name in albums.names)
-        if (albums.contains(name, item)) name,
-    ];
-
-    if (DemoLibrary.isDemo(item)) {
-      return [
-        ('Kind', _kindLabel(item)),
-        ('Storage', 'A sample included with PhotoPod, not stored in a Pod'),
-      ];
-    }
-
-    if (item.isShared) {
-      return [
-        ('Kind', _kindLabel(item)),
-        ('Shared by', '${webIdLabel(item.sharedBy!)} (${item.sharedBy})'),
-        (
-          'Storage',
-          item.isEncrypted
-              ? 'Encrypted, with the key shared with you'
-              : 'Plain, unencrypted resource',
-        ),
-        ('Address', item.url),
-      ];
-    }
-
-    return [
-      ('Kind', _kindLabel(item)),
-      ('Albums', inAlbums.isEmpty ? 'None' : inAlbums.join(', ')),
-      if (item.size != null) ('Size', formatBytes(item.size)),
-      ('Modified', formatDateTime(item.modified)),
-      (
-        'Storage',
-        item.isEncrypted
-            ? 'Encrypted with your security key'
-            : 'Plain, unencrypted resource',
-      ),
-      ('Address', item.url),
-    ];
   }
 
   // The title, then the tags and the people, each a row of chips with a
@@ -473,7 +426,7 @@ class _InfoDialogState extends State<_InfoDialog> {
 
     final rows = <(String, String)>[
       if (metadata.width != null && metadata.height != null)
-        ('Dimensions', _dimensions(metadata)),
+        ('Dimensions', formatDimensions(metadata)),
       if (metadata.taken != null) ('Taken', formatDateTime(metadata.taken)),
       if (metadata.camera != null) ('Camera', metadata.camera!),
       if (metadata.lens != null) ('Lens', metadata.lens!),
@@ -483,33 +436,23 @@ class _InfoDialogState extends State<_InfoDialog> {
         ('Altitude', '${metadata.altitude!.round()} m'),
     ];
 
-    return _buildSection(context, 'In the photo', rows);
+    return infoSection(context, 'In the photo', rows);
   }
-
-  List<Widget> _buildSection(
-    BuildContext context,
-    String title,
-    List<(String, String)> rows,
-  ) => [
-    Text(title, style: Theme.of(context).textTheme.labelLarge),
-    const Gap(8),
-    for (final row in rows) _InfoRow(label: row.$1, value: row.$2),
-    const Gap(4),
-  ];
 
   Future<void> _copy(BuildContext context) async {
     final metadata = _metadata;
     final lines = [
       widget.item.name,
       if (_title != null) 'Title: ${_title!.text}',
-      for (final row in _podRows()) '${row.$1}: ${row.$2}',
+      for (final row in podDetails(widget.item, context.read<Albums>()))
+        '${row.$1}: ${row.$2}',
       if (_tags.isNotEmpty) 'Tags: ${_tags.map((tag) => tag.label).join(', ')}',
       if (_faces.isNotEmpty)
         'People: ${_faces.map((face) => face.name).join(', ')}',
       if (_place != null)
         'Place: ${_place!.name} (${_place!.latitude}, ${_place!.longitude})',
       if (metadata != null && !metadata.isEmpty) ...[
-        if (metadata.width != null) 'Dimensions: ${_dimensions(metadata)}',
+        if (metadata.width != null) 'Dimensions: ${formatDimensions(metadata)}',
         if (metadata.taken != null) 'Taken: ${formatDateTime(metadata.taken)}',
         if (metadata.camera != null) 'Camera: ${metadata.camera}',
         if (metadata.lens != null) 'Lens: ${metadata.lens}',
@@ -525,51 +468,4 @@ class _InfoDialogState extends State<_InfoDialog> {
       );
     }
   }
-
-  static String _dimensions(PhotoMetadata metadata) {
-    final width = metadata.width!;
-    final height = metadata.height!;
-    final megapixels = width * height / 1000000;
-    return megapixels >= 0.1
-        ? '$width × $height  (${megapixels.toStringAsFixed(1)} MP)'
-        : '$width × $height';
-  }
-
-  static String _kindLabel(MediaItem item) {
-    final extension = extensionOf(item.name).toUpperCase();
-    final noun = item.kind?.noun ?? 'file';
-    return extension.isEmpty ? noun : '$extension $noun';
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  const _InfoRow({required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 3),
-    child: Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(
-          width: 110,
-          child: Text(
-            label,
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: Theme.of(context).colorScheme.outline,
-            ),
-          ),
-        ),
-        Expanded(
-          child: SelectableText(
-            value,
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ),
-      ],
-    ),
-  );
 }
