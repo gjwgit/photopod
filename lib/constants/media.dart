@@ -23,7 +23,7 @@
 
 library;
 
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 
 /// The two kinds of media PhotoPod manages, each with its own section in the
 /// navigation bar.

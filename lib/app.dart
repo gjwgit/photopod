@@ -24,8 +24,8 @@
 library;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
 
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import 'package:solidui/solidui.dart';
 
@@ -80,10 +80,11 @@ class App extends StatelessWidget {
       ],
       child: SolidThemeApp(
         title: appTitle,
-        theme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF6750A4)),
-          useMaterial3: true,
-        ),
+        // SolidThemeApp takes the ThemeData of package:flutter/material.dart,
+        // not that of package:material_ui, so the theme is described by its
+        // seed colour and solidui builds both the light and the dark theme.
+
+        themeConfig: const SolidThemeConfig(primaryColor: Color(0xFF6750A4)),
         home: SolidLogin(
           // A visitor goes straight into the app, without logging in, and
           // finds every section showing the sample album (see DemoLibrary):

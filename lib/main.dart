@@ -23,8 +23,7 @@
 
 library;
 
-import 'package:flutter/material.dart';
-
+import 'package:material_ui/material_ui.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:solidui/solidui.dart';
 import 'package:window_manager/window_manager.dart';

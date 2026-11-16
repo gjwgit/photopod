@@ -23,9 +23,8 @@
 
 library;
 
-import 'package:flutter/material.dart';
-
 import 'package:gap/gap.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
 import 'package:photopod/models/view_prefs.dart';

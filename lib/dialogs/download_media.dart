@@ -24,9 +24,9 @@
 library;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
-import 'package:flutter/material.dart';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:solidpod/solidpod.dart' show KeyManager;
 import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 

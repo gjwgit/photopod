@@ -23,9 +23,8 @@
 
 library;
 
-import 'package:flutter/material.dart';
-
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:photopod/models/catalog_entry.dart' show userSource;
 import 'package:photopod/widgets/label_editor.dart';

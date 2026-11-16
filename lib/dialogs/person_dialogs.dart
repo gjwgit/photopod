@@ -23,9 +23,8 @@
 
 library;
 
-import 'package:flutter/material.dart';
-
 import 'package:gap/gap.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:photopod/services/people.dart';
 import 'package:photopod/widgets/face_avatar.dart';

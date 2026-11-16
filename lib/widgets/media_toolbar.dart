@@ -23,9 +23,8 @@
 
 library;
 
-import 'package:flutter/material.dart';
-
 import 'package:markdown_tooltip/markdown_tooltip.dart';
+import 'package:material_ui/material_ui.dart';
 
 import 'package:photopod/models/albums.dart' show favouritesAlbumName;
 import 'package:photopod/models/library_section.dart';

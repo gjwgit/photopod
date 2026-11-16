@@ -23,8 +23,7 @@
 
 library;
 
-import 'package:flutter/material.dart';
-
+import 'package:material_ui/material_ui.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// The map providers offered in Map Settings, the same set GeoPod offers.

@@ -23,8 +23,7 @@
 
 library;
 
-import 'package:flutter/material.dart';
-
+import 'package:material_ui/material_ui.dart';
 import 'package:solidui/solidui.dart' show LoadingDialogController;
 
 /// Tell the user that something could not be done, and why.

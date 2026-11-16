@@ -26,12 +26,12 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:desktop_drop/desktop_drop.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:gap/gap.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import 'package:solidpod/solidpod.dart' show KeyManager, isUserLoggedIn;
 import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
@@ -86,6 +86,7 @@ part 'media_browser_albums.dart';
 part 'media_browser_body.dart';
 part 'media_browser_delete.dart';
 part 'media_browser_drop.dart';
+part 'media_browser_header.dart';
 part 'media_browser_transfers.dart';
 
 /// The Library, Favourites, Albums or Videos section of the app.

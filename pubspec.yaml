@@ -80,6 +80,7 @@ dependencies:
   # Restore the last window size/position on Linux/macOS/Windows desktop.
   window_manager: ^0.5.1
 
+  material_ui: any
 dev_dependencies:
   flutter_test:
     sdk: flutter
