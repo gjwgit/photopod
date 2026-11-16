@@ -19,7 +19,7 @@
 
 analyser:
 
-  web_id: https://dev.solidcommunity.au/Analyser/profile/card#me
+  web_id: https://dev.solidcommunity.au/analyser/profile/card#me
 
   # The Solid server the Analyser logs in to. Derived from web_id when left
   # out. The users' Pods may be on this server or any other.

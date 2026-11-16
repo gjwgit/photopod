@@ -61,7 +61,7 @@ from face_analyser.tagger import TagConfig
 from tests.fake_pod import FakePod, FakeSolidClient, encrypted_resource
 
 SERVER = 'https://server'
-ANALYSER_WEB_ID = f'{SERVER}/Analyser/profile/card#me'
+ANALYSER_WEB_ID = f'{SERVER}/analyser/profile/card#me'
 ALICE = f'{SERVER}/alice/profile/card#me'
 BOB = f'{SERVER}/bob/profile/card#me'
 APP = 'photopod'
@@ -285,9 +285,9 @@ class PipelineTest(unittest.TestCase):
                          self.client.resources)
 
     def test_watching_answers_on_each_notification(self):
-        self.client.resources[f'{SERVER}/Analyser/.well-known/solid'] = (
+        self.client.resources[f'{SERVER}/analyser/.well-known/solid'] = (
             f'@prefix notify: <{notify.NOTIFY}> .\n'
-            f'<{SERVER}/Analyser/> notify:subscription <{SERVER}/ws/> .\n'
+            f'<{SERVER}/analyser/> notify:subscription <{SERVER}/ws/> .\n'
             f'<{SERVER}/ws/> notify:channelType notify:WebSocketChannel2023 .\n')
         shared_keys = paths.shared_key_url(ANALYSER_WEB_ID, APP)
 

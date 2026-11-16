@@ -5,7 +5,7 @@ section and the tags for its **Tags** section, in the photos a user chooses,
 when they tap **Identify People** or **Tag Photos**. It works through Pod
 sharing alone, as HealthPod's blood pressure analyser does: the user's Pod
 shares a folder holding those photos with the **Analyser Pod**
-(`https://dev.solidcommunity.au/Analyser/profile/card#me`), the service looks at
+(`https://dev.solidcommunity.au/analyser/profile/card#me`), the service looks at
 them and writes the results back into the user's Pod.
 
 - No port, no HTTP interface, nothing the app calls. The service talks only to
@@ -167,14 +167,14 @@ folder structure as well as HealthPod's.
 
 1. **Initialise it with PhotoPod.** Log in to PhotoPod as the Analyser account
    **once** and enter its security key. PhotoPod creates
-   `Analyser/photopod/encryption/`, `sharing/public-key.ttl`, `shared/` and
+   `analyser/photopod/encryption/`, `sharing/public-key.ttl`, `shared/` and
    `logs/`. Until then PhotoPod cannot share an inbox with it ("The Analyser
    Pod is not set up for PhotoPod yet"), and `./run.sh check` reports that
    `photopod/encryption/enc-keys.ttl` does not exist. Check with:
 
    ```bash
    curl -sI \
-     https://dev.solidcommunity.au/Analyser/photopod/sharing/public-key.ttl
+     https://dev.solidcommunity.au/analyser/photopod/sharing/public-key.ttl
    ```
 
 2. **Client credentials.** The pair issued for HealthPod's analyser works,

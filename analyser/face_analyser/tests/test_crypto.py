@@ -165,7 +165,7 @@ class ShareIdentifierTests(unittest.TestCase):
         import hashlib
 
         url = 'https://server/alice/healthpod/data/blood_pressure/a.json.enc.ttl'
-        recipient = 'https://server/Analyser/profile/card#me'
+        recipient = 'https://server/analyser/profile/card#me'
         self.assertEqual(
             crypto.unique_resource_id(url, recipient),
             hashlib.sha256((url + recipient).encode()).hexdigest())
