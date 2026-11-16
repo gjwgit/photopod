@@ -32,6 +32,8 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.3 AI Tools - Face and Tag
 
++ Add AI tags for photos [1.3.1 20261116 tonypioneer]
+
 + Add facial recognition [1.3.0 20261116 tonypioneer]
 
 ## 1.2 Single Photo Store
