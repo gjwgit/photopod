@@ -5,8 +5,8 @@ section and the tags for its **Tags** section, in the photos a user chooses,
 when they tap **Identify People** or **Tag Photos**. It works through Pod
 sharing alone, as HealthPod's blood pressure analyser does: the user's Pod
 shares a folder holding those photos with the **Analyser Pod**
-(`https://pods.dev.solidcommunity.au/analyser/profile/card#me`), the service looks at
-them and writes the results back into the user's Pod.
+(`https://pods.dev.solidcommunity.au/analyser/profile/card#me`), the service
+looks at them and writes the results back into the user's Pod.
 
 - No port, no HTTP interface, nothing the app calls. The service talks only to
   Solid servers, logged in as the Analyser. The users' Pods may be on the
@@ -184,9 +184,11 @@ folder structure as well as HealthPod's.
 
 ## Installing on the Solid server
 
-Outside the Solid server's storage root (`/opt/solid/server`), for the reasons
-given in HealthPod's analyser README: anything under it would become a Pod
-resource.
+In `/opt/photopod`, a folder of its own, apart from the Solid server's
+`/opt/solid`. Two reasons: anything under the server's storage root would
+become a Pod resource (see HealthPod's analyser README), and `/opt/solid` is
+commonly closed to every account but the server's own (mode 750), so the
+`photopod` account could not reach the service inside it.
 
 From the PhotoPod folder on your own machine:
 
@@ -199,25 +201,25 @@ rsync -av --exclude='.venv' --exclude='var' --exclude='config.yaml' \
 On the server:
 
 ```bash
-sudo useradd --system --home /opt/solid/analyser \
+sudo useradd --system --home /opt/photopod \
     --shell /usr/sbin/nologin photopod
-sudo mkdir -p /opt/solid/analyser
-sudo rsync -a /tmp/face_analyser/ /opt/solid/analyser/face_analyser/
-sudo chown -R photopod:photopod /opt/solid/analyser/face_analyser
-sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh   # 647 MB of models
+sudo mkdir -p /opt/photopod
+sudo rsync -a /tmp/face_analyser/ /opt/photopod/face_analyser/
+sudo chown -R photopod:photopod /opt/photopod/face_analyser
+sudo -u photopod bash /opt/photopod/face_analyser/setup.sh   # 647 MB of models
 
-sudo cp /opt/solid/analyser/face_analyser/systemd/photopod-face-analyser.env \
+sudo cp /opt/photopod/face_analyser/systemd/photopod-face-analyser.env \
         /etc/photopod-face-analyser.env
 sudo chmod 600 /etc/photopod-face-analyser.env
 sudo nano /etc/photopod-face-analyser.env    # security key, client credentials
 
 sudo systemd-run --pipe --wait -p User=photopod \
     -p EnvironmentFile=/etc/photopod-face-analyser.env \
-    -p WorkingDirectory=/opt/solid/analyser/face_analyser \
-    /opt/solid/analyser/face_analyser/run.sh check
+    -p WorkingDirectory=/opt/photopod/face_analyser \
+    /opt/photopod/face_analyser/run.sh check
 
 sudo cp \
-    /opt/solid/analyser/face_analyser/systemd/photopod-face-analyser.service \
+    /opt/photopod/face_analyser/systemd/photopod-face-analyser.service \
         /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now photopod-face-analyser
@@ -233,9 +235,9 @@ of memory.
 
 ```bash
 sudo systemctl stop photopod-face-analyser
-sudo rsync -a /tmp/face_analyser/ /opt/solid/analyser/face_analyser/
-sudo chown -R photopod:photopod /opt/solid/analyser/face_analyser
-sudo -u photopod bash /opt/solid/analyser/face_analyser/setup.sh
+sudo rsync -a /tmp/face_analyser/ /opt/photopod/face_analyser/
+sudo chown -R photopod:photopod /opt/photopod/face_analyser
+sudo -u photopod bash /opt/photopod/face_analyser/setup.sh
 sudo systemctl start photopod-face-analyser
 ```
 
