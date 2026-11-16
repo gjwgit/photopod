@@ -72,7 +72,14 @@ enum MediaSortOption {
   /// By when the item was taken, or where that is unknown when the server
   /// last recorded a change, newest first.
 
-  dateDescending('Creation time', 'Newest first');
+  dateDescending('Creation time', 'Newest first'),
+
+  /// By the city or region where the item was taken, such as
+  /// `Canberra, Australia`, A to Z, newest first within each place. Items
+  /// that do not say where they were taken come last, under Others. In the
+  /// tiled view each place has a heading of its own.
+
+  location('Location', 'A → Z');
 
   /// The field being sorted on.
 

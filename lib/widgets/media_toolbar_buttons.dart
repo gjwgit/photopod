@@ -183,9 +183,14 @@ class _AddToAlbumButton extends StatelessWidget {
 }
 
 class _SortButton extends StatelessWidget {
-  const _SortButton({required this.sortOption, required this.onSort});
+  const _SortButton({
+    required this.sortOption,
+    required this.options,
+    required this.onSort,
+  });
 
   final MediaSortOption sortOption;
+  final List<MediaSortOption> options;
   final ValueChanged<MediaSortOption> onSort;
 
   @override
@@ -197,13 +202,14 @@ class _SortButton extends StatelessWidget {
 
         **Sort**
 
-        Order folders and files by name or by the time they were last
-        recorded as changing on the Pod. Folders always come first. Now:
-        ${sortOption.displayLabel}.
+        Order folders and files by name, by when they were taken, or by the
+        city or region they were taken in, such as Canberra, Australia, with
+        those that do not say where under Others. Folders always come first.
+        Now: ${sortOption.displayLabel}.
 
         ''',
     children: [
-      for (final option in MediaSortOption.values)
+      for (final option in options)
         MenuItemButton(
           // A tick marks the order in force; the others keep the same indent.
           leadingIcon: Icon(
