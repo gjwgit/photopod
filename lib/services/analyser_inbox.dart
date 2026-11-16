@@ -248,6 +248,7 @@ class AnalyserInbox {
     final url = await this.url();
     final webId = await getWebId();
     if (webId == null) throw StateError('Not logged in.');
+    final analyserWebId = await Analyser.webId();
 
     // grantPermission() declares the list as dynamic but reads each entry
     // as a String, so the mode names are what must be passed.
@@ -258,7 +259,7 @@ class AnalyserInbox {
         isFile: false,
         permissionList: [AccessMode.read.mode, AccessMode.write.mode],
         recipientType: RecipientType.individual,
-        recipientWebIdList: [Analyser.webId],
+        recipientWebIdList: [analyserWebId],
         ownerWebId: webId,
         granterWebId: webId,
       );
@@ -291,12 +292,13 @@ class AnalyserInbox {
     // removed below, which leaves the Analyser nothing to reach.
 
     try {
+      final analyserWebId = await Analyser.webId();
       await revokePermission(
         fileName: url,
         isFile: false,
         isFileUrl: true,
         permissionList: [AccessMode.read.mode, AccessMode.write.mode],
-        recipientIndOrGroupWebId: Analyser.webId,
+        recipientIndOrGroupWebId: analyserWebId,
         ownerWebId: webId,
         granterWebId: webId,
         recipientType: RecipientType.individual,

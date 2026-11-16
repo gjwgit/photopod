@@ -5,7 +5,7 @@ section and the tags for its **Tags** section, in the photos a user chooses,
 when they tap **Identify People** or **Tag Photos**. It works through Pod
 sharing alone, as HealthPod's blood pressure analyser does: the user's Pod
 shares a folder holding those photos with the **Analyser Pod**
-(`https://solid.dev.empwr.au/Analyser/profile/card#me`), the service looks at
+(`https://dev.solidcommunity.au/Analyser/profile/card#me`), the service looks at
 them and writes the results back into the user's Pod.
 
 - No port, no HTTP interface, nothing the app calls. The service talks only to
@@ -174,7 +174,7 @@ folder structure as well as HealthPod's.
 
    ```bash
    curl -sI \
-     https://solid.dev.empwr.au/Analyser/photopod/sharing/public-key.ttl
+     https://dev.solidcommunity.au/Analyser/photopod/sharing/public-key.ttl
    ```
 
 2. **Client credentials.** The pair issued for HealthPod's analyser works,
@@ -193,7 +193,7 @@ From the PhotoPod folder on your own machine:
 ```bash
 rsync -av --exclude='.venv' --exclude='var' --exclude='config.yaml' \
       --exclude='__pycache__' --exclude='.DS_Store' \
-      analyser/face_analyser/ you@solid.dev.empwr.au:/tmp/face_analyser/
+      analyser/face_analyser/ you@dev.solidcommunity.au:/tmp/face_analyser/
 ```
 
 On the server:
@@ -255,7 +255,7 @@ on, `.tags-inbox`) apply.
 ```
 
 Each request answered logs one line, for example
-`solid.dev.empwr.au-alice faces: 3 analysed, 0 failed`. `check` fails when
+`dev.solidcommunity.au-alice faces: 3 analysed, 0 failed`. `check` fails when
 the server offers no WebSocketChannel2023 subscription, which `watch` needs.
 
 ## Models and licence
