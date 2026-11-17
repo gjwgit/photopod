@@ -97,8 +97,8 @@ Then set up your local installation (only required once):
 ln -s ${HOME}/.local/share/photopod/photopod ${HOME}/.local/bin/
 wget https://raw.githubusercontent.com/gjwgit/photopod/dev/installers/app.desktop -O ${HOME}/.local/share/applications/photopod.desktop
 sed -i "s/USER/$(whoami)/g" ${HOME}/.local/share/applications/photopod.desktop
-mkdir -p ${HOME}/.local/share/icons/hicolor/256x256/apps/
-wget https://github.com/gjwgit/photopod/raw/dev/installers/app.png -O ${HOME}/.local/share/icons/hicolor/256x256/apps/photopod.png
+mkdir -p ${HOME}/.local/share/icons/hicolor/512x512/apps/
+wget https://github.com/gjwgit/photopod/raw/dev/assets/images/app_icon_square.png -O ${HOME}/.local/share/icons/hicolor/512x512/apps/photopod.png
 ```
 
 To install for any user on the computer:
@@ -107,7 +107,7 @@ To install for any user on the computer:
 sudo unzip photopod-linux.zip -d /opt/photopod
 sudo ln -s /opt/photopod/photopod /usr/local/bin/
 wget https://raw.githubusercontent.com/gjwgit/photopod/dev/installers/app.desktop -O ${HOME}/usr/local/share/applications/photopod.desktop
-wget https://github.com/gjwgit/photopod/raw/dev/installers/app.png -O ${HOME}/use/local/share/icons/photopod.png
+wget https://github.com/gjwgit/photopod/raw/dev/assets/images/app_icon_square.png -O ${HOME}/use/local/share/icons/photopod.png
 ```
 
 Once installed you can run the app from the GNOME desktop through
