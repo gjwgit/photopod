@@ -169,6 +169,33 @@ class PhotoMetadata {
         altitude: altitude,
       );
 
+  /// The details of two copies of the same photo taken together: each one
+  /// [kept] knows, and those only [other] knows filled in beside them. Null
+  /// when neither knows anything.
+  ///
+  /// The location is taken as a pair, so that a latitude from one copy is
+  /// never matched with a longitude from the other.
+
+  static PhotoMetadata? merged(PhotoMetadata? kept, PhotoMetadata? other) {
+    if (kept == null || other == null) return kept ?? other;
+    final place = kept.hasLocation ? kept : other;
+    return PhotoMetadata(
+      width: kept.width ?? other.width,
+      height: kept.height ?? other.height,
+      taken: kept.taken ?? other.taken,
+      cameraMake: kept.cameraMake ?? other.cameraMake,
+      cameraModel: kept.cameraModel ?? other.cameraModel,
+      lens: kept.lens ?? other.lens,
+      exposureSeconds: kept.exposureSeconds ?? other.exposureSeconds,
+      aperture: kept.aperture ?? other.aperture,
+      focalLength: kept.focalLength ?? other.focalLength,
+      iso: kept.iso ?? other.iso,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      altitude: place.altitude ?? kept.altitude ?? other.altitude,
+    );
+  }
+
   /// Whether the photo says where it was taken, which is what puts it on the
   /// map.
 

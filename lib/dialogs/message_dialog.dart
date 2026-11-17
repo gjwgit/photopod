@@ -23,9 +23,9 @@
 
 library;
 
-import 'package:flutter/material.dart';
+import 'dart:async' show unawaited;
 
-import 'package:solidui/solidui.dart' show LoadingDialogController;
+import 'package:flutter/material.dart';
 
 /// Tell the user that something could not be done, and why.
 ///
@@ -94,9 +94,17 @@ Future<bool> showConfirmDialog(
 ///
 /// Copying an album or uploading a video takes long enough that the user
 /// needs to see that something is happening, and short enough that a progress
-/// bar would be more noise than help. SolidUI's controller is used because it
-/// pops the dialog through the dialog's own context, so the spinner cannot be
-/// stranded when the calling widget is disposed mid-operation.
+/// bar would be more noise than help.
+///
+/// The spinner's own route is held on to and removed by name, as it were,
+/// rather than by popping whatever is on top. That way it is taken down even
+/// when [action] ends before the spinner has been drawn, as merging two
+/// copies that say the same thing does, and it never takes down a dialogue
+/// opened over it instead. SolidUI's `LoadingDialogController` was used
+/// before, but it learns how to close the spinner only once the spinner has
+/// been built, so an action that ended sooner left the spinner up for good.
+/// The route is removed through the root navigator captured at the start, so
+/// it cannot be stranded when the calling widget is disposed mid-operation.
 ///
 /// A long [message] stretches the dialogue across the whole window, so
 /// [maxWidth] can hold it to a comfortable width, with an optional [title]
@@ -109,27 +117,36 @@ Future<T> showWorking<T>(
   String? title,
   double? maxWidth,
 }) async {
-  final loading = LoadingDialogController.show(
-    context: context,
-    message: message,
-    title: title,
-    child: maxWidth == null
-        ? null
-        : ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const CircularProgressIndicator(),
-                const SizedBox(width: 16),
-                Flexible(child: Text(message)),
-              ],
-            ),
-          ),
+  final navigator = Navigator.of(context, rootNavigator: true);
+  final spinner = Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      const CircularProgressIndicator(),
+      const SizedBox(width: 16),
+      Flexible(child: Text(message)),
+    ],
   );
+  final route = DialogRoute<void>(
+    context: context,
+    barrierDismissible: false,
+    themes: InheritedTheme.capture(from: context, to: navigator.context),
+    builder: (_) => PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: title == null ? null : Text(title),
+        content: maxWidth == null
+            ? spinner
+            : ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: maxWidth),
+                child: spinner,
+              ),
+      ),
+    ),
+  );
+  unawaited(navigator.push(route));
   try {
     return await action();
   } finally {
-    loading.close();
+    if (navigator.mounted && route.isActive) navigator.removeRoute(route);
   }
 }

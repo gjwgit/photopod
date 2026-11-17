@@ -206,7 +206,8 @@ class MediaCatalog {
   /// belongs under, [taken], and its EXIF details, [metadata], when given.
   /// Whatever is already known and not given is kept, so renaming a photo
   /// neither moves it to another day nor loses its tags. A new entry made
-  /// for a copy starts from the entry of the item at [from].
+  /// for a copy starts from the entry of the item at [from]. The digest of
+  /// the original, [hash], is recorded when given, for finding duplicates.
   ///
   /// Throws [PodMediaException] when the Pod refuses the write, leaving the
   /// catalog as it was.
@@ -217,6 +218,7 @@ class MediaCatalog {
     DateTime? taken,
     PhotoMetadata? metadata,
     String? from,
+    String? hash,
   }) => _change((entries) {
     final key = catalogKeyOf(path);
     final base =
@@ -228,8 +230,32 @@ class MediaCatalog {
       name: name,
       taken: taken == null ? null : encodeDate(taken),
       metadata: metadata,
+      hash: hash,
     );
   });
+
+  /// Record the digest of each original in [hashes], keyed by path, learnt
+  /// while looking for duplicates, and store the catalog once for them all.
+
+  static Future<void> setHashes(Map<String, String> hashes) =>
+      _change((entries) {
+        for (final MapEntry(key: path, value: hash) in hashes.entries) {
+          final entry = _at(entries, path);
+          if (entry == null || entry.hash != null) continue;
+          entries[catalogKeyOf(path)] = entry.copyWith(hash: hash);
+        }
+      });
+
+  /// Fold [other], what is known about a second copy of the photo at
+  /// [path], into the entry for [path], as [CatalogEntry.merge] says, so
+  /// that the second copy can be let go without losing anything.
+
+  static Future<void> mergeInto(String path, CatalogEntry other) =>
+      _change((entries) {
+        final entry = _forUpdate(entries, path);
+        if (entry == null) return;
+        entries[catalogKeyOf(path)] = CatalogEntry.merge(entry, other);
+      });
 
   /// Record every name in [names], keyed by path, in a single write, for a
   /// whole folder of items that have just been given new paths. Each path
