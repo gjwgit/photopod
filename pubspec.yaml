@@ -1,7 +1,7 @@
 name: photopod
 description: "Photo Pod - Photo Management with Secure and Private Storage"
 publish_to: 'none'
-version: 1.3.2+23
+version: 1.3.3+24
 
 environment:
   sdk: ^3.11.3
@@ -126,15 +126,41 @@ flutter_launcher_icons:
   image_path: "assets/images/app_icon.png"
   android: true
   min_sdk_android: 21
-  ios: true
+
+  # 20261117 gjw An ADAPTIVE icon for Android, as for timepod. The
+  # foreground is the bowl alone on transparency, inside the safe zone, over
+  # a deep blue that lifts the white bowl. app_icon_android.png is the two
+  # combined, square, for the legacy icon, matching the adaptive one. The
+  # foreground is already padded to the safe zone, so no further inset.
+
+  image_path_android: "assets/images/app_icon_android.png"
+  adaptive_icon_background: "#1E4FA0"
+  adaptive_icon_foreground: "assets/images/app_icon_foreground.png"
+  adaptive_icon_foreground_inset: 0
+
+  # 20261117 gjw There is no ios/ project yet, and generating for it then
+  # fails before the other platforms are done. Turn this on once ios/ is
+  # added. The blue matches Android, since a white plate loses the bowl.
+
+  ios: false
   remove_alpha_ios: true
-  background_color_ios: "#ffffff"
+  background_color_ios: "#1E4FA0"
   macos:
     generate: true
+
+  # 20261117 gjw The web icons include MASKABLE ones, which a phone crops to
+  # its own shape, so they need a full background with the art inside the
+  # middle 80%. The square blue icon is drawn to suit.
+
   web:
     generate: true
+    image_path: "assets/images/app_icon_android.png"
     background_color: "#ffffff"
     theme_color: "#ffffff"
+
+  # 20261117 gjw The largest size Windows takes, so it is not blurred when
+  # shown large.
+
   windows:
     generate: true
-    icon_size: 48 # min:48, max:256, default: 48
+    icon_size: 256 # min:48, max:256, default: 48

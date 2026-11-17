@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.3 AI Tools - Face and Tag
 
++ App icons for Android, desktop and web [1.3.3 20261117 gjwgit]
 + Move analyser to solidcommunity dev server [1.3.2 20261117 tonypioneer]
 + Add AI tags for photos [1.3.1 20261116 tonypioneer]
 + Add facial recognition [1.3.0 20261116 tonypioneer]
