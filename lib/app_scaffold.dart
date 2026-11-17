@@ -232,7 +232,7 @@ class _AppScaffoldState extends State<AppScaffold> {
         ),
         applicationLegalese: '''
 
-        © 2026 Software Innovation Institute, ANU
+        © 2026 Togaware Pty Ltd
 
         ''',
         text:

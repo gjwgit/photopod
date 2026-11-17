@@ -59,50 +59,56 @@ the same album.
 Photos and videos are written under `photopod/data/` through solidpod's
 `writePod`, the same way every app in this family stores its data: the
 content is encrypted, wrapped in Turtle and given an access control list.
-A photo added as `beach.jpg` is stored as `beach.jpg.enc.ttl` alongside
-`beach.jpg.enc.ttl.acl`, and PhotoPod shows the name without the suffix.
+Each file is stored under a random name that keeps only its extension, so
+a photo added as `beach.jpg` is stored as `3f9c…e1.jpg.enc.ttl` alongside
+`3f9c…e1.jpg.enc.ttl.acl`. Its own name is written inside the file, ahead
+of the picture, and encrypted with it, so the server never sees it while
+anyone it is shared with does. Folders have random names too.
 
 Storing media this way keeps it visible to the shared Solid file browsers,
 which list only `.ttl` resources, and gives each file the access control
-list that sharing works through. The cost is that a thumbnail cannot be
-read without decrypting the photo first, so thumbnails are cached in
-memory and fetched only for the page on screen.
+list that sharing works through. The cost is that a photo cannot be shown
+without fetching and decrypting it, which takes far too long for a camera
+original in every tile. So PhotoPod stores two smaller copies of each
+photo when it is added, a small one for the grid, carrying the photo's
+EXIF details, and a large one for the preview, encrypted in the hidden
+`.thumbnails` folder. They are cached in memory once fetched. Only
+downloading fetches the original.
 
-Favourites and albums are small unencrypted JSON files of Pod-relative
-paths. Favourites lives in `photopod/data/favourites.json`; each album is
-a file of its own in `photopod/data/albums/`, named after the album, so
-there are exactly as many albums as files there. The Library hides the
-`albums` folder.
+PhotoPod's own bookkeeping is encrypted JSON, each file stored as
+`<name>.json.enc.ttl` in `photopod/data/`: the catalog of names, places and
+people (`catalog.json`), the favourites (`favourites.json`), the faces and
+tags the Analyser found (`faces.json`, `tags.json`), and what has been
+shared (`album-shares.json`, `shared-names.json`). Each album is a file of
+its own in `photopod/data/albums/`, under a random name with the album's
+name inside it, so there are exactly as many albums as files there. The
+Library hides the `albums` folder.
 
 Reading still copes with a plain, unencrypted resource, so anything
-already in the album, or put there by another tool, stays visible.
+already in the album, or put there by another tool or an earlier build,
+stays visible. Plain bookkeeping files from earlier builds are moved to
+their encrypted form the first time they are written.
 
 ### Resource names
 
-A name on the Pod may hold only letters, digits and `- _ . ! ~ ' ( )`. A file
-added from this device has anything else — a space, an accent, a character
-outside the Latin alphabet — replaced with an underscore, and PhotoPod says
-which files it renamed on the way in. A folder name typed into a dialogue is
-refused rather than quietly changed.
+Because files, folders and albums are stored under random names, the name
+the user gives one never reaches a URL and may be in any script, with any
+punctuation. It only has to be one a file system will take, since a
+downloaded photo carries its name onto the user's own machine, so
+`/ \ : * ? " < > |` and control characters are refused.
 
-The restriction is not cosmetic. solidpod files a resource's encryption key
-under a URL it rebuilds from the resource's own URL, and the two halves of
-that round trip disagree about escaping: the path is taken out of the URL
-with `Uri.pathSegments`, which decodes each segment, and the URL is put back
-together by joining the segments verbatim, which does not encode them again.
-A photo stored as `my%20photo.jpg.enc.ttl` therefore has its key filed under
-`.../my photo.jpg.enc.ttl`, where nothing ever looks for it, and the key file
-is left holding a subject IRI with a raw space in it — which is not valid
+The random names also sidestep a solidpod problem. solidpod files a
+resource's encryption key under a URL it rebuilds from the resource's own
+URL, and the two halves of that round trip disagree about escaping: the
+path is taken out of the URL with `Uri.pathSegments`, which decodes each
+segment, and the URL is put back together by joining the segments
+verbatim, which does not encode them again. A photo stored as
+`my%20photo.jpg.enc.ttl` would have its key filed under
+`.../my photo.jpg.enc.ttl`, where nothing ever looks for it, and the key
+file left holding a subject IRI with a raw space in it — which is not valid
 Turtle, and which costs every key written after it when that file is next
-read back. Keeping every name inside the unescaped set makes the round trip
-the identity, and the problem disappears.
-
-The hearts live in `photopod/data/favourites.json`, a small list of the
-Pod-relative paths that carry one. It is deliberately not encrypted:
-asking for the security key merely to find out which photos are
-favourites would put a password prompt in front of an album that may
-hold nothing yet, and the file names it holds are already plain to see in
-the container listing.
+read back. A random name uses only characters a URL carries unescaped, so
+the round trip is the identity.
 
 ## Photo details and the map
 

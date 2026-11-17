@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<!--
+
+  20261117 gjw The privacy policy PhotoPod's Play and App Store listing
+  points at.  Stores require a reachable privacy policy URL even from
+  an app that collects nothing.
+
+  The page is served by GitHub Pages from the repository root of the
+  dev branch, so this lives at
+  https://gjwgit.github.io/photopod/privacy.html
+
+  We use plain HTML rather than Markdown. Jekyll's handling of a root
+  .md without front matter can quietly serve the wrong content. This
+  file needs no build step to be correct.
+
+  THE CLAIMS HERE FOLLOW THE CODE: solidpod writePod (encrypted by
+  default) for photos, renditions and every bookkeeping file,
+  lib/services/analyser_inbox.dart and analyser/face_analyser for the
+  Analyser, lib/services/geocoder.dart and lib/models/map_source.dart
+  for the outside services.
+
+  -->
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhotoPod Privacy Policy</title>
+<style>
+  :root {
+    --bg: #ffffff;
+    --fg: #1a1a1a;
+    --muted: #5a5a5a;
+    --rule: #e2e2e2;
+    --accent: #6c391d;
+    --card: #faf7f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #16130f;
+      --fg: #ece7e2;
+      --muted: #a9a29b;
+      --rule: #322c26;
+      --accent: #e0954f;
+      --card: #201b16;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #16130f;
+    --fg: #ece7e2;
+    --muted: #a9a29b;
+    --rule: #322c26;
+    --accent: #e0954f;
+    --card: #201b16;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 48px 16px 96px;
+    background: var(--bg);
+    color: var(--fg);
+    font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Helvetica, Arial, sans-serif;
+  }
+  main { max-width: 42rem; margin: 0 auto; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .25rem; }
+  h2 {
+    font-size: 1.2rem; margin: 2.5rem 0 .6rem;
+    padding-top: 1.4rem; border-top: 1px solid var(--rule);
+  }
+  .date { color: var(--muted); margin: 0 0 2rem; font-size: .95rem; }
+  .lede {
+    background: var(--card); border-left: 3px solid var(--accent);
+    padding: 1rem 1.15rem; border-radius: 4px; margin: 0 0 1rem;
+  }
+  ul { padding-left: 1.2rem; }
+  li { margin: .5rem 0; }
+  code {
+    font: .875em/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+    background: var(--card); padding: .1em .35em; border-radius: 3px;
+  }
+  a { color: var(--accent); }
+  footer {
+    margin-top: 3rem; padding-top: 1.4rem; border-top: 1px solid var(--rule);
+    color: var(--muted); font-size: .9rem;
+  }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>PhotoPod Privacy Policy</h1>
+  <p class="date">Effective 17 November 2026 · Version 1.3.3 · Togaware Pty Ltd</p>
+
+  <p class="lede">
+    <strong>PhotoPod does not collect your data.</strong> Your photos and
+    videos are kept in your own Solid Pod, encrypted, not on our servers.
+    There is no account with us, no analytics, no crash reporting, no
+    advertising and no tracking of any kind within the app. The only time
+    any photo reaches a service we run is when you ask for faces or tags to
+    be found in it, as described below.
+  </p>
+
+  <h2>Your photos, encrypted in your own Pod</h2>
+  <p>
+    PhotoPod stores everything under <code>photopod/data/</code> in the
+    Solid Pod you log in to, on a Solid server you choose. Each photo and
+    video is encrypted on your device, with your security key, before it is
+    sent. So are the smaller copies PhotoPod keeps of each photo for the
+    grid and the preview, your albums, your favourites, the people and tags
+    found in your photos, and the list of what you have shared.
+  </p>
+  <p>
+    A photo's own name is kept inside its encryption, and the file is stored
+    under a random name that keeps only its extension, such as
+    <code>.jpg</code>. The Solid server can see how many files there are,
+    whether each is a photo or a video, how large they are and when they
+    changed, but not what they show, what they are called or where they
+    were taken. Folders and albums have random names too. PhotoPod never
+    sends your security key anywhere.
+  </p>
+
+  <h2>Sharing</h2>
+  <p>
+    When you share a photo, a folder or an album, it is with the people you
+    name, by their WebID, using Solid's own access control. They are given
+    access and the key to read what you shared, and nothing else. You can
+    take the access away again.
+  </p>
+
+  <h2>Identify People and Tag Photos</h2>
+  <p>
+    The <strong>People</strong> and <strong>Tags</strong> sections are
+    filled in by the PhotoPod Analyser, a service the PhotoPod team runs on
+    the Australian Solid Community's server. It looks only at the photos you
+    select, and only when you tap <strong>Identify People</strong> or
+    <strong>Tag Photos</strong>:
+  </p>
+  <ul>
+    <li>
+      PhotoPod puts a preview-sized copy of each selected photo into a
+      folder of your Pod, encrypted with a key of its own, and shares just
+      that folder with the Analyser. The copies have their details removed
+      first: where and when the photo was taken, the camera, and any
+      captions.
+    </li>
+    <li>
+      The Analyser decrypts the copies only in its memory. They are never
+      written to its disk and never logged; its log records only how many
+      photos each request held.
+    </li>
+    <li>
+      It writes what it found back into the same folder, encrypted, and
+      PhotoPod files it with your other encrypted data. Once every photo is
+      answered, usually within seconds, PhotoPod withdraws the share and
+      removes the folder. The Analyser keeps nothing about you.
+    </li>
+    <li>
+      To recognise the same person again, what is found for each face
+      includes a numerical description of it. That is kept only in your
+      Pod, encrypted, with the names you give.
+    </li>
+  </ul>
+  <p>
+    The Analyser's source is part of PhotoPod, in
+    <a href="https://github.com/gjwgit/photopod/tree/dev/analyser/face_analyser"><code>analyser/face_analyser</code></a>.
+    If you never tap those buttons, no photo is ever shared with it.
+  </p>
+
+  <h2>On your device</h2>
+  <ul>
+    <li>
+      How you like to view your album, such as the layout, the order and
+      the map style, is kept on the device and never sent anywhere.
+    </li>
+    <li>
+      The pictures PhotoPod shows are decrypted in memory and dropped when
+      the app closes. Videos play from memory too.
+    </li>
+    <li>
+      If you log in, the login is kept on the device so you stay logged in.
+    </li>
+    <li>
+      <strong>Download</strong> saves a decrypted copy of a photo or video
+      where you choose. That copy is yours to look after and is no longer
+      protected by PhotoPod.
+    </li>
+  </ul>
+
+  <h2>Maps</h2>
+  <p>
+    The <strong>Maps</strong> section draws its map from a map service:
+    OpenStreetMap unless you choose another, such as CARTO, Esri,
+    OpenTopoMap or CyclOSM, in the map settings. As with any online map,
+    that service sees your network address and which part of the world is
+    being shown, which is where your photos were taken. It is not sent your
+    photos, their names or anything else about them. What a map service
+    does with its requests is covered by its own privacy policy.
+  </p>
+
+  <h2>Places</h2>
+  <p>
+    Sorting by location names the city or region each photo was taken in
+    from a list bundled with the app, from
+    <a href="https://www.geonames.org/">GeoNames</a>, so where your photos
+    were taken is never sent anywhere to name it.
+  </p>
+  <p>
+    If you type a place into a photo's <strong>Get Info</strong> and look it
+    up, that text, and the app's name, is sent to OpenStreetMap's
+    <a href="https://nominatim.org/">Nominatim</a> to find it, and nothing
+    else. Coordinates you type are used as they are, without asking. That
+    code is
+    <a href="https://github.com/gjwgit/photopod/blob/dev/lib/services/geocoder.dart"><code>lib/services/geocoder.dart</code></a>.
+  </p>
+
+  <h2>Checking for a new version</h2>
+  <p>
+    When it starts, PhotoPod fetches its public change log,
+    <a href="https://github.com/gjwgit/photopod/blob/dev/CHANGELOG.md"><code>CHANGELOG.md</code></a>,
+    from GitHub, to show its version and whether a newer one is out. It is
+    a plain download of a public file, and PhotoPod sends nothing with it.
+  </p>
+
+  <h2>Before you log in, and on the web</h2>
+  <p>
+    Before you log in, PhotoPod shows a sample album that is bundled with
+    the app. Nothing of yours is involved.
+  </p>
+  <p>
+    <a href="https://photopod.solidcommunity.au">PhotoPod Web</a> is the
+    same app served to your browser. The web server delivers the app's
+    files, and like any web server sees the requests for them. The app
+    itself behaves exactly as described here.
+  </p>
+
+  <h2>Children</h2>
+  <p>
+    PhotoPod is suitable for all ages and collects no personal information
+    from anyone, including children.
+  </p>
+
+  <h2>Changes to this policy</h2>
+  <p>
+    If this policy changes, the revised version will be published at this
+    address with a new effective date. PhotoPod is free software and its
+    full history is public, so any change to what the app does is visible
+    in the repository.
+  </p>
+
+  <h2>Contact</h2>
+  <p>
+    Questions, or a correction to this page, are welcome at
+    <a href="https://github.com/gjwgit/photopod/issues">the PhotoPod issue
+    tracker</a>, or by email to
+    <a href="mailto:privacy@togaware.com">privacy@togaware.com</a>.
+  </p>
+
+  <footer>
+    PhotoPod is free software, licensed under the
+    <a href="https://opensource.org/license/gpl-3-0">GNU General Public
+    License v3</a>. Source at
+    <a href="https://github.com/gjwgit/photopod">github.com/gjwgit/photopod</a>.
+  </footer>
+
+</main>
+</body>
+</html>
