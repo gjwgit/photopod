@@ -48,17 +48,17 @@ void main() {
   final now = DateTime(2026, 10, 28, 9);
 
   group('groupByDay', () {
-    test('puts the latest day first and the latest item first in a day', () {
+    test('puts the latest day first and a day in time of day order', () {
       final groups = groupByDay([
         _file('old.jpg', DateTime(2025, 4, 5, 10)),
-        _file('morning.jpg', DateTime(2026, 4, 4, 8)),
         _file('evening.jpg', DateTime(2026, 4, 4, 20)),
+        _file('morning.jpg', DateTime(2026, 4, 4, 8)),
       ], now: now);
 
       expect(groups.map((g) => g.label), ['Sat, 4 April', 'Sat, 5 April 2025']);
       expect(groups.first.items.map((i) => i.name), [
-        'evening.jpg',
         'morning.jpg',
+        'evening.jpg',
       ]);
     });
 

@@ -75,9 +75,10 @@ class TimelineMemory {
 }
 
 /// Group [files] by the local day of their [MediaItem.date], which is when
-/// each was taken where that is known, newest day first and newest item
-/// first within each day. Anything without a date goes into one group at the
-/// end, so that nothing silently disappears from the Library.
+/// each was taken where that is known, newest day first and, within each day,
+/// by the time of day, so a day reads in the order it happened. Anything
+/// without a date goes into one group at the end, so that nothing silently
+/// disappears from the Library.
 
 List<TimelineGroup> groupByDay(Iterable<MediaItem> files, {DateTime? now}) {
   final byDay = <DateTime, List<MediaItem>>{};
@@ -94,8 +95,8 @@ List<TimelineGroup> groupByDay(Iterable<MediaItem> files, {DateTime? now}) {
     }
   }
 
-  int newestFirst(MediaItem a, MediaItem b) {
-    final result = b.date!.compareTo(a.date!);
+  int byTimeOfDay(MediaItem a, MediaItem b) {
+    final result = a.date!.compareTo(b.date!);
     return result != 0
         ? result
         : a.name.toLowerCase().compareTo(b.name.toLowerCase());
@@ -109,7 +110,7 @@ List<TimelineGroup> groupByDay(Iterable<MediaItem> files, {DateTime? now}) {
       TimelineGroup(
         label: formatDayHeading(day, now: now),
         day: day,
-        items: byDay[day]!..sort(newestFirst),
+        items: byDay[day]!..sort(byTimeOfDay),
       ),
     if (undated.isNotEmpty)
       TimelineGroup(label: 'Date unknown', items: undated),
