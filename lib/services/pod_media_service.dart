@@ -41,6 +41,7 @@ import 'package:photopod/services/media_envelope.dart';
 import 'package:photopod/services/media_integrity.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/media_store.dart';
+import 'package:photopod/services/pod_write.dart';
 import 'package:photopod/services/shared_names.dart';
 
 /// Raised when the Solid server refuses or fails a request. The message is
@@ -311,8 +312,11 @@ class PodMediaService {
   /// is shared with can still read it. The caller must have secured the
   /// security key first, with SolidUI's `getKeyFromUserIfRequired`.
   ///
-  /// A server that loses the connection part way through may keep what
-  /// arrived, so the end of the stored file is looked at afterwards. A file
+  /// A write the connection or the server lets down is tried again, as
+  /// [writePodRetrying] describes, and one that still fails removes what
+  /// arrived of a new file. A server that loses the connection part way
+  /// through may also keep what arrived and report success, so the end of
+  /// the stored file is looked at afterwards. A file
   /// that stops short is written once more, and if it still stops short the
   /// write fails: a new file is removed, so no broken copy is left, while
   /// one being replaced is left as it is.
@@ -326,28 +330,49 @@ class PodMediaService {
     final content = encodeMedia(name, bytes);
     final url = await getFileUrl(path);
     for (var attempt = 1; ; attempt++) {
-      await writePod(
-        path,
-        content,
-        overwrite: overwrite || attempt > 1,
-        pathType: PathType.relativeToPod,
-      );
+      try {
+        await writePodRetrying(
+          path,
+          content,
+          overwrite: overwrite || attempt > 1,
+        );
+      } on Object catch (e) {
+        if (!isTransientWriteError(e)) rethrow;
+
+        // Every attempt was cut short or turned away. Whatever arrived of a
+        // new file is removed, as for one stored incomplete below, and the
+        // user is told in words they can act on rather than in solidpod's.
+
+        debugPrint('PhotoPod: could not store $url: $e');
+        if (!overwrite) await _removeIncomplete(url);
+        throw PodMediaException(
+          'The server did not accept "$name" after $writeAttempts attempts. '
+          'This can happen when the connection drops part way through a '
+          'large upload, as it may over a mobile network. Please try again, '
+          'ideally over Wi-Fi.\n\nDetails: $e',
+        );
+      }
       if (await _storedWhole(url)) return;
       debugPrint('PhotoPod: $url was stored incomplete (attempt $attempt).');
       if (attempt >= 2) break;
     }
-    if (!overwrite) {
-      try {
-        await deleteFile(fileUrl: url);
-      } on Object catch (e) {
-        debugPrint('PhotoPod: could not remove the incomplete $url: $e');
-      }
-    }
+    if (!overwrite) await _removeIncomplete(url);
     throw PodMediaException(
       'The server kept only part of "$name", so it was not added. Please '
       'try again; if it keeps happening, the server may limit how large a '
       'file it will take.',
     );
+  }
+
+  // Remove what arrived of a new file at [url] that could not be stored
+  // whole, so that no broken copy is left in the album.
+
+  static Future<void> _removeIncomplete(String url) async {
+    try {
+      if (await fileExists(url)) await deleteFile(fileUrl: url);
+    } on Object catch (e) {
+      debugPrint('PhotoPod: could not remove the incomplete $url: $e');
+    }
   }
 
   // Whether the file at [url] arrived whole. A server that cannot say

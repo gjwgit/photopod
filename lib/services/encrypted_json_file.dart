@@ -34,12 +34,12 @@ import 'package:solidpod/solidpod.dart'
         deleteResource,
         getDataDirPath,
         getFileUrl,
-        readPod,
-        writePod;
+        readPod;
 
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/services/pod_write.dart';
 
 /// A JSON file of PhotoPod's own, such as the favourites, held encrypted in
 /// the PhotoPod data folder.
@@ -129,12 +129,11 @@ class EncryptedJsonFile {
   Future<void> write(String json) async {
     if (!await KeyManager.hasSecurityKey()) throw SecurityKeyNeeded(fileName);
     await PodKeys.prime();
-    await writePod(
+    await writePodRetrying(
       await path(),
       json,
       overwrite: true,
       createAcl: createAcl,
-      pathType: PathType.relativeToPod,
     );
     await _dropLegacy();
   }

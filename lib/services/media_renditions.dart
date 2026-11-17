@@ -36,6 +36,7 @@ import 'package:photopod/models/photo_metadata.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_names.dart';
 import 'package:photopod/services/pod_media_service.dart';
+import 'package:photopod/services/pod_write.dart';
 
 /// The folder, at the top of the album, that holds every rendition.
 ///
@@ -442,10 +443,9 @@ class MediaRenditions {
     // No access control list of its own: the rendition inherits the album's,
     // which spares a request per photo, and the encryption keeps it private.
 
-    await writePod(
+    await writePodRetrying(
       path,
       content,
-      pathType: PathType.relativeToPod,
       createAcl: false,
       overwrite: true,
       inheritKeyFrom: folder,
