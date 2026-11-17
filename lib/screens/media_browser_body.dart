@@ -332,9 +332,6 @@ extension MediaBrowserBody on MediaBrowserState {
     LibrarySection.favourites =>
       'Nothing carries a heart yet. Select a photo or a video anywhere in '
           'your album and tap the heart to bring it here.',
-    LibrarySection.videos =>
-      'There are no videos anywhere in your album yet. Use Add in the '
-          'Library to put some in.',
     LibrarySection.people => 'Nobody to show.',
     LibrarySection.tags => 'No tags to show.',
     LibrarySection.maps => 'Nothing to map.',

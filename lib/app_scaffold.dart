@@ -137,9 +137,9 @@ class _AppScaffoldState extends State<AppScaffold> {
 
             **Albums**
 
-            Tap here for your albums, Favourites first. Open an album to
-            scroll through its photos and videos, and rename or delete it from
-            its title bar.
+            Tap here for your albums, A to Z, then those shared with you.
+            Open an album to scroll through its photos and videos, and rename
+            or delete it from its title bar.
 
             ''',
           child: MediaBrowser(
@@ -179,22 +179,6 @@ class _AppScaffoldState extends State<AppScaffold> {
 
             ''',
           child: TagsView(key: ValueKey(LibrarySection.tags)),
-        ),
-        SolidMenuItem(
-          icon: Icons.movie_outlined,
-          title: 'Videos',
-          tooltip: '''
-
-            **Videos**
-
-            Tap here for every video in your album, wherever it is filed.
-            MP4 and MOV files are shown.
-
-            ''',
-          child: MediaBrowser(
-            key: ValueKey(LibrarySection.videos),
-            section: LibrarySection.videos,
-          ),
         ),
         SolidMenuItem(
           icon: Icons.map_outlined,

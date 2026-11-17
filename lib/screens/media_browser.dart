@@ -354,8 +354,6 @@ class MediaBrowserState extends State<MediaBrowser> {
             .items
             .where((item) => paths.contains(item.path))
             .toList();
-      case LibrarySection.videos:
-        return context.read<MediaIndex>().videos;
       case LibrarySection.people:
       case LibrarySection.tags:
       case LibrarySection.maps:

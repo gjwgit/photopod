@@ -7,7 +7,7 @@ that any other Solid application can read.
 
 ## Sections
 
-The navigation rail down the left hand side offers four ways to look at
+The navigation rail down the left hand side offers six ways to look at
 the same album.
 
 - **Library** — every photo and video in the folder you are looking at,
@@ -16,7 +16,12 @@ the same album.
   adds, copies, moves or renames anything.
 - **Favourites** — everything you have put a heart on, gathered from
   every folder in the album.
-- **Videos** — every video in the album, wherever it is filed.
+- **Albums** — the albums you have made and those shared with you, each
+  opening out into a row of its photos and videos.
+- **People** — your photos by who is in them, found by the PhotoPod
+  Analyser.
+- **Tags** — your photos grouped by what they show, such as beaches,
+  mountains or dogs, worked out by the PhotoPod Analyser.
 - **Maps** — the photos that carry GPS coordinates, shown where they
   were taken, on an [OpenStreetMap](https://www.openstreetmap.org) map.
 
@@ -40,10 +45,12 @@ the same album.
   so on. A heart, and a place in an album, follow a photo through a
   rename.
 - Gather photos and videos into albums with **Add to album**, whose
-  menu ends in **Create new album...**. The **Albums** section lists every album,
-  Favourites first, as a row you open to scroll sideways through its
-  photos; each album can be renamed or deleted from its title bar.
-  Favourites is a system album and can be neither.
+  menu ends in **Create new album...**. The **Albums** section lists your
+  albums, A to Z, then those shared with you, each as a row you open to
+  scroll sideways through its photos; each album can be renamed or deleted
+  from its title bar. Favourites has a section of its own. It is offered
+  in **Add to album** too, as a system album that can be neither renamed
+  nor deleted.
 - Share any file or folder with other WebIDs using Solid's own access
   control, including the permissions each recipient is granted.
 - Files are encrypted at rest with your Solid security key.
@@ -121,7 +128,7 @@ That decode is the same one that produces the grid thumbnail, and both
 results are cached together, so a photo already looked at in the Library
 costs nothing to describe or to place on the map, and vice versa.
 
-The Favourites, Videos and Maps sections are views over the whole album
+The Favourites and Maps sections are views over the whole album
 rather than over one folder, so they walk the folders once and share the
 result. The walk stops after 400 folders or 12 levels, and says so when
 it has.
@@ -142,8 +149,8 @@ sample album bundled in `assets/demo/`:
   placed on the map. The faces
   are found and grouped on the device, exactly as for a real album; each
   group is then named after whoever is in most of its photos.
-- **Videos** — a short clip of the Birch Building at ANU, placed on the
-  map too.
+- **A video** — a short clip of the Birch Building at ANU, in the
+  Library and placed on the map too.
 - **Favourites** and **Albums** — a few hearts and two albums to start
   with. Changes to them last until the app is closed.
 

@@ -145,10 +145,7 @@ extension MediaBrowserHeader on MediaBrowserState {
     String count(int n, String noun) =>
         '${formatCount(n)} $noun${n == 1 ? '' : 's'}';
     if (photos == 0 && videos == 0) {
-      return count(
-        0,
-        widget.section == LibrarySection.videos ? 'video' : 'photo',
-      );
+      return count(0, 'photo');
     }
     return [
       if (photos > 0) count(photos, 'photo'),

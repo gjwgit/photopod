@@ -25,13 +25,11 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:photopod/constants/media.dart';
-
-/// The seven ways PhotoPod offers to look at an album, one per entry in the
+/// The six ways PhotoPod offers to look at an album, one per entry in the
 /// navigation rail down the left hand side.
 ///
 /// Every section is a view over the whole album at once, read from the
-/// album index: everything, two filters, the albums, the people in the
+/// album index: everything, the favourites, the albums, the people in the
 /// photos, the tags on them and a map.
 
 enum LibrarySection {
@@ -45,8 +43,9 @@ enum LibrarySection {
 
   favourites('Favourites', Icons.favorite_outline),
 
-  /// Every album the user has made, with Favourites first, each one opening
-  /// out into a row of its photos and videos.
+  /// Every album the user has made, A to Z, then those shared with the user,
+  /// each one opening out into a row of its photos and videos. Favourites
+  /// has its own section and is not listed here.
 
   albums('Albums', Icons.photo_album_outlined),
 
@@ -59,10 +58,6 @@ enum LibrarySection {
   /// the photos that carry it, worked out by the PhotoPod Analyser.
 
   tags('Tags', Icons.sell_outlined),
-
-  /// Every video in the album, whichever folder it is filed under.
-
-  videos('Videos', Icons.movie_outlined),
 
   /// The photos that carry GPS coordinates, shown where they were taken.
 
@@ -82,16 +77,9 @@ enum LibrarySection {
 
   bool get acceptsUploads => this == LibrarySection.library;
 
-  /// Whether this section is one of the two tiled lists of files.
+  /// Whether this section is the tiled list of files.
 
-  bool get isFlatList =>
-      this == LibrarySection.favourites || this == LibrarySection.videos;
-
-  /// The kinds of media this section puts on screen.
-
-  Set<MediaKind> get kinds => this == LibrarySection.videos
-      ? const {MediaKind.video}
-      : const {MediaKind.photo, MediaKind.video};
+  bool get isFlatList => this == LibrarySection.favourites;
 
   /// The plural noun for what this section holds, used in messages.
 
@@ -101,7 +89,6 @@ enum LibrarySection {
     LibrarySection.albums => 'albums',
     LibrarySection.people => 'people',
     LibrarySection.tags => 'tags',
-    LibrarySection.videos => 'videos',
     LibrarySection.maps => 'places',
   };
 }

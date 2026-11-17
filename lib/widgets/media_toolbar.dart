@@ -311,7 +311,7 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
-          if (!hasShared && section != LibrarySection.videos)
+          if (!hasShared)
             _button(
               icon: Icons.face_outlined,
               label: 'Identify People',
@@ -328,7 +328,7 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
             ),
-          if (!hasShared && section != LibrarySection.videos)
+          if (!hasShared)
             _button(
               icon: Icons.sell_outlined,
               label: 'Tag Photos',
