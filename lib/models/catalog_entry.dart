@@ -323,6 +323,13 @@ class CatalogEntry {
 
   final List<PhotoFace> faces;
 
+  /// The SHA-256 digest of the original file, as lower-case hexadecimal,
+  /// which is how a photo added a second time is recognised as a duplicate.
+  /// Null for an item added before digests were kept, until one is worked
+  /// out for it; see [contentHashOf].
+
+  final String? hash;
+
   const CatalogEntry(
     this.path, {
     this.name,
@@ -332,6 +339,7 @@ class CatalogEntry {
     this.metadata,
     this.tags = const [],
     this.faces = const [],
+    this.hash,
   });
 
   /// The same entry with the given fields replaced.
@@ -343,6 +351,7 @@ class CatalogEntry {
     PhotoMetadata? metadata,
     List<PhotoTag>? tags,
     List<PhotoFace>? faces,
+    String? hash,
   }) => CatalogEntry(
     path ?? this.path,
     name: name ?? this.name,
@@ -352,6 +361,7 @@ class CatalogEntry {
     metadata: metadata ?? this.metadata,
     tags: tags ?? this.tags,
     faces: faces ?? this.faces,
+    hash: hash ?? this.hash,
   );
 
   /// The same entry with [title] in place of its title, or none.
@@ -365,6 +375,7 @@ class CatalogEntry {
     metadata: metadata,
     tags: tags,
     faces: faces,
+    hash: hash,
   );
 
   /// The same entry with [place] in place of its place, or none.
@@ -378,6 +389,7 @@ class CatalogEntry {
     metadata: metadata,
     tags: tags,
     faces: faces,
+    hash: hash,
   );
 
   /// Where the item was taken, as latitude and longitude: the place the user
@@ -399,6 +411,7 @@ class CatalogEntry {
     'exif': ?metadata?.toJson(),
     if (tags.isNotEmpty) 'tags': [for (final tag in tags) tag.toJson()],
     if (faces.isNotEmpty) 'faces': [for (final face in faces) face.toJson()],
+    'sha256': ?hash,
   };
 
   /// The entry [toJson] wrote, or null when [json] has no path. Anything else
@@ -414,6 +427,7 @@ class CatalogEntry {
     final exif = json['exif'];
     final tags = json['tags'];
     final faces = json['faces'];
+    final hash = json['sha256'];
     return CatalogEntry(
       path,
       name: name is String && name.isNotEmpty ? name : null,
@@ -431,6 +445,90 @@ class CatalogEntry {
         if (faces is List)
           for (final each in faces) ?PhotoFace.fromJson(each),
       ],
+      hash: hash is String && isContentHash(hash) ? hash : null,
     );
   }
+
+  /// The one entry that [kept] and [other], two entries for the same photo,
+  /// amount to once [other]'s copy of the photo is let go.
+  ///
+  /// Nothing [kept] says is lost; [other] only fills in what [kept] lacks.
+  /// The exceptions are where one side's word is plainly the better: a title
+  /// or place the user gave beats one a service suggested, and the date the
+  /// camera recorded beats the date a file happened to be changed on some
+  /// device. Tags and people are pooled, with no one listed twice.
+
+  static CatalogEntry merge(CatalogEntry kept, CatalogEntry other) =>
+      CatalogEntry(
+        kept.path,
+        name: kept.name ?? other.name,
+        title: _preferUsers(kept.title, other.title, (t) => t.isUsers),
+        place: _preferUsers(
+          kept.place,
+          other.place,
+          (p) => p.source == userSource,
+        ),
+        taken: _mergedTaken(kept, other),
+        metadata: PhotoMetadata.merged(kept.metadata, other.metadata),
+        tags: [
+          ...kept.tags,
+          for (final tag in other.tags)
+            if (!kept.tags.any(
+              (each) => each.label.toLowerCase() == tag.label.toLowerCase(),
+            ))
+              tag,
+        ],
+        faces: _mergedFaces(kept.faces, other.faces),
+        hash: kept.hash ?? other.hash,
+      );
+
+  // [kept], unless only [other] came from the user.
+
+  static T? _preferUsers<T>(T? kept, T? other, bool Function(T) isUsers) {
+    if (kept == null) return other;
+    if (other != null && !isUsers(kept) && isUsers(other)) return other;
+    return kept;
+  }
+
+  // The date the camera recorded, from whichever side has one, kept's
+  // first; failing that the earlier date, since a file can only have been
+  // changed after the photo was taken.
+
+  static String? _mergedTaken(CatalogEntry kept, CatalogEntry other) {
+    for (final entry in [kept, other]) {
+      final shutter = entry.metadata?.taken;
+      if (shutter != null) return entry.taken ?? encodeDate(shutter);
+    }
+    final a = kept.taken == null ? null : DateTime.tryParse(kept.taken!);
+    final b = other.taken == null ? null : DateTime.tryParse(other.taken!);
+    if (a == null) return b == null ? kept.taken : other.taken;
+    if (b == null) return kept.taken;
+    return b.isBefore(a) ? other.taken : kept.taken;
+  }
+
+  // [kept]'s faces and any of [other]'s that are not someone already there,
+  // judged as [withFoundFaces] judges it.
+
+  static List<PhotoFace> _mergedFaces(
+    List<PhotoFace> kept,
+    List<PhotoFace> other,
+  ) {
+    final merged = [...kept];
+    for (final face in other) {
+      final known = merged.any(
+        (each) =>
+            each.name.toLowerCase() == face.name.toLowerCase() ||
+            (each.box != null &&
+                face.box != null &&
+                boxOverlap(each.box!, face.box!) >= sameFaceOverlap),
+      );
+      if (!known) merged.add(face);
+    }
+    return merged;
+  }
 }
+
+/// Whether [text] is a SHA-256 digest as [CatalogEntry.hash] holds one: 64
+/// lower-case hexadecimal digits.
+
+bool isContentHash(String text) => RegExp(r'^[0-9a-f]{64}$').hasMatch(text);

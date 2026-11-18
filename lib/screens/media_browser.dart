@@ -40,6 +40,7 @@ import 'package:photopod/constants/app.dart';
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/album_name_dialog.dart';
 import 'package:photopod/dialogs/download_media.dart';
+import 'package:photopod/dialogs/duplicate_dialog.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/dialogs/preview_dialog.dart';
@@ -47,6 +48,7 @@ import 'package:photopod/dialogs/rename_dialog.dart';
 import 'package:photopod/dialogs/share_dialog.dart';
 import 'package:photopod/dialogs/view_options_dialog.dart';
 import 'package:photopod/models/albums.dart';
+import 'package:photopod/models/catalog_entry.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_filter.dart';
@@ -56,8 +58,10 @@ import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/analyser_section.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/media_catalog.dart';
+import 'package:photopod/services/media_duplicates.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/media_metadata_backfill.dart';
+import 'package:photopod/services/media_names.dart' show encodeDate;
 import 'package:photopod/services/media_renditions.dart';
 import 'package:photopod/services/media_store.dart';
 import 'package:photopod/services/people.dart';
@@ -88,6 +92,7 @@ part 'media_browser_delete.dart';
 part 'media_browser_drop.dart';
 part 'media_browser_header.dart';
 part 'media_browser_transfers.dart';
+part 'media_browser_upload.dart';
 
 /// The Library, Favourites, Albums or Videos section of the app.
 ///
