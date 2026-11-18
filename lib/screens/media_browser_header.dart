@@ -46,6 +46,7 @@ extension MediaBrowserHeader on MediaBrowserState {
       canRemoveFromAlbum: _inOwnAlbum && files.isNotEmpty,
       hasShared: _selectedItems.any((item) => item.isShared),
       multiSelect: _multiSelect,
+      shareRoutes: shareRoutesFor(files),
     );
 
     return LayoutBuilder(
