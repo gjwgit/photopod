@@ -45,8 +45,13 @@ import 'package:solidpod/solidpod.dart'
 const int writeAttempts = 3;
 
 /// How long to wait before writing again; the wait grows with each attempt.
+///
+/// The Community Solid Server locks a resource while writing it and lets the
+/// lock expire after six seconds. A write cut off part way may still hold
+/// that lock, and an attempt made before it lapses fails with "Lock expired"
+/// in turn, so the first wait outlasts the lock.
 
-const Duration writeRetryPause = Duration(seconds: 2);
+const Duration writeRetryPause = Duration(seconds: 7);
 
 /// Whether [error], raised by a write to the Pod, may well not happen again
 /// if the write is simply repeated.
