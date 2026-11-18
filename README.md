@@ -54,16 +54,17 @@ the same album.
 - **Pod Share** any file or folder with other WebIDs using Solid's own
   access control, including the permissions each recipient is granted.
   Nothing is copied: they see the items where they are, on your Pod.
-- **Share** a copy of the selected photos and videos, or of the one you
-  are previewing, with any other app, such as Signal, WhatsApp, Teams or email, through the device's own
-  share sheet. On the desktop, **Copy** puts the photo on the clipboard to
-  paste wherever you like; on Linux, which has no share sheet, Copy is the
-  way to share. Pod Share has its own icon, so that the familiar share icon
+- **Share** a copy of the selected photos and videos, or of the one
+  you are previewing, with any other app, such as Signal, WhatsApp,
+  Teamsor email, through the device's own share sheet. On the
+  desktop, **Copy** puts the photo on the clipboard to paste wherever
+  you like; on Linux, which has no share sheet, Copy is the way to
+  share. Pod Share has its own icon, so that the familiar share icon
   always means sending a copy.
 - The preview offers what the toolbar does for the photo it shows:
   Favourite, Identify People, Tag Photo, Pod Share, Share, Delete,
-  Download and Get Info. Deleting from the preview closes it first. On a
-  phone the less used of these fold into a menu.
+  Download and Get Info. Deleting from the preview closes it first.
+  On a phone the less used of these fold into a menu.
 - Files are encrypted at rest with your Solid security key.
 - Sort by file name or by date, in either direction, or by location: the
   city or region each photo was taken in, such as Canberra, Australia, with
