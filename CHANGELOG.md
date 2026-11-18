@@ -32,6 +32,7 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.3 AI Tools - Face and Tag
 
++ Detect duplicates and retry writes if required [1.3.7 20261118 tonypioneer]
 + Remove the Videos page, videos stay in the other sections [1.3.6 20261117 gjwgit]
 + Photos within a day in the order they were taken [1.3.5 20261117 gjwgit]
 + Privacy policy, Play feature graphic, About credits Togaware [1.3.4 20261117 gjwgit]
