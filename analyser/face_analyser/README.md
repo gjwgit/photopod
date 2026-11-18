@@ -14,12 +14,12 @@ looks at them and writes the results back into the user's Pod.
 - It never looks at a user's Pod on a timer. Sharing the folder is the request:
   the Analyser's server notifies the service the moment it happens (Solid
   Notifications), and the service reads that folder then, and only then.
-- People and Tags each share a folder of their own, the **face inbox** and the
-  **tag inbox**, each only when the user asks.
+- People and Tags each share a folder of their own, the **face inbox** and the **tag inbox**, each only when the user
+  asks.
 - Photos are decrypted only in this service's memory.
 - Finds and recognises faces with InsightFace's **buffalo_l** models (SCRFD-10GF
-  and ArcFace ResNet-50), the set Immich uses, and tags photos with Google's
-  **SigLIP** ViT-B/16, all run through ONNX Runtime. See
+  and ArcFace ResNet-50), the set Immich uses, and tags photos with Google's **SigLIP** ViT-B/16, all run through ONNX
+  Runtime. See
   [Models and licence](#models-and-licence).
 - Lives at `photopod/analyser/face_analyser`, laid out like
   `healthpod/analyser/bp_analyser`.
@@ -93,7 +93,11 @@ about the photo.
 A photo, inside its encryption:
 
 ```json
-{"format": "photopod-face-request", "version": 1, "image": "<base64 JPEG>"}
+{
+  "format": "photopod-face-request",
+  "version": 1,
+  "image": "<base64 JPEG>"
+}
 ```
 
 the 2048 px large rendition, with its EXIF, XMP and IPTC blocks taken out by
@@ -103,12 +107,27 @@ it says nothing of where or when it was taken.
 An answer, inside its encryption:
 
 ```json
-{"format": "photopod-face-result", "version": 1,
- "model": "buffalo_l:scrfd-10g+arcface-w600k-r50", "analysed": "2026-11-10T09:00:00.000+00:00",
- "width": 1054, "height": 1280,
- "faces": [{"box": [0.5403, 0.2819, 0.1801, 0.2101], "score": 0.935,
-            "embedding": "<base64 of 512 little-endian float32, unit length>",
-            "image": "<base64 96x96 JPEG>"}]}
+{
+  "format": "photopod-face-result",
+  "version": 1,
+  "model": "buffalo_l:scrfd-10g+arcface-w600k-r50",
+  "analysed": "2026-11-10T09:00:00.000+00:00",
+  "width": 1054,
+  "height": 1280,
+  "faces": [
+    {
+      "box": [
+        0.5403,
+        0.2819,
+        0.1801,
+        0.2101
+      ],
+      "score": 0.935,
+      "embedding": "<base64 of 512 little-endian float32, unit length>",
+      "image": "<base64 96x96 JPEG>"
+    }
+  ]
+}
 ```
 
 or `"failed": "<why>"` in place of the faces for a photo that could not be
@@ -120,11 +139,26 @@ In the tag inbox the photo's format is `photopod-tag-request`, and the
 answer:
 
 ```json
-{"format": "photopod-tag-result", "version": 1,
- "model": "siglip-b16-webli:tags-v1", "analysed": "2026-11-11T09:00:00.000+00:00",
- "width": 2048, "height": 1365,
- "tags": [{"tag": "Mountains", "category": "Nature", "score": 0.604},
-          {"tag": "Lake", "category": "Nature", "score": 0.209}]}
+{
+  "format": "photopod-tag-result",
+  "version": 1,
+  "model": "siglip-b16-webli:tags-v1",
+  "analysed": "2026-11-11T09:00:00.000+00:00",
+  "width": 2048,
+  "height": 1365,
+  "tags": [
+    {
+      "tag": "Mountains",
+      "category": "Nature",
+      "score": 0.604
+    },
+    {
+      "tag": "Lake",
+      "category": "Nature",
+      "score": 0.209
+    }
+  ]
+}
 ```
 
 best first, empty when no tag fits well enough. `model` must equal
@@ -143,8 +177,8 @@ with its own inbox (`lib/services/analyser_inbox.dart`) and file.
 - **Identify People** and **Tag Photos** (the selection toolbar, and each
   section's Unprocessed row): create the inbox, leave the selected photos in
   it, share it with the Analyser, file the answers as they come, and on
-  `done` revoke the share and remove the inbox
-  (`lib/services/analyser_section_scan.dart`). Nothing is shared at any other
+  `done` revoke the share and remove the inbox (`lib/services/analyser_section_scan.dart`). Nothing is shared at any
+  other
   time, and nothing is sent unasked: adding photos sends nothing.
 - **Entering the Pod**: the user's own `faces.json.enc.ttl` and
   `tags.json.enc.ttl` are read as soon as the security key is entered. They
@@ -374,13 +408,13 @@ sudo systemd-run --pipe --wait -p User=photopod \
     /opt/photopod/face_analyser/run.sh check
 ```
 
-| `check` says | Cause |
-| --- | --- |
-| `invalid_client` | the client id or secret is wrong (step 3) |
-| `enc-keys.ttl` does not exist | not initialised with PhotoPod (step 2) |
-| the security key does not unlock the Pod | not the key chosen in step 2 |
-| no WebSocketChannel2023 | the server's notifications are off |
-| a connection timeout | the host cannot reach the Solid server |
+| `check` says                             | Cause                                     |
+|------------------------------------------|-------------------------------------------|
+| `invalid_client`                         | the client id or secret is wrong (step 3) |
+| `enc-keys.ttl` does not exist            | not initialised with PhotoPod (step 2)    |
+| the security key does not unlock the Pod | not the key chosen in step 2              |
+| no WebSocketChannel2023                  | the server's notifications are off        |
+| a connection timeout                     | the host cannot reach the Solid server    |
 
 ### 8. Start it
 
@@ -399,8 +433,8 @@ journalctl -u photopod-face-analyser -f --since now
 ### 9. Try it from PhotoPod
 
 Build and release PhotoPod with the WebID in `assets/config/analyser.json`.
-Log in as an ordinary user, not the Analyser, select a few photos and tap
-**Identify People**, then **Tag Photos**. The journal shows a line for each:
+Log in as an ordinary user, not the Analyser, select a few photos and tap **Identify People**, then **Tag Photos**. The
+journal shows a line for each:
 
 ```text
 pods.dev.solidcommunity.au-alice faces: 3 analysed, 0 failed
@@ -495,8 +529,7 @@ needs.
 `buffalo_l.zip` once (275 MB), checks its SHA-256, and keeps the two models
 used, each checked again, in `var/models`:
 
-- `det_10g.onnx`: **SCRFD-10GF**, which finds each face and five landmarks
-  (eyes, nose tip, corners of the mouth);
+- `det_10g.onnx`: **SCRFD-10GF**, which finds each face and five landmarks (eyes, nose tip, corners of the mouth);
 - `w600k_r50.onnx`: **ArcFace ResNet-50** trained on WebFace600K, which
   describes each face, aligned by those landmarks to 112 x 112, as 512
   numbers.
@@ -507,8 +540,8 @@ install.
 
 On PhotoPod's sample photos it finds every portrait (YuNet, used before,
 missed one) and nothing in the landscapes. The same person scores 0.64 to
-0.84 and strangers at most 0.07; PhotoPod files faces together at 0.40
-(`faceMatchThreshold` in `lib/models/face_book.dart`).
+0.84 and strangers at most 0.07; PhotoPod files faces together at 0.40 (`faceMatchThreshold` in
+`lib/models/face_book.dart`).
 
 **Licence.** InsightFace's code is MIT, but its pretrained models are released
 "for non-commercial research purposes only"
@@ -570,16 +603,15 @@ commercial use.
 ./run.sh test
 ```
 
-- `tests/test_pipeline.py`: requests answered against an in-memory Pod
-  (photo in, answer written into the user's inbox in solidpod's form and
+- `tests/test_pipeline.py`: requests answered against an in-memory Pod (photo in, answer written into the user's inbox
+  in solidpod's form and
   opened with the user's folder key, photo removed, `done` written,
   unreadable photos answered, a photo the key cannot open left alone, each
   request answered once, a Pod that has not asked never read, a closed inbox
   passed over, answering on each notification, the shared keys opened once).
   The WebSocket itself is not exercised; `./run.sh check` and the journal
   show it working against the server.
-- `tests/test_engine.py`: SCRFD and ArcFace on PhotoPod's sample photos
-  (needs the models; skipped without them).
+- `tests/test_engine.py`: SCRFD and ArcFace on PhotoPod's sample photos (needs the models; skipped without them).
 - `tests/test_tagger.py`: SigLIP on the sample photos, and the shipped
   descriptions against the vocabulary.
 - `tests/test_crypto.py`: solidpod compatibility vectors.
