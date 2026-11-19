@@ -23,6 +23,8 @@
 
 library;
 
+import 'package:flutter/material.dart' show IconData, Icons;
+
 import 'package:solidui/solidui.dart' show SolidInviteOthersConfig;
 
 /// Application title displayed as the window title.
@@ -77,3 +79,13 @@ and videos privately in your own Pod and share them with other Solid users.
 /// title. Narrower, the toolbar goes on a line of its own beneath.
 
 const double wideHeaderWidth = 860;
+
+/// The icon for sharing on the Pod: giving other Solid users access, by
+/// WebID, to items or albums that stay where they are.
+///
+/// It is deliberately not the familiar share icon. That one belongs to the
+/// preview's Share button, which hands a copy of a photo to another
+/// application through the platform's own share sheet, and on Android in
+/// particular it would be taken to mean just that.
+
+const IconData podShareIcon = Icons.folder_shared_outlined;

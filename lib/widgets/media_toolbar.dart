@@ -27,8 +27,10 @@ import 'package:flutter/material.dart';
 
 import 'package:markdown_tooltip/markdown_tooltip.dart';
 
+import 'package:photopod/constants/app.dart' show podShareIcon;
 import 'package:photopod/models/albums.dart' show favouritesAlbumName;
 import 'package:photopod/models/library_section.dart';
+import 'package:photopod/models/share_route.dart';
 import 'package:photopod/models/view_prefs.dart';
 
 part 'media_toolbar_buttons.dart';
@@ -53,9 +55,15 @@ class MediaActions {
 
   final VoidCallback onRename;
 
-  /// Grant others access to the selected items.
+  /// Grant other Solid users access to the selected items on the Pod.
 
   final VoidCallback onShare;
+
+  /// Send a copy of the selected files to another application by the route
+  /// chosen. The rectangle is the button's, in global coordinates, for the
+  /// popover the iPad and macOS hang their share sheet from.
+
+  final void Function(ShareRoute route, Rect? origin) onShareCopy;
 
   /// Change the layout, the tile size and the page size.
 
@@ -115,6 +123,7 @@ class MediaActions {
     required this.onDuplicate,
     required this.onRename,
     required this.onShare,
+    required this.onShareCopy,
     required this.onView,
     required this.onPreview,
     required this.onGetInfo,
@@ -162,6 +171,7 @@ class MediaToolbar extends StatelessWidget {
     this.canRemoveFromAlbum = false,
     this.hasShared = false,
     this.multiSelect = false,
+    this.shareRoutes = const [],
   });
 
   /// Which section of the app this toolbar sits in.
@@ -215,6 +225,11 @@ class MediaToolbar extends StatelessWidget {
   /// one item in place of whatever was selected before.
 
   final bool multiSelect;
+
+  /// How a copy of the selected files can be sent to another application on
+  /// this platform; see [shareRoutesFor]. With none there is no Share button.
+
+  final List<ShareRoute> shareRoutes;
 
   @override
   Widget build(BuildContext context) {
@@ -349,20 +364,28 @@ class MediaToolbar extends StatelessWidget {
         if (canChange) ...[
           if (!mixed)
             _button(
-              icon: Icons.share_outlined,
-              label: 'Share',
+              icon: podShareIcon,
+              label: 'Pod Share',
               onPressed: actions.onShare,
               tooltip: '''
 
-          **Share**
+          **Pod Share**
 
-          Give other Solid users access to the selected items, by WebID and
-          with the permissions you choose. To share a whole album, use the
-          share button on the album itself.
+          Give other Solid users access to the selected items on your Pod, by
+          WebID and with the permissions you choose. Nothing is copied: they
+          see the items where they are. To share a whole album, use the Pod
+          Share button on the album itself. To send a copy to Signal,
+          WhatsApp or Teams instead, use Share.
 
           ''',
             ),
         ],
+        if (hasFiles && shareRoutes.isNotEmpty)
+          _ShareCopyButton(
+            routes: shareRoutes,
+            many: manyFiles,
+            onShare: actions.onShareCopy,
+          ),
         if (hasSelection)
           _button(
             icon: Icons.delete_outline,

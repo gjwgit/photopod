@@ -27,14 +27,15 @@ part of 'media_browser.dart';
 /// albums, the album index, People and Tags.
 
 extension MediaBrowserDelete on MediaBrowserState {
-  /// Remove the selected items, after checking that is really wanted.
+  /// Remove [items], the selected items unless told otherwise, after
+  /// checking that is really wanted.
   ///
-  /// The flat sections show items from every folder at once, so the selection
-  /// is grouped by the folder each item sits in and each group is deleted in
-  /// its own batch.
+  /// The flat sections show items from every folder at once, so the items
+  /// are grouped by the folder each sits in and each group is deleted in its
+  /// own batch.
 
-  Future<void> _delete(BuildContext context) async {
-    final items = _selectedItems;
+  Future<void> _delete(BuildContext context, [List<MediaItem>? chosen]) async {
+    final items = chosen ?? _selectedItems;
     if (items.isEmpty) return;
     if (await _needsPod(context, 'delete photos and videos')) return;
     if (!context.mounted) return;

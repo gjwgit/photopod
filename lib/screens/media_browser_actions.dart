@@ -34,24 +34,14 @@ extension MediaBrowserActions on MediaBrowserState {
     onDuplicate: () => _duplicate(context),
     onRename: () => _rename(context),
     onShare: () => _share(context),
+    onShareCopy: (route, origin) =>
+        shareCopies(context, _selectedFiles, route, origin: origin),
     onView: () => showViewOptionsDialog(context),
     onPreview: () => _previewFirst(context),
     onGetInfo: () => _getInfo(context),
     onDownload: () => downloadMedia(context, _selectedFiles),
-    onIdentifyPeople: () => _askAnalyser(
-      context,
-      context.read<People>(),
-      what: 'People are found',
-      doing: 'Identifying the people in',
-      shownIn: 'People, and in Get Info,',
-    ),
-    onTagPhotos: () => _askAnalyser(
-      context,
-      context.read<PhotoTags>(),
-      what: 'Tags are found',
-      doing: 'Tagging',
-      shownIn: 'Tags, and in Get Info,',
-    ),
+    onIdentifyPeople: () => _identifyPeople(context, _selectedFiles),
+    onTagPhotos: () => _tagPhotos(context, _selectedFiles),
     onToggleFavourite: () => _toggleFavourite(context, _selectedFiles),
     onAddToAlbum: (album) => _addToAlbum(context, album, _selectedFiles),
     onCreateAlbum: () => _createAlbum(context, _selectedFiles),
@@ -64,16 +54,56 @@ extension MediaBrowserActions on MediaBrowserState {
     },
   );
 
-  /// Share the selected items, then read the permission log again so that
-  /// what was just shared carries the two-people mark straight away.
+  /// What the preview offers to do to the photo or video it shows, which is
+  /// what the toolbar offers to do to a selection of one.
+  ///
+  /// The dialogues these open are pushed above the preview, so the preview
+  /// stays open behind them, except for Delete: the preview closes first,
+  /// since what it shows is about to go.
 
-  Future<void> _share(BuildContext context) async {
+  PreviewActions _previewActions(BuildContext context) => PreviewActions(
+    onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+    onIdentifyPeople: (item) => _identifyPeople(context, [item]),
+    onTagPhotos: (item) => _tagPhotos(context, [item]),
+    onPodShare: (item) => _share(context, [item]),
+    onDelete: (item) => _delete(context, [item]),
+  );
+
+  /// Share [items] on the Pod, the selected items unless told otherwise, then
+  /// read the permission log again so that what was just shared carries the
+  /// two-people mark straight away.
+
+  Future<void> _share(BuildContext context, [List<MediaItem>? items]) async {
     if (await _needsPod(context, 'share photos and videos')) return;
     if (!context.mounted) return;
     final shared = context.read<SharedWithMe>();
-    await showShareDialog(context, _selectedItems);
+    await showShareDialog(context, items ?? _selectedItems);
     await shared.load(force: true);
   }
+
+  /// Have the PhotoPod Analyser find the people in the photos among [items].
+
+  Future<void> _identifyPeople(BuildContext context, List<MediaItem> items) =>
+      _askAnalyser(
+        context,
+        context.read<People>(),
+        items,
+        what: 'People are found',
+        doing: 'Identifying the people in',
+        shownIn: 'People, and in Get Info,',
+      );
+
+  /// Have the PhotoPod Analyser tag the photos among [items].
+
+  Future<void> _tagPhotos(BuildContext context, List<MediaItem> items) =>
+      _askAnalyser(
+        context,
+        context.read<PhotoTags>(),
+        items,
+        what: 'Tags are found',
+        doing: 'Tagging',
+        shownIn: 'Tags, and in Get Info,',
+      );
 
   /// Handle a tap on [item], one of the items in [visible].
   ///
@@ -141,7 +171,12 @@ extension MediaBrowserActions on MediaBrowserState {
     List<MediaItem>? siblings,
   ]) async {
     if (item.isFolder || !mounted) return;
-    await showPreviewDialog(context, item, items: siblings ?? _sortedFiles);
+    await showPreviewDialog(
+      context,
+      item,
+      items: siblings ?? _sortedFiles,
+      actions: _previewActions(context),
+    );
   }
 
   /// Preview the first selected file, ignoring any selected folders.
@@ -149,7 +184,12 @@ extension MediaBrowserActions on MediaBrowserState {
   Future<void> _previewFirst(BuildContext context) async {
     final files = _selectedFiles;
     if (files.isEmpty) return;
-    await showPreviewDialog(context, files.first, items: _sortedFiles);
+    await showPreviewDialog(
+      context,
+      files.first,
+      items: _sortedFiles,
+      actions: _previewActions(context),
+    );
   }
 
   /// Describe the first selected file.
@@ -191,20 +231,21 @@ extension MediaBrowserActions on MediaBrowserState {
     );
   }
 
-  /// Have the PhotoPod Analyser look at the selected photos, and only
-  /// those, for [section]: the people in them, or their tags. What it finds
+  /// Have the PhotoPod Analyser look at the user's own photos among [items],
+  /// and only those, for [section]: the people in them, or their tags. What it finds
   /// comes back in the background, and shows in the section and in Get Info
   /// as it does.
 
   Future<void> _askAnalyser(
     BuildContext context,
-    AnalyserSection section, {
+    AnalyserSection section,
+    List<MediaItem> items, {
     required String what,
     required String doing,
     required String shownIn,
   }) async {
     final photos = [
-      for (final item in _selectedFiles)
+      for (final item in items)
         if (item.isPhoto && !item.isShared) item,
     ];
     if (photos.isEmpty) {
