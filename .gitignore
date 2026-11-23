@@ -453,3 +453,9 @@ pubspec.lock
 # with --dart-define-from-file. Never commit.
 
 dart_defines.json
+
+# 20261123 tonypioneer TeePod's client certificate and its private key, which
+# the native builds bundle to reach TeePod. This repository is public. See
+# assets/config/teepod/README.md.
+
+assets/config/teepod/*.pem

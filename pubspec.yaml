@@ -40,6 +40,12 @@ dependencies:
   # bare SizedBoxes.
   gap: ^3.0.1
 
+  # TeePod, the trusted image analyser the native builds use, is a gRPC
+  # service. See lib/services/teepod/; the messages are generated from
+  # support/teepod/classifier.proto.
+
+  grpc: ^5.2.0
+
   # Authenticated REST calls to the Solid server. The DPoP tokens themselves
   # come from solidpod; we issue the GET/PUT/DELETE requests ourselves so
   # photos and videos are stored as ordinary binary resources.
@@ -62,6 +68,16 @@ dependencies:
   # Graham's own drop-in Tooltip replacement with Markdown rendering and a
   # popup delay, used for every tooltip in the app.
   markdown_tooltip: ^0.0.10
+
+  # Checking the RS256 signature on TeePod's attestation token, with
+  # Google's published keys. See lib/services/teepod/attestation.dart.
+
+  pointycastle: ^4.0.0
+
+  # The messages TeePod speaks, as generated into
+  # lib/services/teepod/generated/.
+
+  protobuf: ^6.1.0
 
   # State management: the view preferences notifier is read/watched via
   # provider throughout the screens.
@@ -115,6 +131,17 @@ flutter:
     # Where the Analyser is: its WebID. See lib/constants/analyser.dart.
 
     - assets/config/analyser.json
+
+    # Where TeePod is, and the container image it must prove it runs. See
+    # lib/constants/teepod.dart.
+
+    - assets/config/teepod.json
+
+    # TeePod's client certificate and key, kept out of git. Never bundled
+    # with the web build, which cannot reach TeePod: see the README.md there.
+
+    - path: assets/config/teepod/
+      platforms: [android, ios, linux, macos, windows]
   uses-material-design: true
 
 # 20260830 gjw Define launcher icons for all platforms (except Linux)

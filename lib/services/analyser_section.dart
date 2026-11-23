@@ -30,12 +30,15 @@ import 'package:flutter/foundation.dart';
 import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 
 import 'package:photopod/constants/analyser.dart';
+import 'package:photopod/constants/teepod.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/analyser_inbox.dart';
 import 'package:photopod/services/media_renditions.dart';
+import 'package:photopod/services/teepod/teepod.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
 part 'analyser_section_scan.dart';
+part 'analyser_section_teepod.dart';
 
 /// A section of the album whose contents the Analyser works out: People,
 /// from the faces in the photos, and Tags, from what they show.
@@ -45,11 +48,18 @@ part 'analyser_section_scan.dart';
 /// of every photo already looked at.
 ///
 /// Photos are looked at only when the user asks ([analyse]), with Identify
-/// People or Tag Photos: those photos are left in the section's inbox, a
-/// folder of the user's Pod shared with the Analyser for just as long as it
-/// takes, and the Analyser writes what it found back into the same folder.
-/// Each answer is filed here and saved to the file before it is deleted.
-/// Opening the section sends nothing ([refresh]).
+/// People or Tag Photos, by one of two analysers running the same models:
+///
+/// - TeePod ([TeePod]), in a trusted execution environment, which PhotoPod
+///   sends the photos to directly once it has proved what it is. The native
+///   builds use it whenever they carry its client certificate.
+/// - The Pod Analyser ([Analyser]) otherwise, as on the web, which cannot
+///   reach TeePod: the photos are left in the section's inbox, a folder of
+///   the user's Pod shared with the Analyser for just as long as it takes,
+///   and the Analyser writes what it found back into the same folder.
+///
+/// Either way, each answer is filed here, in the same form, and saved to the
+/// file. Opening the section sends nothing ([refresh]).
 ///
 /// Deleting a photo deletes what was found in it from the file too
 /// ([forget]), and takes it out of the inbox if it is still waiting there.
@@ -143,6 +153,17 @@ abstract class AnalyserSection extends ChangeNotifier {
 
   @protected
   bool fileAnswer(String path, String content, {String? url});
+
+  /// What TeePod is asked to do for this section.
+
+  @protected
+  TeePodService get teePodService;
+
+  /// TeePod's [answer] for [picture], the picture it was sent, as the
+  /// content the Pod Analyser would have answered with, for [fileAnswer].
+
+  @protected
+  Future<String> teePodAnswer(TeePodAnswer answer, Uint8List picture);
 
   /// Whether the section holds something not yet saved, such as work a
   /// file from an earlier version still needs, which [refresh] saves.
@@ -326,7 +347,12 @@ abstract class AnalyserSection extends ChangeNotifier {
         await lookAtSamples(own);
         _queue.clear();
       } else {
-        await _runAnalyser();
+        final teePod = TeePod.isSupported ? await TeePodConfig.load() : null;
+        if (teePod != null) {
+          await _runTeePod(teePod);
+        } else {
+          await _runAnalyser();
+        }
       }
     } on Object catch (e) {
       _error = '$e';

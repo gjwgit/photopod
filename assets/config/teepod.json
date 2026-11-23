@@ -1,0 +1,8 @@
+{
+  "host": "130.211.206.165",
+  "port": 50051,
+  "tlsServerName": "classifier.confidential-space.internal",
+  "audience": "image-classifier-clients",
+  "expectedImageDigest": "sha256:457c3920e74e9329087a698f78fb5837bf0f5f3340008b513ca2482978cfa999",
+  "allowDebugImage": true
+}

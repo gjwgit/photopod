@@ -38,6 +38,8 @@ import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
 import 'package:photopod/services/media_catalog.dart';
 import 'package:photopod/services/tag_results.dart';
+import 'package:photopod/services/teepod/tag_answers.dart';
+import 'package:photopod/services/teepod/teepod_types.dart';
 
 /// The tags file, encrypted on the Pod like the rest of PhotoPod's
 /// bookkeeping: what a photo shows says as much as the photo.
@@ -266,6 +268,13 @@ class PhotoTags extends AnalyserSection {
     _photos.remove(path);
     _catalogued.remove(path);
   }
+
+  @override
+  TeePodService get teePodService => TeePodService.tags;
+
+  @override
+  Future<String> teePodAnswer(TeePodAnswer answer, Uint8List picture) async =>
+      tagAnswerFromTeePod(answer);
 
   @override
   bool fileAnswer(String path, String content, {String? url}) {
