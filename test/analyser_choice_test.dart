@@ -56,9 +56,7 @@ void main() {
     expect(choice.chosen, isNull);
   });
 
-  testWidgets('the dialogue says how private each analyser is', (
-    tester,
-  ) async {
+  testWidgets('the dialogue says how private each analyser is', (tester) async {
     // Tall enough for the whole dialogue, so that both options can be tapped.
 
     tester.view.physicalSize = const Size(1200, 1600);
