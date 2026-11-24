@@ -31,6 +31,7 @@ import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 
 import 'package:photopod/constants/analyser.dart';
 import 'package:photopod/constants/teepod.dart';
+import 'package:photopod/models/analyser_choice.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/analyser_inbox.dart';
 import 'package:photopod/services/media_renditions.dart';
@@ -48,13 +49,14 @@ part 'analyser_section_teepod.dart';
 /// of every photo already looked at.
 ///
 /// Photos are looked at only when the user asks ([analyse]), with Identify
-/// People or Tag Photos, by one of two analysers running the same models:
+/// People or Tag Photos, by whichever of two analysers running the same
+/// models the user has chosen ([AnalyserBackend]):
 ///
 /// - TeePod ([TeePod]), in a trusted execution environment, which PhotoPod
-///   sends the photos to directly once it has proved what it is. The native
-///   builds use it whenever they carry its client certificate.
-/// - The Pod Analyser ([Analyser]) otherwise, as on the web, which cannot
-///   reach TeePod: the photos are left in the section's inbox, a folder of
+///   sends the photos to directly once it has proved what it is. Only the
+///   native builds that carry its client certificate can reach it.
+/// - The Pod Analyser ([Analyser]) on the Solid Community server, which any
+///   build can use: the photos are left in the section's inbox, a folder of
 ///   the user's Pod shared with the Analyser for just as long as it takes,
 ///   and the Analyser writes what it found back into the same folder.
 ///
@@ -318,12 +320,20 @@ abstract class AnalyserSection extends ChangeNotifier {
     }
   }
 
-  /// Have the Analyser look at [photos], the user's own photos among them,
-  /// whether or not they have been looked at before. The inbox is shared
-  /// with the Analyser for the look and no longer, and photos chosen while a
-  /// look is under way join it.
+  /// Have [backend], the analyser the user chose, look at [photos], the
+  /// user's own photos among them, whether or not they have been looked at
+  /// before. For the Pod Analyser the inbox is shared for the look and no
+  /// longer. Photos chosen while a look is under way join it, with the
+  /// analyser it is using.
+  ///
+  /// When TeePod is chosen and cannot be reached, nothing is sent to the
+  /// Pod Analyser in its place: the user chose TeePod for its privacy, so
+  /// the failure is reported instead.
 
-  Future<void> analyse(Iterable<MediaItem> photos) async {
+  Future<void> analyse(
+    Iterable<MediaItem> photos, {
+    required AnalyserBackend backend,
+  }) async {
     final own = [
       for (final item in photos)
         if (item.isPhoto && !item.isShared) item,
@@ -347,11 +357,21 @@ abstract class AnalyserSection extends ChangeNotifier {
         await lookAtSamples(own);
         _queue.clear();
       } else {
-        final teePod = TeePod.isSupported ? await TeePodConfig.load() : null;
-        if (teePod != null) {
-          await _runTeePod(teePod);
-        } else {
-          await _runAnalyser();
+        switch (backend) {
+          case AnalyserBackend.teePod:
+            final teePod = TeePod.isSupported
+                ? await TeePodConfig.load()
+                : null;
+            if (teePod == null) {
+              _queue.clear();
+              throw StateError(
+                '${TeePodConfig.displayName} cannot be reached from this '
+                'version of PhotoPod. Choose another analyser to continue.',
+              );
+            }
+            await _runTeePod(teePod);
+          case AnalyserBackend.solidCommunity:
+            await _runAnalyser();
         }
       }
     } on Object catch (e) {

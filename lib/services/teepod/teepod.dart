@@ -25,8 +25,8 @@ library;
 
 // TeePod is reached over gRPC with a client certificate and a pinned server
 // certificate, which needs dart:io sockets. A browser can do neither, so the
-// web build gets a TeePod that is never available, and keeps using the Pod
-// Analyser.
+// web build gets a TeePod that is never available, and offers only the Solid
+// Community analyser. See support/teepod/WEB.md for what it would take.
 
 export 'package:photopod/services/teepod/teepod_types.dart';
 export 'package:photopod/services/teepod/teepod_stub.dart'

@@ -28,7 +28,6 @@ import 'package:flutter/material.dart';
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
-import 'package:photopod/constants/analyser.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/screens/analyser_section_view.dart';
@@ -74,7 +73,7 @@ class TagsView extends StatelessWidget {
         emptyTitle: 'No photos yet',
         emptyText:
             'Add photos in the Library, then select some and tap Tag Photos '
-            'to have the ${Analyser.displayName} say what they show.',
+            'to have the analyser you choose say what they show.',
         builder: (context, tags, content, refresh) =>
             _TagList(tags: tags, content: content, onPreviewClosed: refresh),
       );

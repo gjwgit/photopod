@@ -32,6 +32,7 @@ import 'package:solidui/solidui.dart';
 import 'package:photopod/app_scaffold.dart';
 import 'package:photopod/constants/app.dart';
 import 'package:photopod/models/albums.dart';
+import 'package:photopod/models/analyser_choice.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_filter.dart';
 import 'package:photopod/models/view_prefs.dart';
@@ -46,9 +47,10 @@ import 'package:photopod/services/tags.dart';
 /// [SolidLogin] skips its login screen and goes straight to the app
 /// scaffold, which shows the bundled sample album until the user logs in to
 /// their Pod on their chosen Solid server through the standard Solid-OIDC
-/// flow. The three stores are provided above the login screen so
+/// flow. The stores are provided above the login screen so
 /// that whichever section the user lands on finds them already in place: the
-/// display preferences, which are device-local; the favourites, which are
+/// display preferences and the analyser chosen, which are device-local; the
+/// favourites, which are
 /// read from the Pod once the scaffold appears; and the album index, which
 /// the flat sections and the map all share rather than walking the folders
 /// three times over.
@@ -62,6 +64,9 @@ class App extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<ViewPrefs>(
           create: (context) => ViewPrefs()..load(),
+        ),
+        ChangeNotifierProvider<AnalyserChoice>(
+          create: (context) => AnalyserChoice()..load(),
         ),
         ChangeNotifierProvider<Favourites>(create: (context) => Favourites()),
         ChangeNotifierProvider<Albums>(create: (context) => Albums()),

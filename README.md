@@ -166,13 +166,22 @@ samples with the user's own album.
 ## People and Tags: where photos are looked at
 
 Faces and tags are worked out only for the photos the user chooses, with
-**Identify People** or **Tag Photos**, by one of two analysers. Both run
-the same models (InsightFace buffalo_l for faces, SigLIP ViT-B/16 for
-tags), and their answers are filed the same way, so People and Tags do not
-care which one did the work.
+**Identify People** or **Tag Photos**, by whichever of two analysers the
+user chooses. Both run the same models (InsightFace buffalo_l for faces,
+SigLIP ViT-B/16 for tags), and their answers are filed the same way, so
+People and Tags do not care which one did the work.
 
-- **TeePod**, on the desktop and Android builds. TeePod is an image
-  analyser running in a trusted execution environment, a Google Cloud
+The first time photos are to be looked at, PhotoPod asks which analyser to
+use, and says how private each keeps the photos: TeePod gives **higher
+privacy**, the Solid Community analyser **limited privacy**. The choice is
+kept on the device (`lib/models/analyser_choice.dart`) and can be changed
+at any time with the shield in the People or Tags status line
+(`lib/dialogs/analyser_choice_dialog.dart`). When TeePod is chosen and
+cannot be reached, PhotoPod reports it rather than quietly sending the
+photos to the other analyser.
+
+- **TeePod** (higher privacy), on the desktop and Android builds. TeePod
+  is an image analyser running in a trusted execution environment, a Google Cloud
   Confidential Space virtual machine whose memory its host cannot read.
   PhotoPod connects to it directly, over mutual TLS, and before it sends a
   single photo it checks an attestation token signed by Google: that TeePod
@@ -182,10 +191,15 @@ care which one did the work.
   shared. See `lib/services/teepod/` and
   [`assets/config/teepod/README.md`](assets/config/teepod/README.md), which
   explains the client certificate the build needs.
-- **The Pod Analyser** (`analyser/face_analyser`), on the web, which cannot
-  reach TeePod, and in any build without TeePod's client certificate. The
-  photos are left in a folder of the user's Pod shared with the Analyser for
-  as long as it takes, and the Analyser writes its answers back there.
+- **The Pod Analyser** (`analyser/face_analyser`) on the Solid Community
+  server (limited privacy), in every build, and the only choice on the web,
+  which cannot reach TeePod (see
+  [`support/teepod/WEB.md`](support/teepod/WEB.md)), and in any build
+  without TeePod's client certificate. The photos are left, encrypted, in a
+  folder of the user's Pod shared with the Analyser for as long as it
+  takes, and the Analyser writes its answers back there. The Analyser runs
+  on an ordinary server, so whoever operates it could see the photos while
+  they are looked at.
 
 Either way, a photo is sent as its large rendition, without its EXIF block
 or anything else saying where and when it was taken.

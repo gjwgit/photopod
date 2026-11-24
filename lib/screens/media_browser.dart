@@ -39,6 +39,7 @@ import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 import 'package:photopod/constants/app.dart';
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/album_name_dialog.dart';
+import 'package:photopod/dialogs/analyser_choice_dialog.dart';
 import 'package:photopod/dialogs/download_media.dart';
 import 'package:photopod/dialogs/duplicate_dialog.dart';
 import 'package:photopod/dialogs/info_dialog.dart';

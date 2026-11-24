@@ -20,8 +20,10 @@ cp ../teepod/docs/client-certs/photopod-key.pem    assets/config/teepod/client-k
 ```
 
 Only the native builds bundle this folder (see `platforms:` in
-`pubspec.yaml`): a web build never carries the key, and keeps using the Pod
-Analyser instead. A build without the two files does the same.
+`pubspec.yaml`): a web build never carries the key, and offers only the
+Solid Community analyser (see `support/teepod/WEB.md`). A build without the
+two files does the same, and its analyser choice dialogue says why TeePod
+is not available.
 
 Bear in mind that every installed copy of PhotoPod carries the key, and
 anyone determined can take it out. It keeps casual clients away from TeePod;
