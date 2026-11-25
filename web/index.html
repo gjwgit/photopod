@@ -14,7 +14,14 @@
     This is a placeholder for base href that will be replaced by the value of
     the `--base-href` argument provided to `flutter build`.
   -->
-  <base href="/photopod/">
+  <!--
+    Keep the placeholder here so that `flutter run -d chrome` serves the app
+    from the site root, where the Solid login returns to /redirect.html (see
+    redirect_uris in client-profile.jsonld). The `%.install` target in
+    support/install.mk sets the deployment path only for the duration of
+    its own build, so the value it writes should never be committed.
+  -->
+  <base href="$FLUTTER_BASE_HREF">
 
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
