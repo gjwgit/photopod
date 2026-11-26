@@ -33,9 +33,36 @@ import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/services/media_envelope.dart' show MediaContent;
 import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/services/pod_media_service.dart';
 import 'package:photopod/utils/resource_name.dart' show safeFileName;
+
+/// Make sure the security key is to hand when any of [items] is encrypted,
+/// asking for it with [prompt] if need be. Returns false when the user did
+/// not give it, and nothing can be read.
+
+Future<bool> unlockToRead(
+  BuildContext context,
+  List<MediaItem> items,
+  String prompt,
+) async {
+  if (!items.any((item) => item.isEncrypted)) return true;
+  await getKeyFromUserIfRequired(context, Text(prompt));
+  if (!await KeyManager.hasSecurityKey()) return false;
+  await PodKeys.prime();
+  return true;
+}
+
+/// The name the original of [item] goes out under, as read into [media].
+///
+/// That is the name the user knows it by, never the random one it is stored
+/// under. A shared file carries its owner's name inside it, which may not
+/// have been learnt when the list was drawn, and it is made safe for this
+/// device's file system since it was written somewhere else.
+
+String knownNameOf(MediaItem item, MediaContent media) =>
+    item.isShared && media.name != null ? safeFileName(media.name!) : item.name;
 
 /// Download the original of each of [items], asking where to save each one.
 ///
@@ -49,13 +76,12 @@ Future<void> downloadMedia(BuildContext context, List<MediaItem> items) async {
   final files = items.where((item) => !item.isFolder).toList();
   if (files.isEmpty) return;
 
-  if (files.any((item) => item.isEncrypted)) {
-    await getKeyFromUserIfRequired(
-      context,
-      const Text('Please enter your security key to download your files'),
-    );
-    if (!await KeyManager.hasSecurityKey()) return;
-    await PodKeys.prime();
+  if (!await unlockToRead(
+    context,
+    files,
+    'Please enter your security key to download your files',
+  )) {
+    return;
   }
 
   for (final item in files) {
@@ -67,15 +93,7 @@ Future<void> downloadMedia(BuildContext context, List<MediaItem> items) async {
         () => PodMediaService.readMedia(item),
       );
 
-      // The file is saved under the name the user knows it by, never the
-      // random one it is stored under. A shared file carries its owner's
-      // name inside it, which may not have been learnt when the list was
-      // drawn, and it is made safe for this device's file system since it
-      // was written somewhere else.
-
-      final name = item.isShared && media.name != null
-          ? safeFileName(media.name!)
-          : item.name;
+      final name = knownNameOf(item, media);
       final saved = await FilePicker.saveFile(
         fileName: name,
         bytes: media.bytes,

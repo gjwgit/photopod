@@ -182,6 +182,102 @@ class _AddToAlbumButton extends StatelessWidget {
   );
 }
 
+/// Send a copy of the selected files to another application: Signal,
+/// WhatsApp, Teams, email, or anything that takes a paste.
+///
+/// It wears the platform's own share icon, so that it reads as the share
+/// button found in every other app; sharing on the Pod has an icon of its
+/// own. Where the platform offers more than one route, as the desktop does
+/// with its share sheet and its clipboard, the button opens a menu of them;
+/// where it offers one, as a phone does, it goes straight there.
+
+class _ShareCopyButton extends StatefulWidget {
+  const _ShareCopyButton({
+    required this.routes,
+    required this.many,
+    required this.onShare,
+  });
+
+  final List<ShareRoute> routes;
+  final bool many;
+  final void Function(ShareRoute route, Rect? origin) onShare;
+
+  @override
+  State<_ShareCopyButton> createState() => _ShareCopyButtonState();
+}
+
+class _ShareCopyButtonState extends State<_ShareCopyButton> {
+  // Marks the icon in the toolbar, which is where the share sheet's popover
+  // is hung from. A menu item cannot serve: the menu has closed, and its
+  // items are gone, by the time the item's onPressed is called.
+
+  final _anchor = GlobalKey();
+
+  List<ShareRoute> get routes => widget.routes;
+  bool get many => widget.many;
+
+  void _share(ShareRoute route) =>
+      widget.onShare(route, _originOf(_anchor.currentContext));
+
+  String get _tooltip =>
+      '''
+
+      **Share**
+
+      Send a copy of the selected ${many ? 'photos and videos' : 'item'} to
+      another app, such as Signal, WhatsApp, Teams or email.
+      ${routes.contains(ShareRoute.copy) ? 'Copy puts ${many ? 'them' : 'it'} on the clipboard, to paste wherever you like.' : ''}
+      Unlike Pod Share, the copy is out of your Pod and out of your hands.
+
+      ''';
+
+  @override
+  Widget build(BuildContext context) {
+    if (routes.length == 1) {
+      return KeyedSubtree(
+        key: _anchor,
+        child: MediaToolbar._button(
+          icon: Icons.adaptive.share,
+          label: 'Share',
+          onPressed: () => _share(routes.single),
+          tooltip: _tooltip,
+        ),
+      );
+    }
+
+    return MenuAnchor(
+      menuChildren: [
+        for (final route in routes)
+          MenuItemButton(
+            leadingIcon: Icon(shareRouteIcon(route)),
+            onPressed: () => _share(route),
+            child: Text(shareRouteLabel(route)),
+          ),
+      ],
+      builder: (context, controller, child) => MarkdownTooltip(
+        key: _anchor,
+        message: _tooltip,
+        child: _ToolbarIcon(
+          icon: Icons.adaptive.share,
+          label: 'Share',
+          onPressed: () =>
+              controller.isOpen ? controller.close() : controller.open(),
+        ),
+      ),
+    );
+  }
+}
+
+/// Where the widget of [context] is on screen, in global coordinates, or
+/// null when it is no longer on screen at all.
+
+Rect? _originOf(BuildContext? context) {
+  if (context == null || !context.mounted) return null;
+  final box = context.findRenderObject();
+  if (box is! RenderBox || !box.hasSize) return null;
+  return box.localToGlobal(Offset.zero) & box.size;
+}
+
 class _SortButton extends StatelessWidget {
   const _SortButton({
     required this.sortOption,
