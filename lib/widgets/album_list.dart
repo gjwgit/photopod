@@ -27,6 +27,7 @@ import 'package:flutter/material.dart';
 
 import 'package:markdown_tooltip/markdown_tooltip.dart';
 
+import 'package:photopod/constants/app.dart' show podShareIcon;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/widgets/media_grid.dart';
@@ -338,17 +339,17 @@ class _AlbumTile extends StatelessWidget {
         message:
             '''
 
-        **Share album**
+        **Pod Share album**
 
         Let other Solid users, or a group of them, see "${album.name}" and
-        the photos and videos in it.
+        the photos and videos in it, on your Pod.
 
         ''',
         child: Semantics(
-          label: 'Share album',
+          label: 'Pod Share album',
           button: true,
           child: IconButton(
-            icon: const Icon(Icons.share_outlined),
+            icon: const Icon(podShareIcon),
             onPressed: () => list.onShare(album.name),
           ),
         ),

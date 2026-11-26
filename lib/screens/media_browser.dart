@@ -47,6 +47,7 @@ import 'package:photopod/dialogs/message_dialog.dart';
 import 'package:photopod/dialogs/preview_dialog.dart';
 import 'package:photopod/dialogs/rename_dialog.dart';
 import 'package:photopod/dialogs/share_dialog.dart';
+import 'package:photopod/dialogs/share_media.dart';
 import 'package:photopod/dialogs/view_options_dialog.dart';
 import 'package:photopod/models/albums.dart';
 import 'package:photopod/models/catalog_entry.dart';

@@ -29,8 +29,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:markdown_tooltip/markdown_tooltip.dart';
 
+import 'package:photopod/constants/app.dart' show podShareIcon;
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_item.dart';
+import 'package:photopod/models/share_route.dart';
 import 'package:photopod/models/view_prefs.dart';
 import 'package:photopod/widgets/album_list.dart';
 import 'package:photopod/widgets/media_grid.dart';
@@ -61,12 +63,14 @@ MediaActions _actions({
   VoidCallback? onDuplicate,
   VoidCallback? onRename,
   VoidCallback? onRefresh,
+  void Function(ShareRoute, Rect?)? onShareCopy,
 }) => MediaActions(
   onAddFiles: () {},
   onDelete: onDelete ?? () {},
   onDuplicate: onDuplicate ?? () {},
   onRename: onRename ?? () {},
   onShare: () {},
+  onShareCopy: onShareCopy ?? (_, _) {},
   onView: () {},
   onPreview: () {},
   onGetInfo: onGetInfo ?? () {},
@@ -269,6 +273,7 @@ void main() {
       bool canRemoveFromAlbum = false,
       bool hasShared = false,
       bool multiSelect = false,
+      List<ShareRoute> shareRoutes = const [],
     }) => _wrap(
       MediaToolbar(
         section: section,
@@ -281,6 +286,7 @@ void main() {
         canRemoveFromAlbum: canRemoveFromAlbum,
         hasShared: hasShared,
         multiSelect: multiSelect,
+        shareRoutes: shareRoutes,
       ),
     );
 
@@ -359,6 +365,76 @@ void main() {
       expect(find.text('Rename'), findsNothing);
     });
 
+    testWidgets('offers Share beside Pod Share for a file', (tester) async {
+      final routes = <ShareRoute>[];
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.favourites,
+          selectionCount: 1,
+          fileCount: 1,
+          shareRoutes: const [ShareRoute.sheet],
+          actions: _actions(onShareCopy: (route, _) => routes.add(route)),
+        ),
+      );
+
+      final labels = rowLabels(tester);
+      for (final label in [
+        'Identify People',
+        'Tag Photos',
+        'Pod Share',
+        'Share',
+        'Delete',
+        'Add to Favourites',
+      ]) {
+        expect(labels, contains(label));
+      }
+      expect(labels.indexOf('Share'), labels.indexOf('Pod Share') + 1);
+
+      await tester.tap(find.byIcon(Icons.adaptive.share));
+      await tester.pump();
+      expect(routes, [ShareRoute.sheet]);
+    });
+
+    testWidgets('a Share menu item passes on where the button is', (
+      tester,
+    ) async {
+      final chosen = <(ShareRoute, Rect?)>[];
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.library,
+          selectionCount: 1,
+          fileCount: 1,
+          shareRoutes: const [ShareRoute.sheet, ShareRoute.copy],
+          actions: _actions(
+            onShareCopy: (route, origin) => chosen.add((route, origin)),
+          ),
+        ),
+      );
+
+      // The menu closes before the item's handler runs, so the place the
+      // share sheet hangs from must come from the toolbar icon, which is
+      // still there, and not from the menu item, which is not.
+
+      await tester.tap(find.byIcon(Icons.adaptive.share));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Share...'));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(chosen, hasLength(1));
+      expect(chosen.single.$1, ShareRoute.sheet);
+      expect(chosen.single.$2, isNotNull);
+    });
+
+    testWidgets('offers no Share where nothing can be shared as a copy', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        toolbar(section: LibrarySection.library, selectionCount: 1),
+      );
+      expect(rowLabels(tester), isNot(contains('Share')));
+    });
+
     testWidgets('a folder alone can be changed but not previewed', (
       tester,
     ) async {
@@ -368,7 +444,7 @@ void main() {
 
       expect(rowLabels(tester), [
         'Add photos and videos',
-        'Share',
+        'Pod Share',
         'Delete',
         'Select several',
         'Sort',
@@ -538,7 +614,7 @@ void main() {
         'Download',
         'Identify People',
         'Tag Photos',
-        'Share',
+        'Pod Share',
         'Delete',
         'Stop selecting several',
         'Sort',
@@ -562,7 +638,7 @@ void main() {
         ),
       );
 
-      expect(rowLabels(tester), isNot(contains('Share')));
+      expect(rowLabels(tester), isNot(contains('Pod Share')));
       expect(rowLabels(tester), contains('Delete'));
     });
 
@@ -586,7 +662,7 @@ void main() {
         'Download',
         'Identify People',
         'Tag Photos',
-        'Share',
+        'Pod Share',
         'Delete',
         'Remove from album',
         'Select several',
@@ -703,7 +779,7 @@ void main() {
 
       expect(find.byIcon(Icons.people), findsOneWidget);
       expect(find.text('0 items · shared by alice'), findsOneWidget);
-      expect(find.byIcon(Icons.share_outlined), findsNothing);
+      expect(find.byIcon(podShareIcon), findsNothing);
       expect(find.byIcon(Icons.edit_outlined), findsNothing);
 
       await tester.tap(find.byIcon(Icons.delete_outline));
@@ -726,7 +802,7 @@ void main() {
 
       expect(find.byIcon(Icons.people), findsOneWidget);
       expect(find.text('0 items · shared'), findsOneWidget);
-      expect(find.byIcon(Icons.share_outlined), findsOneWidget);
+      expect(find.byIcon(podShareIcon), findsOneWidget);
     });
 
     testWidgets('gives Favourites no edit or delete button', (tester) async {
@@ -761,7 +837,7 @@ void main() {
         ),
       );
 
-      final buttons = find.byIcon(Icons.share_outlined);
+      final buttons = find.byIcon(podShareIcon);
       expect(buttons, findsNWidgets(2));
       await tester.tap(buttons.first);
       await tester.tap(buttons.last);

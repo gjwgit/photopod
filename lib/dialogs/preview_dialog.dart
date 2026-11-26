@@ -33,9 +33,11 @@ import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
+import 'package:photopod/constants/app.dart' show podShareIcon;
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/download_media.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
+import 'package:photopod/dialogs/share_media.dart';
 import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/media_catalog.dart';
@@ -45,6 +47,7 @@ import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 import 'package:photopod/widgets/video_preview.dart';
 
+part 'preview_header.dart';
 part 'preview_route.dart';
 
 /// Preview [item] in a modal dialogue.
@@ -67,6 +70,7 @@ Future<void> showPreviewDialog(
   BuildContext context,
   MediaItem item, {
   List<MediaItem>? items,
+  PreviewActions? actions,
 }) {
   final playable = (items ?? const <MediaItem>[])
       .where((each) => each.kind != null)
@@ -98,6 +102,7 @@ Future<void> showPreviewDialog(
         items: playable,
         initialIndex: index,
         contentKey: contentKey,
+        actions: actions,
       ),
     ),
   );
@@ -108,6 +113,7 @@ class _PreviewDialog extends StatefulWidget {
     required this.items,
     required this.initialIndex,
     required this.contentKey,
+    this.actions,
   });
 
   /// The files the arrows step through, in display order.
@@ -121,6 +127,10 @@ class _PreviewDialog extends StatefulWidget {
   /// Marks the panel the opening transition grows.
 
   final GlobalKey contentKey;
+
+  /// What can be done to the file on show, beyond looking at it.
+
+  final PreviewActions? actions;
 
   @override
   State<_PreviewDialog> createState() => _PreviewDialogState();
@@ -250,7 +260,16 @@ class _PreviewDialogState extends State<_PreviewDialog> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                _buildHeader(context),
+                _PreviewHeader(
+                  item: _item,
+                  position: widget.items.length > 1
+                      ? '${_index + 1} of ${widget.items.length}'
+                      : null,
+                  actions: widget.actions,
+                  onChanged: () {
+                    if (mounted) setState(() {});
+                  },
+                ),
                 const Divider(height: 1),
                 Flexible(child: _buildNavigable(context)),
               ],
@@ -300,82 +319,6 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       onPressed: onPressed,
     ),
   );
-
-  Widget _buildHeader(BuildContext context) {
-    final favourites = context.watch<Favourites>();
-    final favourite = favourites.contains(_item);
-
-    // A photo with a title is headed by it, and its file name moves down
-    // among the details; one without is headed by its file name.
-
-    final title = MediaCatalog.titleOf(_item.path)?.text;
-    final details = [
-      if (title != null) _item.name,
-      if (widget.items.length > 1) '${_index + 1} of ${widget.items.length}',
-      if (_item.size != null) formatBytes(_item.size),
-      if (_item.modified != null) formatDateTime(_item.modified),
-    ].join('  ·  ');
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 8, 12),
-      child: Row(
-        children: [
-          Icon(
-            _item.isVideo ? Icons.movie : Icons.image,
-            color: Theme.of(context).colorScheme.primary,
-          ),
-          const Gap(12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title ?? _item.name,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                if (details.isNotEmpty)
-                  Text(
-                    details,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: Icon(
-              favourite ? Icons.favorite : Icons.favorite_border,
-              color: favourite ? const Color(0xFFE53935) : null,
-            ),
-            tooltip: favourite ? 'Remove from Favourites' : 'Add to Favourites',
-            onPressed: () => favourites.toggleAll([_item]),
-          ),
-          IconButton(
-            icon: const Icon(Icons.download_outlined),
-            tooltip: 'Download the original',
-            onPressed: () => downloadMedia(context, [_item]),
-          ),
-          IconButton(
-            icon: const Icon(Icons.info_outline),
-            tooltip: 'Get Info',
-
-            // The title may have been changed there, so the header is drawn
-            // again once it closes.
-            onPressed: () async {
-              await showInfoDialog(context, _item);
-              if (mounted) setState(() {});
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.close),
-            tooltip: 'Close',
-            onPressed: () => Navigator.of(context).pop(),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _buildBody() {
     if (_error != null) {

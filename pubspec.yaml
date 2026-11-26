@@ -62,6 +62,15 @@ dependencies:
   media_kit_video: ^2.0.1
   media_kit_libs_video: ^1.0.7
 
+  # Put a photo on the clipboard, from the preview's Share button on the
+  # desktop and the web, so that it can be pasted into Signal, WhatsApp,
+  # Teams or any other application. Flutter's own Clipboard holds only text.
+  pasteboard: ^0.6.1
+
+  # A temporary folder to hold a copy of a file placed on the clipboard as a
+  # file, where an image cannot be placed there directly.
+  path_provider: ^2.1.5
+
   # The latitude/longitude pair flutter_map speaks in.
   latlong2: ^0.9.1
 
@@ -82,6 +91,11 @@ dependencies:
   # State management: the view preferences notifier is read/watched via
   # provider throughout the screens.
   provider: ^6.1.5
+
+  # The platform's own share sheet, for sharing a photo or video from the
+  # preview to Signal, WhatsApp, Teams, email and the like. This is ordinary
+  # sharing of a copy, quite apart from sharing on the Pod by WebID.
+  share_plus: ^13.3.1
 
   # Device-local display preferences (ViewPrefs), never synced to the Pod.
   shared_preferences: ^2.3.0
