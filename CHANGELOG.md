@@ -32,6 +32,9 @@ Williams](https://togaware.com/Graham.Williams.html).
 
 ## 1.3 AI Tools - Face and Tag
 
++ Allow web login to pods [1.3.10 20261126 tonypioneer]
++ Support TEE Analyser demonstrator for AI models [1.3.9 20261126 tonypioneer]
++ Add option to share photos amongst other apps [1.3.8 20261126 tonypioneer]
 + Detect duplicates and retry writes if required [1.3.7 20261118 tonypioneer]
 + Remove the Videos page, videos stay in the other sections [1.3.6 20261117 gjwgit]
 + Photos within a day in the order they were taken [1.3.5 20261117 gjwgit]
