@@ -8,6 +8,13 @@ shares a folder holding those photos with the **Analyser Pod**
 (`https://pods.dev.solidcommunity.au/analyser/profile/card#me`), the service
 looks at them and writes the results back into the user's Pod.
 
+> PhotoPod's desktop and Android builds now send photos to **TeePod**, the
+> same models running in a trusted execution environment, whenever they
+> carry its client certificate (see PhotoPod's README, *People and Tags:
+> where photos are looked at*). This service still answers the web build,
+> which cannot reach TeePod, and any build without the certificate, so it
+> must keep running.
+
 - No port, no HTTP interface, nothing the app calls. The service talks only to
   Solid servers, logged in as the Analyser. The users' Pods may be on the
   Analyser's server or any other.

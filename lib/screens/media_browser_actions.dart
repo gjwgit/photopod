@@ -231,10 +231,11 @@ extension MediaBrowserActions on MediaBrowserState {
     );
   }
 
-  /// Have the PhotoPod Analyser look at the user's own photos among [items],
-  /// and only those, for [section]: the people in them, or their tags. What it finds
-  /// comes back in the background, and shows in the section and in Get Info
-  /// as it does.
+  /// Have the analyser the user chose look at the selected photos, and only
+  /// those, for [section]: the people in them, or their tags. The user is
+  /// asked to choose one, with how private each keeps the photos, the first
+  /// time. What it finds comes back in the background, and shows in the
+  /// section and in Get Info as it does.
 
   Future<void> _askAnalyser(
     BuildContext context,
@@ -256,15 +257,18 @@ extension MediaBrowserActions on MediaBrowserState {
       );
       return;
     }
+    final backend = await chosenAnalyser(context);
+    if (backend == null || !context.mounted) return;
     if (!_demo && !await _ensureSecurityKey(context)) return;
     if (!context.mounted) return;
 
-    unawaited(section.analyse(photos));
+    unawaited(section.analyse(photos, backend: backend));
     final count = photos.length == 1 ? 'one photo' : '${photos.length} photos';
     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
       SnackBar(
         content: Text(
-          '$doing $count. They show in $shownIn as they are found.',
+          '$doing $count with ${backend.label} (${backend.privacy.toLowerCase()}). '
+          'They show in $shownIn as they are found.',
         ),
       ),
     );

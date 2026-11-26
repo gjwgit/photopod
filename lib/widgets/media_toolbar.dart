@@ -335,11 +335,13 @@ class MediaToolbar extends StatelessWidget {
 
           **Identify People**
 
-          Have the PhotoPod Analyser find the faces in the selected photos.
-          Each face of someone you have named comes back named, shown in Get
-          Info and in People; the others are listed as Unknown in People,
-          for you to name in Get Info. Only the photos selected are sent,
-          without where they were taken, and the Analyser keeps no copy.
+          Have the analyser you choose find the faces in the selected
+          photos: TeePod, for higher privacy, or the Solid Community
+          analyser, for limited privacy. Each face of someone you have named
+          comes back named, shown in Get Info and in People; the others are
+          listed as Unknown in People, for you to name in Get Info. Only the
+          photos selected are sent, without where they were taken, and the
+          analyser keeps no copy.
 
           ''',
             ),
@@ -352,11 +354,12 @@ class MediaToolbar extends StatelessWidget {
 
           **Tag Photos**
 
-          Have the PhotoPod Analyser say what the selected photos show, such
-          as Beach, Dog or Receipt. The tags show in Get Info, where you can
-          keep or remove each one, and in Tags. Only the photos selected are
-          sent, without where they were taken, and the Analyser keeps no
-          copy.
+          Have the analyser you choose say what the selected photos show,
+          such as Beach, Dog or Receipt: TeePod, for higher privacy, or the
+          Solid Community analyser, for limited privacy. The tags show in
+          Get Info, where you can keep or remove each one, and in Tags. Only
+          the photos selected are sent, without where they were taken, and
+          the analyser keeps no copy.
 
           ''',
             ),

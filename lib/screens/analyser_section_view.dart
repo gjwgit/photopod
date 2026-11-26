@@ -31,7 +31,9 @@ import 'package:solidpod/solidpod.dart' show KeyManager;
 import 'package:solidui/solidui.dart' show getKeyFromUserIfRequired;
 
 import 'package:photopod/constants/analyser.dart';
+import 'package:photopod/dialogs/analyser_choice_dialog.dart';
 import 'package:photopod/dialogs/message_dialog.dart';
+import 'package:photopod/models/analyser_choice.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/analyser_section.dart';
 import 'package:photopod/services/media_index.dart';
@@ -39,8 +41,9 @@ import 'package:photopod/services/pod_keys.dart';
 import 'package:photopod/widgets/demo_banner.dart';
 
 /// What a section of the album worked out by the Analyser looks like around
-/// its own content: a status line, the button that reads the album again,
-/// and the messages shown while there is nothing to list.
+/// its own content: a status line, the buttons that choose the analyser and
+/// read the album again, and the messages shown while there is nothing to
+/// list.
 ///
 /// Opening the section sends nothing anywhere: it reads what is in the Pod
 /// already and finishes a request cut short ([AnalyserSection.refresh]).
@@ -182,6 +185,7 @@ class _AnalyserSectionViewState<T extends AnalyserSection, C>
     T section,
     C content,
   ) {
+    final chosen = context.watch<AnalyserChoice>().chosen;
     final busy = section.isScanning || index.isLoading;
     final summary =
         section.status ??
@@ -208,6 +212,20 @@ class _AnalyserSectionViewState<T extends AnalyserSection, C>
             ),
           Expanded(
             child: Text(summary, style: Theme.of(context).textTheme.bodySmall),
+          ),
+          IconButton(
+            icon: Icon(
+              chosen == AnalyserBackend.teePod
+                  ? Icons.verified_user_outlined
+                  : Icons.shield_outlined,
+            ),
+            tooltip: chosen == null
+                ? 'Choose the analyser'
+                : 'Analyser: ${chosen.label} (${chosen.privacy.toLowerCase()}). '
+                      'Tap to change it.',
+            onPressed: section.isScanning
+                ? null
+                : () => showAnalyserChoiceDialog(context),
           ),
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -247,10 +265,11 @@ class _AnalyserSectionViewState<T extends AnalyserSection, C>
   }
 }
 
-/// Have the Analyser look at [photos], every photo not yet looked at, once
-/// the user agrees to how many that is. [action] names the request, as on
-/// its button ("Identify People"); [finding] says what it does ("find the
-/// people in").
+/// Have the analyser the user chose look at [photos], every photo not yet
+/// looked at, once the user agrees to how many that is. The user is asked
+/// to choose an analyser first if they have not. [action] names the
+/// request, as on its button ("Identify People"); [finding] says what it
+/// does ("find the people in").
 
 Future<void> askToAnalyse(
   BuildContext context,
@@ -259,19 +278,31 @@ Future<void> askToAnalyse(
   required String action,
   required String finding,
 }) async {
+  final backend = await chosenAnalyser(context);
+  if (backend == null || !context.mounted) return;
   final count = photos.length == 1 ? 'one photo' : '${photos.length} photos';
+  final how = switch (backend) {
+    AnalyserBackend.teePod =>
+      'They go straight to ${backend.label}, in a trusted execution '
+          'environment, once it has proved what it is.',
+    AnalyserBackend.solidCommunity =>
+      'They are shared, encrypted, with the ${Analyser.displayName} on the '
+          'Solid Community server until it has answered.',
+  };
   final agreed = await showConfirmDialog(
     context,
     title: action,
     message:
-        'Have the ${Analyser.displayName} $finding $count not yet looked at? '
-        'They are sent without where they were taken, and the Analyser '
-        'keeps no copy.',
+        'Have ${backend.label} $finding $count not yet looked at? $how '
+        'They are sent without where they were taken, and the analyser '
+        'keeps no copy.\n\n'
+        '${backend.privacy}. To use the other analyser, tap the shield '
+        'icon above the photos.',
     confirmLabel: action,
     destructive: false,
   );
   if (!agreed || !context.mounted) return;
-  await section.analyse(photos);
+  await section.analyse(photos, backend: backend);
 }
 
 /// A large icon, a title and a few words, in the middle of the section.

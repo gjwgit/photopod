@@ -157,9 +157,9 @@ class _AppScaffoldState extends State<AppScaffold> {
             Tap here for your photos by who is in them: everyone named,
             alphabetically, then photos with someone unknown, then those
             not yet looked at. To find who is in some photos, select them
-            and tap **Identify People**: the PhotoPod Analyser looks at
-            those photos only, and what it finds comes back, encrypted, to
-            your Pod.
+            and tap **Identify People**: the analyser you choose, TeePod
+            or Solid Community, looks at those photos only, and what it
+            finds comes back, encrypted, to your Pod.
 
             ''',
           child: PeopleView(key: ValueKey(LibrarySection.people)),
@@ -173,9 +173,9 @@ class _AppScaffoldState extends State<AppScaffold> {
 
             Tap here for your photos grouped by what they show, such as
             beaches, mountains or dogs, then those not yet tagged. To tag
-            some photos, select them and tap **Tag Photos**: the PhotoPod
-            Analyser looks at those photos only, and what it finds comes
-            back, encrypted, to your Pod.
+            some photos, select them and tap **Tag Photos**: the analyser
+            you choose, TeePod or Solid Community, looks at those photos
+            only, and what it finds comes back, encrypted, to your Pod.
 
             ''',
           child: TagsView(key: ValueKey(LibrarySection.tags)),

@@ -30,6 +30,7 @@ import 'package:flutter/services.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:photopod/models/analyser_choice.dart';
 import 'package:photopod/models/catalog_entry.dart';
 import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/tag_results.dart';
@@ -137,7 +138,10 @@ void main() {
           (call) async => null,
         );
     final section = PhotoTags();
-    await section.analyse(DemoLibrary.items);
+    await section.analyse(
+      DemoLibrary.items,
+      backend: AnalyserBackend.solidCommunity,
+    );
     final entries = section.tagsIn(DemoLibrary.items);
 
     expect(entries, isNotEmpty);

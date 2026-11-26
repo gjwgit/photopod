@@ -38,6 +38,8 @@ import 'package:photopod/services/demo_library.dart';
 import 'package:photopod/services/encrypted_json_file.dart';
 import 'package:photopod/services/face_results.dart';
 import 'package:photopod/services/media_catalog.dart';
+import 'package:photopod/services/teepod/face_answers.dart';
+import 'package:photopod/services/teepod/teepod_types.dart';
 
 part 'people_catalog.dart';
 part 'people_demo.dart';
@@ -327,6 +329,16 @@ class People extends AnalyserSection {
 
   @override
   void removePhoto(String path) => _book.removePhoto(path);
+
+  @override
+  TeePodService get teePodService => TeePodService.faces;
+
+  // Cutting the faces out of the picture takes a while, so it is done in an
+  // isolate, off the interface's thread.
+
+  @override
+  Future<String> teePodAnswer(TeePodAnswer answer, Uint8List picture) =>
+      compute(faceAnswerFromTeePod, (answer: answer, picture: picture));
 
   @override
   bool fileAnswer(String path, String content, {String? url}) {

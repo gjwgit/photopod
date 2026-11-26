@@ -30,12 +30,16 @@ import 'package:flutter/foundation.dart';
 import 'package:solidpod/solidpod.dart' show isUserLoggedIn;
 
 import 'package:photopod/constants/analyser.dart';
+import 'package:photopod/constants/teepod.dart';
+import 'package:photopod/models/analyser_choice.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/analyser_inbox.dart';
 import 'package:photopod/services/media_renditions.dart';
+import 'package:photopod/services/teepod/teepod.dart';
 import 'package:photopod/services/thumbnail_cache.dart';
 
 part 'analyser_section_scan.dart';
+part 'analyser_section_teepod.dart';
 
 /// A section of the album whose contents the Analyser works out: People,
 /// from the faces in the photos, and Tags, from what they show.
@@ -45,11 +49,19 @@ part 'analyser_section_scan.dart';
 /// of every photo already looked at.
 ///
 /// Photos are looked at only when the user asks ([analyse]), with Identify
-/// People or Tag Photos: those photos are left in the section's inbox, a
-/// folder of the user's Pod shared with the Analyser for just as long as it
-/// takes, and the Analyser writes what it found back into the same folder.
-/// Each answer is filed here and saved to the file before it is deleted.
-/// Opening the section sends nothing ([refresh]).
+/// People or Tag Photos, by whichever of two analysers running the same
+/// models the user has chosen ([AnalyserBackend]):
+///
+/// - TeePod ([TeePod]), in a trusted execution environment, which PhotoPod
+///   sends the photos to directly once it has proved what it is. Only the
+///   native builds that carry its client certificate can reach it.
+/// - The Pod Analyser ([Analyser]) on the Solid Community server, which any
+///   build can use: the photos are left in the section's inbox, a folder of
+///   the user's Pod shared with the Analyser for just as long as it takes,
+///   and the Analyser writes what it found back into the same folder.
+///
+/// Either way, each answer is filed here, in the same form, and saved to the
+/// file. Opening the section sends nothing ([refresh]).
 ///
 /// Deleting a photo deletes what was found in it from the file too
 /// ([forget]), and takes it out of the inbox if it is still waiting there.
@@ -143,6 +155,17 @@ abstract class AnalyserSection extends ChangeNotifier {
 
   @protected
   bool fileAnswer(String path, String content, {String? url});
+
+  /// What TeePod is asked to do for this section.
+
+  @protected
+  TeePodService get teePodService;
+
+  /// TeePod's [answer] for [picture], the picture it was sent, as the
+  /// content the Pod Analyser would have answered with, for [fileAnswer].
+
+  @protected
+  Future<String> teePodAnswer(TeePodAnswer answer, Uint8List picture);
 
   /// Whether the section holds something not yet saved, such as work a
   /// file from an earlier version still needs, which [refresh] saves.
@@ -297,12 +320,20 @@ abstract class AnalyserSection extends ChangeNotifier {
     }
   }
 
-  /// Have the Analyser look at [photos], the user's own photos among them,
-  /// whether or not they have been looked at before. The inbox is shared
-  /// with the Analyser for the look and no longer, and photos chosen while a
-  /// look is under way join it.
+  /// Have [backend], the analyser the user chose, look at [photos], the
+  /// user's own photos among them, whether or not they have been looked at
+  /// before. For the Pod Analyser the inbox is shared for the look and no
+  /// longer. Photos chosen while a look is under way join it, with the
+  /// analyser it is using.
+  ///
+  /// When TeePod is chosen and cannot be reached, nothing is sent to the
+  /// Pod Analyser in its place: the user chose TeePod for its privacy, so
+  /// the failure is reported instead.
 
-  Future<void> analyse(Iterable<MediaItem> photos) async {
+  Future<void> analyse(
+    Iterable<MediaItem> photos, {
+    required AnalyserBackend backend,
+  }) async {
     final own = [
       for (final item in photos)
         if (item.isPhoto && !item.isShared) item,
@@ -326,7 +357,22 @@ abstract class AnalyserSection extends ChangeNotifier {
         await lookAtSamples(own);
         _queue.clear();
       } else {
-        await _runAnalyser();
+        switch (backend) {
+          case AnalyserBackend.teePod:
+            final teePod = TeePod.isSupported
+                ? await TeePodConfig.load()
+                : null;
+            if (teePod == null) {
+              _queue.clear();
+              throw StateError(
+                '${TeePodConfig.displayName} cannot be reached from this '
+                'version of PhotoPod. Choose another analyser to continue.',
+              );
+            }
+            await _runTeePod(teePod);
+          case AnalyserBackend.solidCommunity:
+            await _runAnalyser();
+        }
       }
     } on Object catch (e) {
       _error = '$e';
