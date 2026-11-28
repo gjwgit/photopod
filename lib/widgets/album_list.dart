@@ -94,7 +94,8 @@ class AlbumEntry {
 /// An opened album shows its photos and videos as one row of tiles that
 /// scrolls sideways, so that a long album never pushes the next album off the
 /// bottom of the window. The tiles behave exactly as they do in the Library:
-/// a tap selects, a double tap previews, and the heart is there on hover.
+/// a click selects and a double click previews, or on a phone or tablet a
+/// tap previews, and the heart is there on hover.
 /// Each tile in one of the user's own albums also has a button to take it out
 /// of its album.
 

@@ -360,6 +360,10 @@ class People extends AnalyserSection {
   @override
   Future<void> lookAtSamples(List<MediaItem> todo) => _scanSamples(todo);
 
+  @override
+  Future<void> forgetInCatalog([Set<String>? paths]) =>
+      MediaCatalog.forgetFacesBy(Analyser.source, paths: paths);
+
   // For the halves of this class in people_catalog.dart and
   // people_demo.dart, which cannot call the protected method themselves.
 

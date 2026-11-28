@@ -38,7 +38,6 @@ import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/analyser_section.dart';
 import 'package:photopod/services/media_index.dart';
 import 'package:photopod/services/pod_keys.dart';
-import 'package:photopod/widgets/demo_banner.dart';
 
 /// What a section of the album worked out by the Analyser looks like around
 /// its own content: a status line, the buttons that choose the analyser and
@@ -64,6 +63,9 @@ class AnalyserSectionView<T extends AnalyserSection, C> extends StatefulWidget {
     required this.emptyIcon,
     required this.emptyTitle,
     required this.emptyText,
+    required this.deleteLabel,
+    required this.deleteMessage,
+    this.selected = const [],
     required this.builder,
   });
 
@@ -97,16 +99,27 @@ class AnalyserSectionView<T extends AnalyserSection, C> extends StatefulWidget {
   final String emptyTitle;
   final String emptyText;
 
-  /// The list itself, given a way to read the album again, as after Get
-  /// Info has changed a photo.
+  /// What the button that deletes what the analysers found is called, on
+  /// its tooltip and over the question it asks first.
 
-  final Widget Function(
-    BuildContext context,
-    T section,
-    C content,
-    VoidCallback refresh,
-  )
-  builder;
+  final String deleteLabel;
+
+  /// The question the button asks first: given null, about deleting what
+  /// was found in every photo; given words such as "the 3 selected photos",
+  /// about deleting what was found in those.
+
+  final String Function(String? photos) deleteMessage;
+
+  /// The photos selected in the browser. With none, the delete button
+  /// deletes what was found in every photo; with some, only what was found
+  /// in them.
+
+  final List<MediaItem> selected;
+
+  /// The list itself. The browser the section sits in brings it up to date
+  /// once Get Info, from the preview or on its own, may have changed a photo.
+
+  final Widget Function(BuildContext context, T section, C content) builder;
 
   @override
   State<AnalyserSectionView<T, C>> createState() =>
@@ -171,7 +184,6 @@ class _AnalyserSectionViewState<T extends AnalyserSection, C>
 
     return Column(
       children: [
-        if (index.isDemo) const DemoBanner(),
         _buildStatusBar(context, index, section, content),
         const Divider(height: 1),
         Expanded(child: _buildBody(context, index, section, content)),
@@ -227,12 +239,84 @@ class _AnalyserSectionViewState<T extends AnalyserSection, C>
                 ? null
                 : () => showAnalyserChoiceDialog(context),
           ),
+          _buildDeleteButton(section, busy),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Read the album again',
             onPressed: busy ? null : () => _refresh(force: true),
           ),
         ],
+      ),
+    );
+  }
+
+  // The button that deletes what the analysers found: in the selected
+  // photos when there are any, and otherwise in every photo.
+
+  Widget _buildDeleteButton(T section, bool busy) {
+    final String tooltip;
+    final VoidCallback? onPressed;
+    if (widget.selected.isEmpty) {
+      tooltip = '${widget.deleteLabel} of All Photos';
+      onPressed = busy || section.scannedCount == 0
+          ? null
+          : () => _deleteResults(section, null);
+    } else {
+      final photos = [
+        for (final item in widget.selected)
+          if (item.isPhoto &&
+              !item.isShared &&
+              section.hasResultsFor(item.path))
+            item,
+      ];
+      tooltip = photos.isEmpty
+          ? 'None of the selected photos has any ${widget.lookingFor} found '
+                'in it to delete'
+          : '${widget.deleteLabel} of the ${_selectedPhrase(photos.length)}';
+      onPressed = busy || photos.isEmpty
+          ? null
+          : () => _deleteResults(section, photos);
+    }
+    return IconButton(
+      icon: const Icon(Icons.delete_sweep_outlined),
+      tooltip: tooltip,
+      onPressed: onPressed,
+    );
+  }
+
+  static String _selectedPhrase(int count) =>
+      count == 1 ? 'Selected Photo' : '$count Selected Photos';
+
+  // Ask before deleting what the analysers found in [photos], or in every
+  // photo when [photos] is null, then say how it went.
+
+  Future<void> _deleteResults(T section, List<MediaItem>? photos) async {
+    final count = photos?.length;
+    final agreed = await showConfirmDialog(
+      context,
+      title: count == null
+          ? '${widget.deleteLabel} of All Photos'
+          : '${widget.deleteLabel} of the ${_selectedPhrase(count)}',
+      message: widget.deleteMessage(
+        count == null
+            ? null
+            : count == 1
+            ? 'the selected photo'
+            : 'the $count selected photos',
+      ),
+    );
+    if (!agreed || !mounted) return;
+    final deleted = await section.deleteResults(photos);
+    if (!deleted || !mounted) return;
+    final what = widget.lookingFor;
+    ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+      SnackBar(
+        content: Text(
+          count == null
+              ? 'Deleted all the $what found.'
+              : 'Deleted the $what found in '
+                    '${count == 1 ? 'the selected photo' : '$count selected photos'}.',
+        ),
       ),
     );
   }
@@ -261,7 +345,7 @@ class _AnalyserSectionViewState<T extends AnalyserSection, C>
         widget.emptyText,
       );
     }
-    return widget.builder(context, section, content, _refresh);
+    return widget.builder(context, section, content);
   }
 }
 

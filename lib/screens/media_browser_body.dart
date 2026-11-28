@@ -56,6 +56,32 @@ extension MediaBrowserBody on MediaBrowserState {
       }
     }
 
+    // People and Tags arrange the photos into rows of their own, beneath the
+    // same header and toolbar as every other section, with a status line of
+    // their own in place of the filter bar and no pages.
+
+    if (widget.section.isAnalysed) {
+      return Column(
+        children: [
+          if (_demo) const DemoBanner(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+            child: _buildHeader(context),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                if (_selected.isNotEmpty) updateState(_selected.clear);
+              },
+              child: _buildAnalysed(context),
+            ),
+          ),
+        ],
+      );
+    }
+
     // The timeline scrolls through everything at once, the way a camera
     // roll does, so it has no pages, and nor do the tiles grouped by place,
     // which would otherwise split a place across pages, nor the Albums
@@ -170,9 +196,8 @@ extension MediaBrowserBody on MediaBrowserState {
       );
     }
 
-    // Tapping the background is how the selection is cleared, which matters
-    // most with Select several on, when a tap on an item toggles rather than
-    // replaces the selection.
+    // Clicking or tapping the background is how the selection is cleared,
+    // which matters most when several items are selected.
 
     final shared = context.read<SharedWithMe>();
 
@@ -192,7 +217,7 @@ extension MediaBrowserBody on MediaBrowserState {
               isSelected: (item) => _selected.contains(item.id),
               isFavourite: favourites.contains,
               isSharedOut: (item) => shared.isSharedOut(item.url),
-              multiSelect: _multiSelect,
+              multiSelect: _showTicks,
               onTap: (item) => _handleTap(item, visible),
               onActivate: _handleActivate,
               onToggleFavourite: (item) => _toggleFavourite(context, [item]),
@@ -203,12 +228,35 @@ extension MediaBrowserBody on MediaBrowserState {
               isSelected: (item) => _selected.contains(item.id),
               isFavourite: favourites.contains,
               isSharedOut: (item) => shared.isSharedOut(item.url),
-              multiSelect: _multiSelect,
+              multiSelect: _showTicks,
               onTap: (item) => _handleTap(item, visible),
               onActivate: _handleActivate,
               onToggleFavourite: (item) => _toggleFavourite(context, [item]),
             ),
     );
+  }
+
+  // People or Tags, whose tiles are selected and previewed as the Library's
+  // are. Each tile's row is what a shift click selects across and what the
+  // preview steps through.
+
+  Widget _buildAnalysed(BuildContext context) {
+    final favourites = context.read<Favourites>();
+    final shared = context.read<SharedWithMe>();
+    final selection = TileSelection(
+      isSelected: (item) => _selected.contains(item.id),
+      isFavourite: favourites.contains,
+      isSharedOut: (item) => shared.isSharedOut(item.url),
+      showTicks: _showTicks,
+      onTap: (item, row) => _handleTap(item, row, siblings: row),
+      onActivate: _handleActivate,
+      onToggleFavourite: (item) => _toggleFavourite(context, [item]),
+      onInfo: (item) => _showInfo(context, item),
+      selected: _selectedFiles,
+    );
+    return widget.section == LibrarySection.people
+        ? PeopleView(selection: selection)
+        : TagsView(selection: selection);
   }
 
   // The photos and videos are grouped under the day they are dated, the
@@ -229,7 +277,7 @@ extension MediaBrowserBody on MediaBrowserState {
       isSelected: (item) => _selected.contains(item.id),
       isFavourite: favourites.contains,
       isSharedOut: (item) => context.read<SharedWithMe>().isSharedOut(item.url),
-      multiSelect: _multiSelect,
+      multiSelect: _showTicks,
       onTap: (item) => _handleTap(item, all),
       onActivate: _handleActivate,
       onToggleFavourite: (item) => _toggleFavourite(context, [item]),
@@ -258,7 +306,7 @@ extension MediaBrowserBody on MediaBrowserState {
       isSelected: (item) => _selected.contains(item.id),
       isFavourite: favourites.contains,
       isSharedOut: (item) => context.read<SharedWithMe>().isSharedOut(item.url),
-      multiSelect: _multiSelect,
+      multiSelect: _showTicks,
       onTap: (item) => _handleTap(item, all),
       onActivate: _handleActivate,
       onToggleFavourite: (item) => _toggleFavourite(context, [item]),
@@ -281,7 +329,7 @@ extension MediaBrowserBody on MediaBrowserState {
           album == _selectedAlbum && _selected.contains(item.id),
       isFavourite: favourites.contains,
       isSharedOut: (item) => context.read<SharedWithMe>().isSharedOut(item.url),
-      multiSelect: _multiSelect,
+      multiSelect: _showTicks,
       onTap: (album, item) => _handleAlbumTap(
         album,
         item,

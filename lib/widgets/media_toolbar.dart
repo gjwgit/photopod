@@ -27,7 +27,7 @@ import 'package:flutter/material.dart';
 
 import 'package:markdown_tooltip/markdown_tooltip.dart';
 
-import 'package:photopod/constants/app.dart' show podShareIcon;
+import 'package:photopod/constants/app.dart' show isTouchPlatform, podShareIcon;
 import 'package:photopod/models/albums.dart' show favouritesAlbumName;
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/share_route.dart';
@@ -113,7 +113,9 @@ class MediaActions {
 
   final ValueChanged<MediaSortOption> onSort;
 
-  /// Turn selecting several items at once on or off.
+  /// Turn selecting several items at once on or off, on a phone or tablet.
+  /// Turning it off, with the same button or with Done, clears the
+  /// selection.
 
   final VoidCallback onToggleMultiSelect;
 
@@ -153,9 +155,15 @@ class MediaActions {
 /// line on a narrow window rather than overflowing. Which buttons appear at
 /// all also depends on the section: only the Library browses folders, so only
 /// the Library offers to add files to one, and only the Albums section offers
-/// to make a new album on its own or to take files out of one. Several items
-/// can be selected only once **Select several** is on, and while they are,
-/// only what makes sense for all of them together is offered.
+/// to make a new album on its own or to take files out of one. While
+/// several items are selected, only what makes sense for all of them
+/// together is offered.
+///
+/// On a phone or tablet ([isTouchPlatform]) a tap previews a photo, so
+/// several items can be selected only once **Select several** is on, and
+/// **Done** then appears to clear the selection and turn it off again. With
+/// a mouse there is no such button: a click selects, and a click with Ctrl
+/// or Command held selects several.
 
 class MediaToolbar extends StatelessWidget {
   const MediaToolbar({
@@ -221,8 +229,8 @@ class MediaToolbar extends StatelessWidget {
 
   final bool hasShared;
 
-  /// Whether several items can be selected at once. Otherwise a tap selects
-  /// one item in place of whatever was selected before.
+  /// Whether **Select several** is on, on a phone or tablet, so that a tap
+  /// selects rather than previews.
 
   final bool multiSelect;
 
@@ -301,12 +309,13 @@ class MediaToolbar extends StatelessWidget {
               icon: Icons.visibility_outlined,
               label: 'Preview',
               onPressed: actions.onPreview,
-              tooltip: '''
+              tooltip:
+                  '''
 
           **Preview**
 
-          Open the selected photo or video full size. Double tapping its tile
-          does the same thing.
+          Open the selected photo or video full size.
+          ${isTouchPlatform ? 'Tapping its tile, while not selecting several, does the same thing.' : 'Double clicking its tile does the same thing.'}
 
           ''',
             ),
@@ -336,8 +345,8 @@ class MediaToolbar extends StatelessWidget {
           **Identify People**
 
           Have the analyser you choose find the faces in the selected
-          photos: TeePod, for higher privacy, or the Solid Community
-          analyser, for limited privacy. Each face of someone you have named
+          photos: TeePod, for premium privacy protection, or the Solid
+          Community analyser, for standard privacy protection. Each face of someone you have named
           comes back named, shown in Get Info and in People; the others are
           listed as Unknown in People, for you to name in Get Info. Only the
           photos selected are sent, without where they were taken, and the
@@ -355,8 +364,9 @@ class MediaToolbar extends StatelessWidget {
           **Tag Photos**
 
           Have the analyser you choose say what the selected photos show,
-          such as Beach, Dog or Receipt: TeePod, for higher privacy, or the
-          Solid Community analyser, for limited privacy. The tags show in
+          such as Beach, Dog or Receipt: TeePod, for premium privacy
+          protection, or the Solid Community analyser, for standard privacy
+          protection. The tags show in
           Get Info, where you can keep or remove each one, and in Tags. Only
           the photos selected are sent, without where they were taken, and
           the analyser keeps no copy.
@@ -421,32 +431,55 @@ class MediaToolbar extends StatelessWidget {
 
           ''',
           ),
-        _button(
-          icon: multiSelect
-              ? Icons.library_add_check
-              : Icons.library_add_check_outlined,
-          label: multiSelect ? 'Stop selecting several' : 'Select several',
-          onPressed: actions.onToggleMultiSelect,
-          colour: multiSelect ? Theme.of(context).colorScheme.primary : null,
-          tooltip: multiSelect
-              ? '''
+        if (isTouchPlatform)
+          _button(
+            icon: multiSelect
+                ? Icons.library_add_check
+                : Icons.library_add_check_outlined,
+            label: multiSelect ? 'Stop selecting several' : 'Select several',
+            onPressed: actions.onToggleMultiSelect,
+            colour: multiSelect ? Theme.of(context).colorScheme.primary : null,
+            tooltip: multiSelect
+                ? '''
 
           **Stop selecting several**
 
-          Go back to selecting one item at a time. Only the last item you
-          tapped stays selected.
+          Clear the selection and go back to tapping a photo or video to
+          open it.
 
           '''
-              : '''
+                : '''
 
           **Select several**
 
           Select several items at once, each ticked as you tap it, to delete,
           download, share, duplicate, heart or put them into an album
-          together. Hold shift to select everything between two taps.
+          together. Tap Done, or this button again, when you have finished.
 
           ''',
-        ),
+          ),
+        if (isTouchPlatform && multiSelect)
+          MarkdownTooltip(
+            message: '''
+
+          **Done**
+
+          Clear the selection and stop selecting several.
+
+          ''',
+            child: Semantics(
+              label: 'Done',
+              button: true,
+              excludeSemantics: true,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: FilledButton.tonal(
+                  onPressed: actions.onToggleMultiSelect,
+                  child: const Text('Done'),
+                ),
+              ),
+            ),
+          ),
         if (sortOptions.isNotEmpty)
           _SortButton(
             sortOption: sortOption,

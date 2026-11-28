@@ -189,6 +189,14 @@ abstract class AnalyserSection extends ChangeNotifier {
   @protected
   Future<void> lookAtSamples(List<MediaItem> todo);
 
+  /// Take what the analysers found for this section out of the catalog, for
+  /// the photos at [paths], or for every photo when [paths] is null, leaving
+  /// what the user said in Get Info. Throws when the catalog cannot be
+  /// changed, as without the security key.
+
+  @protected
+  Future<void> forgetInCatalog([Set<String>? paths]);
+
   // -- State ---------------------------------------------------------------
 
   /// Whether the section shows the sample album rather than a Pod.
@@ -222,6 +230,11 @@ abstract class AnalyserSection extends ChangeNotifier {
   /// How many of the user's photos have been looked at.
 
   int get scannedCount;
+
+  /// Whether the analysers have looked at the photo at [path], so that
+  /// there is something found in it to delete.
+
+  bool hasResultsFor(String path) => hasLookedAt(path);
 
   /// The user's own photos among [photos] not yet looked at, newest first.
 
@@ -457,6 +470,63 @@ abstract class AnalyserSection extends ChangeNotifier {
     remove.forEach(removePhoto);
     notifyListeners();
     await save();
+  }
+
+  /// Delete what the analysers have found for this section in [photos], the
+  /// user's own photos among them, or with [photos] null in every photo.
+  ///
+  /// What was found is taken out of the section's file and out of the
+  /// catalog, where Get Info shows it, and any photo or answer still in the
+  /// inbox from a look cut short is thrown away: for every photo, the inbox
+  /// is emptied and closed; for some, only theirs is taken out. What the user
+  /// said in Get Info stays. The photos are then listed as not yet looked at,
+  /// ready for Identify People or Tag Photos to look at them afresh.
+  ///
+  /// Nothing is done while photos are being looked at, or when [photos]
+  /// holds none of the user's own photos. Returns whether the results were
+  /// deleted; when they could not be, the section's error says why and what
+  /// was found is left as it was.
+
+  Future<bool> deleteResults([Iterable<MediaItem>? photos]) async {
+    if (_scanning) return false;
+    final paths = photos == null
+        ? null
+        : {
+            for (final item in photos)
+              if (item.isPhoto && !item.isShared) item.path,
+          };
+    if (paths != null && paths.isEmpty) return false;
+
+    _begin();
+    try {
+      await load();
+      if (!_demo) {
+        // The catalog goes first: should it refuse, nothing has been lost
+        // and the user can try again.
+
+        await forgetInCatalog(paths);
+        if (paths == null) {
+          if (await inbox.exists()) await inbox.close();
+        } else {
+          await inbox.remove(paths);
+        }
+      }
+      if (paths == null) {
+        clear();
+        _waiting = 0;
+      } else {
+        paths.forEach(removePhoto);
+      }
+      notifyListeners();
+      await save();
+      return _error == null;
+    } on Object catch (e) {
+      _error = 'Could not delete the $lookingFor found: $e';
+      debugPrint('PhotoPod: $_error');
+      return false;
+    } finally {
+      _end();
+    }
   }
 
   /// Forget everything, as on logout, so nothing is left for the next user.

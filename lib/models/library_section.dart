@@ -77,6 +77,13 @@ enum LibrarySection {
 
   bool get acceptsUploads => this == LibrarySection.library;
 
+  /// Whether this section arranges the photos by what the analysers found
+  /// in them, People by who is in them and Tags by what they show, each
+  /// group as a row of tiles.
+
+  bool get isAnalysed =>
+      this == LibrarySection.people || this == LibrarySection.tags;
+
   /// Whether this section is the tiled list of files.
 
   bool get isFlatList => this == LibrarySection.favourites;

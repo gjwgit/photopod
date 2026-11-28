@@ -84,9 +84,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('TeePod'), findsOneWidget);
-    expect(find.text('Higher privacy'), findsOneWidget);
+    expect(find.text('Premium Privacy Protection'), findsOneWidget);
     expect(find.text('Solid Community'), findsOneWidget);
-    expect(find.text('Limited privacy'), findsOneWidget);
+    expect(find.text('Standard Privacy Protection'), findsOneWidget);
 
     await tester.tap(find.text('Solid Community'));
     await tester.pump();

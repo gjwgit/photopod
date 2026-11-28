@@ -96,7 +96,7 @@ extension MediaBrowserAlbums on MediaBrowserState {
         _selectedAlbum = album;
       });
     }
-    _handleTap(item, visible);
+    _handleTap(item, visible, siblings: visible);
   }
 
   /// Put [items] into the album called [album], which may be Favourites.

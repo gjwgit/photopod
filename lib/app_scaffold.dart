@@ -34,8 +34,6 @@ import 'package:photopod/models/favourites.dart';
 import 'package:photopod/models/library_section.dart';
 import 'package:photopod/screens/map_view.dart';
 import 'package:photopod/screens/media_browser.dart';
-import 'package:photopod/screens/people_view.dart';
-import 'package:photopod/screens/tags_view.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/people.dart';
 import 'package:photopod/services/pod_keys.dart';
@@ -162,7 +160,10 @@ class _AppScaffoldState extends State<AppScaffold> {
             finds comes back, encrypted, to your Pod.
 
             ''',
-          child: PeopleView(key: ValueKey(LibrarySection.people)),
+          child: MediaBrowser(
+            key: ValueKey(LibrarySection.people),
+            section: LibrarySection.people,
+          ),
         ),
         SolidMenuItem(
           icon: Icons.sell_outlined,
@@ -178,7 +179,10 @@ class _AppScaffoldState extends State<AppScaffold> {
             only, and what it finds comes back, encrypted, to your Pod.
 
             ''',
-          child: TagsView(key: ValueKey(LibrarySection.tags)),
+          child: MediaBrowser(
+            key: ValueKey(LibrarySection.tags),
+            section: LibrarySection.tags,
+          ),
         ),
         SolidMenuItem(
           icon: Icons.map_outlined,

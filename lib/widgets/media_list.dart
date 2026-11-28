@@ -27,6 +27,7 @@ import 'package:flutter/material.dart';
 
 import 'package:gap/gap.dart';
 
+import 'package:photopod/constants/app.dart' show isTouchPlatform;
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
@@ -129,8 +130,10 @@ class MediaList extends StatelessWidget {
               ],
             ),
           ),
+          // On a phone or tablet the tap itself previews, so there is no
+          // double tap to wait for.
           title: GestureDetector(
-            onDoubleTap: () => onActivate(item),
+            onDoubleTap: isTouchPlatform ? null : () => onActivate(item),
             child: Text(
               item.name,
               maxLines: 1,

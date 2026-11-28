@@ -23,9 +23,25 @@
 
 library;
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, kIsWeb;
 import 'package:flutter/material.dart' show IconData, Icons;
 
 import 'package:solidui/solidui.dart' show SolidInviteOthersConfig;
+
+/// Whether PhotoPod is running as a phone or tablet app (Android or iOS),
+/// where photos are tapped with a finger rather than clicked with a mouse.
+///
+/// The two are handled differently. With a mouse, as on the desktop and on
+/// the web, a click selects a photo, a click with Ctrl or Command held adds
+/// it to the selection, and a double click opens it. With a finger, a tap
+/// opens the photo full screen, and photos are selected only after turning
+/// on Select several.
+
+bool get isTouchPlatform =>
+    !kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS);
 
 /// Application title displayed as the window title.
 
