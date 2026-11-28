@@ -160,6 +160,13 @@ https://www.google.com/maps/
 ^https://server/
 ^file://.*/photopod/photopod$
 
+# 20261127 gjw TeePod attestation: the token issuer is an identifier, not
+# a page, and the tests use a made-up issuer and a mocked key set.
+
+^https://confidentialcomputing\.googleapis\.com/?$
+^https://www\.googleapis\.com/keys$
+^https://x/?$
+
 # 20261110 tc Links inside the face analyser's local virtual environment.
 
 /\.venv/

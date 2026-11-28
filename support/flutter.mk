@@ -292,16 +292,24 @@ depend:
 
 LINES ?= 300
 
+# 20261127 gjw Generated code (protoc's *.pb*.dart, build_runner's
+# *.g.dart) is not ours to split, so it is left out of the line count,
+# as it is from the license check.
+
+LOC_FILES = $(shell find lib -name '*.dart' -not -name '*.g.dart' \
+	      -not -name '*.pb.dart' -not -name '*.pbenum.dart' \
+	      -not -name '*.pbjson.dart' -not -name '*.pbgrpc.dart')
+
 .PHONY: locmax
 locmax:
-	@$(LOC) -n $(LINES) $(shell find lib -name '*.dart') > /tmp/loc_output.txt; \
+	@$(LOC) -n $(LINES) $(LOC_FILES) > /tmp/loc_output.txt; \
 	return_code=$$?; \
 	over=$$(cat /tmp/loc_output.txt); \
 	locm=$$(echo $$over | wc -w | awk '{print $$1/2}'); \
 	[ -z "$$over" ] || echo "$$over"; \
-	loc=$$(bash $(LOC) -t $(shell find lib -name '*.dart')); \
-	numf=$$(find lib -name "*.dart" -type f | wc -l); \
-	totl=$$(cat $(shell find lib -name '*.dart') | wc -l); \
+	loc=$$(bash $(LOC) -t $(LOC_FILES)); \
+	numf=$$(echo $(LOC_FILES) | wc -w); \
+	totl=$$(cat $(LOC_FILES) | wc -l); \
 	echo "Total $$loc lines of code across $$numf files with total $$totl lines."; \
 	if [ $$return_code -ne 0 ]; then \
 		echo "\n$(CROSS) Error: Found $$locm files with more than $(LINES) lines of code."; \
@@ -591,10 +599,17 @@ unused_code:
 	-metrics check-unused-code --disable-sunset-warning lib
 	@echo $(SEPARATOR)
 
+# 20261127 gjw Generated code (protoc's *.pb*.dart) is used only in
+# part, so it is excluded, along with the tool's own default of *.g.dart
+# and *.freezed.dart. A list of whole globs such as
+# '{/**.g.dart,/**.pbjson.dart}' silently matches nothing here, so the
+# alternatives go inside the one glob.
+
 .PHONY: unused_files
 unused_files:
 	@echo "Dart Code Metrics: UNUSED FILES"
-	-metrics check-unused-files --disable-sunset-warning lib
+	-metrics check-unused-files --disable-sunset-warning \
+	  --exclude '/**.{g,freezed,pb,pbenum,pbjson,pbgrpc}.dart' lib
 	@echo $(SEPARATOR)
 
 # 20260924 gjw The file list comes from `find`, not from `**` globs.
