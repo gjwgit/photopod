@@ -27,9 +27,8 @@ import 'package:flutter/material.dart';
 
 import 'package:gap/gap.dart';
 
-import 'package:photopod/dialogs/preview_dialog.dart';
 import 'package:photopod/services/tags.dart';
-import 'package:photopod/widgets/media_thumbnail.dart';
+import 'package:photopod/widgets/person_section.dart';
 
 /// The icon of each category the Analyser files tags under, and of any
 /// category it adds later.
@@ -48,17 +47,26 @@ IconData categoryIcon(String category) => switch (category) {
 };
 
 /// A tag's name, category and photo count, above a row of its photos that
-/// scrolls sideways, as an album's does. A tap on a photo previews it, and
-/// the preview steps through this tag's photos.
+/// scrolls sideways ([TileRow]). The tiles select and preview as the
+/// Library's do, and the preview steps through this tag's photos.
 
 class TagSection extends StatelessWidget {
-  const TagSection({super.key, required this.entry, required this.tileExtent});
+  const TagSection({
+    super.key,
+    required this.entry,
+    required this.tileExtent,
+    required this.selection,
+  });
 
   final TagEntry entry;
 
   /// The size of a tile, from the user's View preferences.
 
   final double tileExtent;
+
+  /// How the tiles are selected and opened.
+
+  final TileSelection selection;
 
   @override
   Widget build(BuildContext context) {
@@ -95,32 +103,10 @@ class TagSection extends StatelessWidget {
             ],
           ),
           const Gap(8),
-          SizedBox(
-            height: tileExtent,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: count,
-              separatorBuilder: (context, index) => const Gap(4),
-              itemBuilder: (context, index) {
-                final item = entry.items[index];
-                return SizedBox.square(
-                  dimension: tileExtent,
-                  child: Material(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(6),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () =>
-                          showPreviewDialog(context, item, items: entry.items),
-                      child: Tooltip(
-                        message: item.name,
-                        child: MediaThumbnail(item: item),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+          TileRow(
+            items: entry.items,
+            tileExtent: tileExtent,
+            selection: selection,
           ),
         ],
       ),

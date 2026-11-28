@@ -48,9 +48,16 @@ typedef TagsContent = ({List<TagEntry> tags, List<MediaItem> unprocessed});
 /// Opening the section sends nothing anywhere. Photos are tagged only when
 /// the user asks, with Tag Photos, in the Library or here. See
 /// [AnalyserSectionView].
+///
+/// The section is shown inside the browser, beneath its toolbar, and its
+/// tiles are selected and previewed as the Library's are ([selection]).
 
 class TagsView extends StatelessWidget {
-  const TagsView({super.key});
+  const TagsView({super.key, required this.selection});
+
+  /// How the tiles are selected and opened.
+
+  final TileSelection selection;
 
   @override
   Widget build(BuildContext context) =>
@@ -74,8 +81,20 @@ class TagsView extends StatelessWidget {
         emptyText:
             'Add photos in the Library, then select some and tap Tag Photos '
             'to have the analyser you choose say what they show.',
-        builder: (context, tags, content, refresh) =>
-            _TagList(tags: tags, content: content, onPreviewClosed: refresh),
+        deleteLabel: 'Delete Tag Recognition Results',
+        deleteMessage: (photos) => photos == null
+            ? 'Delete every tag the analysers have put on your photos? Tags '
+                  'you added yourself in Get Info are kept. Every photo is '
+                  'then listed under Unprocessed, ready for Tag Photos to '
+                  'look at it again. This cannot be undone.'
+            : 'Delete the tags the analysers put on $photos? Tags you added '
+                  'yourself in Get Info are kept, and so are those on your '
+                  'other photos. The selection is then listed under '
+                  'Unprocessed, ready for Tag Photos to look at it again. '
+                  'This cannot be undone.',
+        selected: selection.selected,
+        builder: (context, tags, content) =>
+            _TagList(tags: tags, content: content, selection: selection),
       );
 }
 
@@ -87,12 +106,12 @@ class _TagList extends StatefulWidget {
   const _TagList({
     required this.tags,
     required this.content,
-    required this.onPreviewClosed,
+    required this.selection,
   });
 
   final PhotoTags tags;
   final TagsContent content;
-  final VoidCallback onPreviewClosed;
+  final TileSelection selection;
 
   @override
   State<_TagList> createState() => _TagListState();
@@ -141,6 +160,7 @@ class _TagListState extends State<_TagList> {
             key: ValueKey(entry.tag),
             entry: entry,
             tileExtent: extent,
+            selection: widget.selection,
           ),
         if (unprocessed.isNotEmpty && category == null)
           PersonSection(
@@ -149,7 +169,7 @@ class _TagListState extends State<_TagList> {
             icon: Icons.hourglass_empty,
             items: unprocessed,
             tileExtent: extent,
-            onPreviewClosed: widget.onPreviewClosed,
+            selection: widget.selection,
             action: FilledButton.tonalIcon(
               icon: const Icon(Icons.sell_outlined),
               label: const Text('Tag Photos'),

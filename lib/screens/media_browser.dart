@@ -56,6 +56,8 @@ import 'package:photopod/models/library_section.dart';
 import 'package:photopod/models/media_filter.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/models/view_prefs.dart';
+import 'package:photopod/screens/people_view.dart';
+import 'package:photopod/screens/tags_view.dart';
 import 'package:photopod/services/album_sharing.dart';
 import 'package:photopod/services/analyser_section.dart';
 import 'package:photopod/services/demo_library.dart';
@@ -86,6 +88,7 @@ import 'package:photopod/widgets/media_list.dart';
 import 'package:photopod/widgets/media_timeline.dart';
 import 'package:photopod/widgets/media_toolbar.dart';
 import 'package:photopod/widgets/pagination_bar.dart';
+import 'package:photopod/widgets/person_section.dart' show TileSelection;
 
 part 'media_browser_actions.dart';
 part 'media_browser_albums.dart';
@@ -130,15 +133,12 @@ class MediaBrowserState extends State<MediaBrowser> {
 
   String? _selectedAlbum;
 
-  /// Whether several items can be selected at once, which the toolbar turns
-  /// on and off. Otherwise a tap selects one item in place of the last.
+  /// Whether several items can be selected at once on a phone or tablet,
+  /// which the toolbar's **Select several** turns on and off. Otherwise a
+  /// tap previews the item. With a mouse this stays off: a click with Ctrl
+  /// or Command held selects several instead.
 
   bool _multiSelect = false;
-
-  /// The item tapped last, which is the one kept when **Select several** is
-  /// turned off.
-
-  String? _lastTapped;
 
   /// Where a shift-tap range starts from.
 
@@ -248,7 +248,11 @@ class MediaBrowserState extends State<MediaBrowser> {
     // the album is listed rather than after, when the tiles would already be
     // showing the names they are stored under.
 
-    if (!_demo && await MediaCatalog.needsKey() && mounted) {
+    // People and Tags ask for it themselves, saying why, and asking here as
+    // well would stack a second prompt on the first.
+
+    final asksForKey = !widget.section.isAnalysed;
+    if (asksForKey && !_demo && await MediaCatalog.needsKey() && mounted) {
       await _ensureSecurityKey(context);
     }
     if (!mounted) return;
@@ -272,7 +276,7 @@ class MediaBrowserState extends State<MediaBrowser> {
     // once is exactly what must not happen while solidpod is still reading
     // its key file for the first time.
 
-    await _ensureKeyForEncrypted(index.items);
+    if (asksForKey) await _ensureKeyForEncrypted(index.items);
     if (!mounted) return;
 
     // Refreshing the albums is also when any sharing that fell behind — say,
@@ -319,7 +323,11 @@ class MediaBrowserState extends State<MediaBrowser> {
   /// Everything this section shows, before sorting, narrowed to what the
   /// filter bar is searching for.
 
-  List<MediaItem> get _source => _filtered(_unfiltered);
+  /// People and Tags arrange the photos into groups of their own and are not
+  /// narrowed by the filter bar, which they do not show.
+
+  List<MediaItem> get _source =>
+      widget.section.isAnalysed ? _unfiltered : _filtered(_unfiltered);
 
   /// The items of [items] that match the filter bar's search.
 
@@ -363,6 +371,14 @@ class MediaBrowserState extends State<MediaBrowser> {
             .toList();
       case LibrarySection.people:
       case LibrarySection.tags:
+        // The user's own photos, which are all the analysers look at; each
+        // section groups them itself.
+
+        return context
+            .read<MediaIndex>()
+            .photos
+            .where((item) => !item.isShared)
+            .toList();
       case LibrarySection.maps:
         return const [];
     }
@@ -399,9 +415,12 @@ class MediaBrowserState extends State<MediaBrowser> {
   /// timeline, the latest day first, or grouped by place, so only those two
   /// are offered there.
 
-  List<MediaSortOption> get _sortChoices =>
-      widget.section == LibrarySection.library &&
-          context.read<ViewPrefs>().viewMode == MediaViewMode.grid
+  /// People and Tags set their own order, so they offer none.
+
+  List<MediaSortOption> get _sortChoices => widget.section.isAnalysed
+      ? const []
+      : widget.section == LibrarySection.library &&
+            context.read<ViewPrefs>().viewMode == MediaViewMode.grid
       ? const [MediaSortOption.dateDescending, MediaSortOption.location]
       : MediaSortOption.values;
 

@@ -401,6 +401,39 @@ class MediaCatalog {
     }
   });
 
+  /// Take every tag [source] suggested off the photos at [paths], or off
+  /// every photo when [paths] is null, in one write. The user's own tags,
+  /// and those any other source suggested, stay.
+
+  static Future<void> forgetTagsBy(String source, {Set<String>? paths}) =>
+      _change((entries) {
+        for (final MapEntry(:key, value: entry) in entries.entries.toList()) {
+          if (paths != null && !paths.contains(entry.path)) continue;
+          if (!entry.tags.any((tag) => tag.source == source)) continue;
+          entries[key] = entry.copyWith(
+            tags: [
+              for (final tag in entry.tags)
+                if (tag.source != source) tag,
+            ],
+          );
+        }
+      });
+
+  /// Take every face [source] found out of the photos at [paths], or out of
+  /// every photo when [paths] is null, in one write. The people the user
+  /// named in Get Info, and those any other source found, stay.
+
+  static Future<void> forgetFacesBy(String source, {Set<String>? paths}) =>
+      _change((entries) {
+        for (final MapEntry(:key, value: entry) in entries.entries.toList()) {
+          if (paths != null && !paths.contains(entry.path)) continue;
+          if (!entry.faces.any((face) => face.source == source)) continue;
+          entries[key] = entry.copyWith(
+            faces: withFoundFaces(entry.faces, source, const []),
+          );
+        }
+      });
+
   /// Call whoever is named [from], in every photo and whoever named them,
   /// [to] instead. A photo that already has someone called [to] keeps the
   /// one, so that naming someone after another person makes them one.

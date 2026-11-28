@@ -43,9 +43,16 @@ import 'package:photopod/widgets/person_section.dart';
 /// Opening the section sends nothing anywhere. Photos are looked at only when
 /// the user asks, with Identify People, in the Library or here. See
 /// [AnalyserSectionView].
+///
+/// The section is shown inside the browser, beneath its toolbar, and its
+/// tiles are selected and previewed as the Library's are ([selection]).
 
 class PeopleView extends StatelessWidget {
-  const PeopleView({super.key});
+  const PeopleView({super.key, required this.selection});
+
+  /// How the tiles are selected and opened.
+
+  final TileSelection selection;
 
   @override
   Widget build(BuildContext context) =>
@@ -70,6 +77,19 @@ class PeopleView extends StatelessWidget {
         emptyText:
             'Add photos in the Library, then select some and tap Identify '
             'People to find who is in them.',
+        deleteLabel: 'Delete Face Recognition Results',
+        deleteMessage: (photos) => photos == null
+            ? 'Delete every face the analysers have found, along with the '
+                  'names given to them here in People? Names you gave in Get '
+                  'Info are kept. Every photo is then listed under '
+                  'Unprocessed, ready for Identify People to look at it '
+                  'again. This cannot be undone.'
+            : 'Delete the faces the analysers found in $photos? Names you '
+                  'gave in Get Info are kept, and so is everything found in '
+                  'your other photos. The selection is then listed under '
+                  'Unprocessed, ready for Identify People to look at it '
+                  'again. This cannot be undone.',
+        selected: selection.selected,
         builder: _buildList,
       );
 
@@ -77,7 +97,6 @@ class PeopleView extends StatelessWidget {
     BuildContext context,
     People people,
     PeopleSections sections,
-    VoidCallback refresh,
   ) {
     final extent = context.watch<ViewPrefs>().tileSize.extent;
     return ListView(
@@ -91,7 +110,7 @@ class PeopleView extends StatelessWidget {
             items: entry.items,
             tileExtent: extent,
             onRename: () => _rename(context, entry),
-            onPreviewClosed: refresh,
+            selection: selection,
           ),
         for (final entry in sections.unknown)
           PersonSection(
@@ -102,7 +121,7 @@ class PeopleView extends StatelessWidget {
             items: entry.items,
             tileExtent: extent,
             onRename: () => _rename(context, entry),
-            onPreviewClosed: refresh,
+            selection: selection,
           ),
         if (sections.unprocessed.isNotEmpty)
           PersonSection(
@@ -111,7 +130,7 @@ class PeopleView extends StatelessWidget {
             icon: Icons.hourglass_empty,
             items: sections.unprocessed,
             tileExtent: extent,
-            onPreviewClosed: refresh,
+            selection: selection,
             action: FilledButton.tonalIcon(
               icon: const Icon(Icons.face_outlined),
               label: const Text('Identify People'),

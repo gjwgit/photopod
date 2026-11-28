@@ -33,7 +33,7 @@ import 'package:flutter/services.dart';
 import 'package:gap/gap.dart';
 import 'package:provider/provider.dart';
 
-import 'package:photopod/constants/app.dart' show podShareIcon;
+import 'package:photopod/constants/app.dart' show isTouchPlatform, podShareIcon;
 import 'package:photopod/constants/media.dart';
 import 'package:photopod/dialogs/download_media.dart';
 import 'package:photopod/dialogs/info_dialog.dart';
@@ -47,10 +47,11 @@ import 'package:photopod/utils/formatting.dart';
 import 'package:photopod/widgets/media_thumbnail.dart';
 import 'package:photopod/widgets/video_preview.dart';
 
+part 'preview_full_screen.dart';
 part 'preview_header.dart';
 part 'preview_route.dart';
 
-/// Preview [item] in a modal dialogue.
+/// Preview [item].
 ///
 /// Photos can be pinched or scrolled to zoom; videos get playback controls.
 /// A photo is shown from its large rendition, big enough to fill the screen
@@ -59,12 +60,20 @@ part 'preview_route.dart';
 /// fetched as well and drawn over the rendition, so that the detail stays
 /// sharp. A video needs the whole file to play, so it is fetched in full.
 ///
-/// When [items] is given, arrows either side of the preview (and the left and
-/// right arrow keys) step to the previous and next photo or video in it.
-/// Folders and files PhotoPod cannot show are skipped.
+/// How it is shown depends on how the user points:
 ///
-/// When [item]'s thumbnail is on screen the dialogue grows out of it as it
-/// opens. Stepping between files inside the dialogue is not animated.
+/// - With a mouse, as on the desktop and on the web, it opens in a dialogue
+///   over the album. When [items] is given, arrows either side of the
+///   preview (and the left and right arrow keys) step to the previous and
+///   next photo or video in it. When [item]'s thumbnail is on screen the
+///   dialogue grows out of it as it opens. Stepping between files inside the
+///   dialogue is not animated.
+/// - On a phone or tablet ([isTouchPlatform]) it fills the screen, keeping a
+///   bar along the top with the photo's name and a bar along the bottom with
+///   what can be done to it. Swiping left or right steps to the next or
+///   previous photo or video in [items] without leaving the preview.
+///
+/// Either way, folders and files PhotoPod cannot show are skipped.
 
 Future<void> showPreviewDialog(
   BuildContext context,
@@ -83,10 +92,24 @@ Future<void> showPreviewDialog(
     index = 0;
   }
 
+  final navigator = Navigator.of(context, rootNavigator: true);
+
+  if (isTouchPlatform) {
+    return navigator.push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => _FullScreenPreview(
+          items: playable,
+          initialIndex: index,
+          actions: actions,
+        ),
+      ),
+    );
+  }
+
   // What showDialog would do, but with a route of PhotoPod's own so that the
   // dialogue can grow out of the tile that was opened.
 
-  final navigator = Navigator.of(context, rootNavigator: true);
   final contentKey = GlobalKey();
   return navigator.push(
     _PreviewRoute(
@@ -107,6 +130,8 @@ Future<void> showPreviewDialog(
     ),
   );
 }
+
+/// The preview in a dialogue, as shown with a mouse.
 
 class _PreviewDialog extends StatefulWidget {
   const _PreviewDialog({
@@ -137,16 +162,7 @@ class _PreviewDialog extends StatefulWidget {
 }
 
 class _PreviewDialogState extends State<_PreviewDialog> {
-  late int _index;
-  Uint8List? _bytes;
-  String? _error;
-
-  /// The original photo, fetched once the preview is first zoomed in.
-
-  Uint8List? _original;
-  bool _originalRequested = false;
-
-  final _transform = TransformationController();
+  late int _index = widget.initialIndex;
 
   MediaItem get _item => widget.items[_index];
 
@@ -154,82 +170,13 @@ class _PreviewDialogState extends State<_PreviewDialog> {
 
   bool get _hasNext => _index < widget.items.length - 1;
 
-  @override
-  void initState() {
-    super.initState();
-    _index = widget.initialIndex;
-    _transform.addListener(_onTransform);
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _transform
-      ..removeListener(_onTransform)
-      ..dispose();
-    super.dispose();
-  }
-
-  /// Move [step] places through the list and fetch the file found there.
+  /// Move [step] places through the list. The file found there is fetched
+  /// by a preview of its own ([_PreviewBody]), which starts unzoomed.
 
   void _go(int step) {
     final next = _index + step;
     if (next < 0 || next >= widget.items.length) return;
-    setState(() {
-      _index = next;
-      _bytes = null;
-      _error = null;
-      _original = null;
-      _originalRequested = false;
-    });
-    _transform.value = Matrix4.identity();
-    _load();
-  }
-
-  // Fetch the original the first time the photo is zoomed in. An animated GIF
-  // is already previewed from its original, so it needs nothing more.
-
-  void _onTransform() {
-    if (_originalRequested || _bytes == null) return;
-    if (_item.isVideo || isGif(_item.name)) return;
-    if (_transform.value.getMaxScaleOnAxis() <= 1.01) return;
-    _originalRequested = true;
-    _loadOriginal();
-  }
-
-  Future<void> _loadOriginal() async {
-    final item = _item;
-    try {
-      final bytes = await ThumbnailCache.instance.original(item);
-      if (mounted && identical(item, _item)) {
-        setState(() => _original = bytes);
-      }
-    } on Object catch (e) {
-      // The large rendition is still on screen, so the zoom carries on with
-      // that rather than reporting an error.
-
-      debugPrint('PhotoPod: could not read the original of ${item.url}: $e');
-    }
-  }
-
-  Future<void> _load() async {
-    // A slow fetch can finish after the user has already stepped on, so its
-    // result is only used if the preview is still showing the same file.
-
-    final item = _item;
-    bool current() => mounted && identical(item, _item);
-
-    try {
-      final bytes = item.isVideo
-          ? await PodMediaService.readBytes(item)
-          : await ThumbnailCache.instance.preview(item);
-      if (bytes == null) {
-        throw const PodMediaException('This photo could not be decoded.');
-      }
-      if (current()) setState(() => _bytes = bytes);
-    } on Object catch (e) {
-      if (current()) setState(() => _error = e.toString());
-    }
+    setState(() => _index = next);
   }
 
   @override
@@ -287,7 +234,8 @@ class _PreviewDialogState extends State<_PreviewDialog> {
   /// they never hide part of a photo or cover the video's controls.
 
   Widget _buildNavigable(BuildContext context) {
-    if (widget.items.length < 2) return _buildBody();
+    final body = _PreviewBody(key: ValueKey(_item.id), item: _item);
+    if (widget.items.length < 2) return body;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -297,7 +245,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
           tooltip: 'Previous',
           onPressed: _hasPrevious ? () => _go(-1) : null,
         ),
-        Flexible(child: _buildBody()),
+        Flexible(child: body),
         _buildArrow(
           icon: Icons.chevron_right,
           tooltip: 'Next',
@@ -319,15 +267,113 @@ class _PreviewDialogState extends State<_PreviewDialog> {
       onPressed: onPressed,
     ),
   );
+}
 
-  Widget _buildBody() {
+/// One photo or video, fetched and shown: the picture itself, which can be
+/// zoomed, or the video with its controls. Each file gets a preview of its
+/// own, keyed by the file, so stepping to another starts afresh.
+
+class _PreviewBody extends StatefulWidget {
+  const _PreviewBody({super.key, required this.item, this.onZoomed});
+
+  /// The photo or video on show.
+
+  final MediaItem item;
+
+  /// Called with true once the photo is zoomed in, and with false once it is
+  /// back to its own size, so that the full-screen preview can stop a swipe
+  /// from stepping to another photo while the user is panning this one.
+
+  final ValueChanged<bool>? onZoomed;
+
+  @override
+  State<_PreviewBody> createState() => _PreviewBodyState();
+}
+
+class _PreviewBodyState extends State<_PreviewBody> {
+  Uint8List? _bytes;
+  String? _error;
+
+  /// The original photo, fetched once the preview is first zoomed in.
+
+  Uint8List? _original;
+  bool _originalRequested = false;
+  bool _zoomed = false;
+
+  final _transform = TransformationController();
+
+  MediaItem get _item => widget.item;
+
+  @override
+  void initState() {
+    super.initState();
+    _transform.addListener(_onTransform);
+    _load();
+  }
+
+  @override
+  void dispose() {
+    _transform
+      ..removeListener(_onTransform)
+      ..dispose();
+    super.dispose();
+  }
+
+  // Say when the photo is zoomed in or back out, and fetch the original the
+  // first time it is zoomed in. An animated GIF is already previewed from its
+  // original, so it needs nothing more.
+
+  void _onTransform() {
+    final zoomed = _transform.value.getMaxScaleOnAxis() > 1.01;
+    if (zoomed != _zoomed) {
+      _zoomed = zoomed;
+      widget.onZoomed?.call(zoomed);
+    }
+    if (!zoomed || _originalRequested || _bytes == null) return;
+    if (_item.isVideo || isGif(_item.name)) return;
+    _originalRequested = true;
+    _loadOriginal();
+  }
+
+  Future<void> _loadOriginal() async {
+    final item = _item;
+    try {
+      final bytes = await ThumbnailCache.instance.original(item);
+      if (mounted) setState(() => _original = bytes);
+    } on Object catch (e) {
+      // The large rendition is still on screen, so the zoom carries on with
+      // that rather than reporting an error.
+
+      debugPrint('PhotoPod: could not read the original of ${item.url}: $e');
+    }
+  }
+
+  Future<void> _load() async {
+    final item = _item;
+    try {
+      final bytes = item.isVideo
+          ? await PodMediaService.readBytes(item)
+          : await ThumbnailCache.instance.preview(item);
+      if (bytes == null) {
+        throw const PodMediaException('This photo could not be decoded.');
+      }
+      if (mounted) setState(() => _bytes = bytes);
+    } on Object catch (e) {
+      if (mounted) setState(() => _error = e.toString());
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     if (_error != null) {
       return Padding(
         padding: const EdgeInsets.all(32),
-        child: Text(
-          'This ${_item.kind?.noun ?? 'file'} could not be opened.'
-          '\n\n$_error',
-          textAlign: TextAlign.center,
+        child: Center(
+          child: Text(
+            'This ${_item.kind?.noun ?? 'file'} could not be opened.'
+            '\n\n$_error',
+            textAlign: TextAlign.center,
+          ),
         ),
       );
     }
@@ -369,7 +415,7 @@ class _PreviewDialogState extends State<_PreviewDialog> {
     }
 
     // The large rendition always sets the size of the picture, so the
-    // dialogue does not jump when the original arrives. The original is drawn
+    // preview does not jump when the original arrives. The original is drawn
     // over it, filling the same box; should it fail to decode, the rendition
     // simply stays visible beneath.
 

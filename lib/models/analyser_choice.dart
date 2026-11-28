@@ -38,13 +38,13 @@ enum AnalyserBackend {
   /// TeePod, in a trusted execution environment, which proves what it is
   /// before PhotoPod sends it anything. See lib/services/teepod/.
 
-  teePod('TeePod', 'Higher privacy'),
+  teePod('TeePod', 'Premium Privacy Protection'),
 
   /// The Pod Analyser on the Solid Community server, which reads the photos
   /// from an inbox in the user's Pod shared with it. See
   /// lib/services/analyser_inbox.dart.
 
-  solidCommunity('Solid Community', 'Limited privacy');
+  solidCommunity('Solid Community', 'Standard Privacy Protection');
 
   const AnalyserBackend(this.label, this.privacy);
 

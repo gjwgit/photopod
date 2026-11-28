@@ -303,6 +303,10 @@ class PhotoTags extends AnalyserSection {
   }
 
   @override
+  Future<void> forgetInCatalog([Set<String>? paths]) =>
+      MediaCatalog.forgetTagsBy(Analyser.source, paths: paths);
+
+  @override
   void dispose() {
     unawaited(_catalogChanges.cancel());
     super.dispose();

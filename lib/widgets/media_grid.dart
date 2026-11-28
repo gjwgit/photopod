@@ -27,6 +27,7 @@ import 'package:flutter/material.dart';
 
 import 'package:markdown_tooltip/markdown_tooltip.dart';
 
+import 'package:photopod/constants/app.dart' show isTouchPlatform;
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/shared_with_me.dart' show webIdLabel;
 import 'package:photopod/widgets/media_thumbnail.dart';
@@ -168,7 +169,8 @@ class MediaTile extends StatefulWidget {
 
   final VoidCallback onTap;
 
-  /// Called on a double tap.
+  /// Called on a double click. On a phone or tablet, where the tap itself
+  /// previews, there is no double tap.
 
   final VoidCallback onActivate;
 
@@ -216,7 +218,10 @@ class _MediaTileState extends State<MediaTile> {
       onExit: (_) => setState(() => _hovering = false),
       child: GestureDetector(
         onTap: widget.onTap,
-        onDoubleTap: widget.onActivate,
+
+        // On a phone or tablet the tap itself previews, and waiting to see
+        // whether a second tap follows would only slow it down.
+        onDoubleTap: isTouchPlatform ? null : widget.onActivate,
         child: Stack(
           fit: StackFit.expand,
           children: [

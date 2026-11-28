@@ -39,6 +39,7 @@ import 'package:photopod/widgets/media_grid.dart';
 import 'package:photopod/widgets/media_list.dart';
 import 'package:photopod/widgets/media_toolbar.dart';
 import 'package:photopod/widgets/pagination_bar.dart';
+import 'package:photopod/widgets/person_section.dart';
 
 MediaItem _item(String name, {bool isFolder = false, int? size}) => MediaItem(
   name: name,
@@ -143,7 +144,9 @@ void main() {
       expect(find.text('beach.jpg'), findsNothing);
     });
 
-    testWidgets('reports taps and double taps separately', (tester) async {
+    testWidgets('reports clicks and double clicks separately with a mouse', (
+      tester,
+    ) async {
       MediaItem? tapped;
       MediaItem? activated;
 
@@ -167,7 +170,37 @@ void main() {
       await tester.tap(find.byType(MediaTile));
       await tester.pump(const Duration(milliseconds: 400));
       expect(activated?.name, 'beach.jpg');
-    });
+    }, variant: TargetPlatformVariant.only(TargetPlatform.macOS));
+
+    testWidgets('reports a tap at once, and no double tap, on a phone', (
+      tester,
+    ) async {
+      final tapped = <String>[];
+      MediaItem? activated;
+
+      await tester.pumpWidget(
+        _wrap(
+          _grid(
+            [_item('beach.jpg')],
+            onTap: (item) => tapped.add(item.name),
+            onActivate: (item) => activated = item,
+          ),
+        ),
+      );
+
+      // With no double tap to wait for, the tap arrives without delay.
+
+      await tester.tap(find.byType(MediaTile));
+      await tester.pump();
+      expect(tapped, ['beach.jpg']);
+
+      await tester.tap(find.byType(MediaTile));
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.byType(MediaTile));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(tapped, ['beach.jpg', 'beach.jpg', 'beach.jpg']);
+      expect(activated, isNull);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.android));
 
     testWidgets('shows a filled heart on a favourite and reports a tap', (
       tester,
@@ -617,6 +650,7 @@ void main() {
         'Pod Share',
         'Delete',
         'Stop selecting several',
+        'Done',
         'Sort',
         'View',
         'More',
@@ -627,6 +661,58 @@ void main() {
       expect(find.text('Rename'), findsNothing);
       expect(find.text('Get Info'), findsNothing);
     });
+
+    testWidgets('Done and Select several both stop selecting several', (
+      tester,
+    ) async {
+      var toggled = 0;
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.library,
+          selectionCount: 2,
+          fileCount: 2,
+          multiSelect: true,
+          actions: MediaActions(
+            onAddFiles: () {},
+            onDelete: () {},
+            onDuplicate: () {},
+            onRename: () {},
+            onShare: () {},
+            onShareCopy: (_, _) {},
+            onView: () {},
+            onPreview: () {},
+            onGetInfo: () {},
+            onDownload: () {},
+            onIdentifyPeople: () {},
+            onTagPhotos: () {},
+            onToggleFavourite: () {},
+            onAddToAlbum: (_) {},
+            onCreateAlbum: () {},
+            onRemoveFromAlbum: () {},
+            onRefresh: () {},
+            onSort: (_) {},
+            onToggleMultiSelect: () => toggled++,
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Done'));
+      await tester.tap(find.byIcon(Icons.library_add_check));
+      expect(toggled, 2);
+    });
+
+    testWidgets('offers no Select several with a mouse', (tester) async {
+      await tester.pumpWidget(
+        toolbar(
+          section: LibrarySection.library,
+          selectionCount: 2,
+          fileCount: 2,
+        ),
+      );
+
+      expect(rowLabels(tester), isNot(contains('Select several')));
+      expect(rowLabels(tester), isNot(contains('Done')));
+    }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 
     testWidgets('will not share files and folders together', (tester) async {
       await tester.pumpWidget(
@@ -1038,6 +1124,71 @@ void main() {
     testWidgets('is absent when nothing would open', (tester) async {
       await tester.pumpWidget(tile(selected: true));
       expect(find.byIcon(Icons.info_outline), findsNothing);
+    });
+  });
+
+  group('TileRow', () {
+    Widget row({
+      Set<String> selected = const {},
+      bool showTicks = false,
+      void Function(MediaItem, List<MediaItem>)? onTap,
+      void Function(MediaItem, List<MediaItem>)? onActivate,
+    }) => _wrap(
+      TileRow(
+        items: [_item('a.jpg'), _item('b.jpg')],
+        tileExtent: 120,
+        selection: TileSelection(
+          isSelected: (item) => selected.contains(item.name),
+          isFavourite: (_) => false,
+          isSharedOut: (_) => false,
+          showTicks: showTicks,
+          onTap: onTap ?? (_, _) {},
+          onActivate: onActivate ?? (_, _) {},
+          onToggleFavourite: (_) {},
+          onInfo: (_) {},
+        ),
+      ),
+    );
+
+    testWidgets('selects with a click and previews with a double click, '
+        'as the Library does', (tester) async {
+      final tapped = <String>[];
+      final activated = <String>[];
+      await tester.pumpWidget(
+        row(
+          onTap: (item, row) => tapped.add('${item.name} of ${row.length}'),
+          onActivate: (item, row) =>
+              activated.add('${item.name} of ${row.length}'),
+        ),
+      );
+
+      await tester.tap(find.byType(MediaTile).last);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(tapped, ['b.jpg of 2']);
+      expect(activated, isEmpty);
+
+      await tester.tap(find.byType(MediaTile).first);
+      await tester.pump(const Duration(milliseconds: 50));
+      await tester.tap(find.byType(MediaTile).first);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(activated, ['a.jpg of 2']);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.linux));
+
+    testWidgets('hands a tap straight on, on a phone', (tester) async {
+      final tapped = <String>[];
+      await tester.pumpWidget(row(onTap: (item, _) => tapped.add(item.name)));
+
+      await tester.tap(find.byType(MediaTile).first);
+      await tester.pump();
+      expect(tapped, ['a.jpg']);
+    }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+    testWidgets('ticks the selected tiles only while asked to', (tester) async {
+      await tester.pumpWidget(row(selected: {'a.jpg'}));
+      expect(find.byIcon(Icons.check), findsNothing);
+
+      await tester.pumpWidget(row(selected: {'a.jpg'}, showTicks: true));
+      expect(find.byIcon(Icons.check), findsOneWidget);
     });
   });
 }

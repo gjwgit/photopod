@@ -220,37 +220,53 @@ class _PreviewHeader extends StatelessWidget {
         onPressed: () => _run(context, action),
       );
 
-  Future<void> _run(BuildContext context, _HeaderAction action) async {
-    switch (action) {
-      case _HeaderAction.identify:
-        await actions?.onIdentifyPeople(item);
-      case _HeaderAction.tag:
-        await actions?.onTagPhotos(item);
-      case _HeaderAction.podShare:
-        await actions?.onPodShare(item);
-      case _HeaderAction.download:
-        await downloadMedia(context, [item]);
-      case _HeaderAction.info:
-        await showInfoDialog(context, item);
-    }
+  Future<void> _run(BuildContext context, _HeaderAction action) =>
+      _runPreviewAction(context, action, item, actions, onChanged);
 
-    // A title may have been changed in Get Info, or a share made, so the
-    // header is drawn again once the action is done.
+  void _delete(BuildContext context) =>
+      _deleteFromPreview(context, item, actions);
+}
 
-    if (context.mounted) onChanged();
+/// Do [action] to [item], the file on show, then call [onChanged] so the
+/// preview can draw itself again: a title may have been changed in Get Info,
+/// or a share made.
+
+Future<void> _runPreviewAction(
+  BuildContext context,
+  _HeaderAction action,
+  MediaItem item,
+  PreviewActions? actions,
+  VoidCallback onChanged,
+) async {
+  switch (action) {
+    case _HeaderAction.identify:
+      await actions?.onIdentifyPeople(item);
+    case _HeaderAction.tag:
+      await actions?.onTagPhotos(item);
+    case _HeaderAction.podShare:
+      await actions?.onPodShare(item);
+    case _HeaderAction.download:
+      await downloadMedia(context, [item]);
+    case _HeaderAction.info:
+      await showInfoDialog(context, item);
   }
+  if (context.mounted) onChanged();
+}
 
-  // Close the preview, then delete what it was showing. The browser asks
-  // for confirmation as it does from the toolbar, by which time the preview
-  // has gone, so the question is asked over the album rather than over the
-  // photo about to be removed.
+/// Close the preview, then delete [item], what it was showing. The browser
+/// asks for confirmation as it does from the toolbar, by which time the
+/// preview has gone, so the question is asked over the album rather than
+/// over the photo about to be removed.
 
-  void _delete(BuildContext context) {
-    final onDelete = actions?.onDelete;
-    if (onDelete == null) return;
-    Navigator.of(context).pop();
-    onDelete(item);
-  }
+void _deleteFromPreview(
+  BuildContext context,
+  MediaItem item,
+  PreviewActions? actions,
+) {
+  final onDelete = actions?.onDelete;
+  if (onDelete == null) return;
+  Navigator.of(context).pop();
+  onDelete(item);
 }
 
 /// How wide the preview must be for its header to show every button beside

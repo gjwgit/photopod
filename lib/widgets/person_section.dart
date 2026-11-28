@@ -28,16 +28,125 @@ import 'package:flutter/material.dart';
 
 import 'package:gap/gap.dart';
 
-import 'package:photopod/dialogs/preview_dialog.dart';
 import 'package:photopod/models/media_item.dart';
 import 'package:photopod/services/people.dart';
 import 'package:photopod/widgets/face_avatar.dart';
-import 'package:photopod/widgets/media_thumbnail.dart';
+import 'package:photopod/widgets/media_grid.dart';
+
+/// How the tiles in the rows of People and Tags are selected and opened,
+/// handed in by the browser that shows them, so that they behave exactly as
+/// the tiles of the Library do: a click selects, a click with Ctrl or
+/// Command held selects several, and a double click previews; on a phone or
+/// tablet a tap previews, or selects while **Select several** is on.
+///
+/// Each callback is given the row the tile is in as well, which is what a
+/// shift click selects across and what the preview steps through. A photo
+/// in several rows, such as one with two people in it, is selected in all
+/// of them at once.
+
+class TileSelection {
+  const TileSelection({
+    required this.isSelected,
+    required this.isFavourite,
+    required this.isSharedOut,
+    required this.showTicks,
+    required this.onTap,
+    required this.onActivate,
+    required this.onToggleFavourite,
+    required this.onInfo,
+    this.selected = const [],
+  });
+
+  /// The photos selected, in the order they are shown, for what acts on the
+  /// selection as a whole, such as deleting what was found in them.
+
+  final List<MediaItem> selected;
+
+  /// Whether a photo is part of the current selection.
+
+  final bool Function(MediaItem item) isSelected;
+
+  /// Whether a photo carries a heart.
+
+  final bool Function(MediaItem item) isFavourite;
+
+  /// Whether one of the user's own photos is shared with someone else.
+
+  final bool Function(MediaItem item) isSharedOut;
+
+  /// Whether the selected tiles are ticked as well as outlined.
+
+  final bool showTicks;
+
+  /// Called on a click or a tap on [item], in [row].
+
+  final void Function(MediaItem item, List<MediaItem> row) onTap;
+
+  /// Called on a double click on [item], in [row], which previews it.
+
+  final void Function(MediaItem item, List<MediaItem> row) onActivate;
+
+  /// Called when the heart on a tile is tapped.
+
+  final void Function(MediaItem item) onToggleFavourite;
+
+  /// Called when the info button on a tile is tapped.
+
+  final void Function(MediaItem item) onInfo;
+}
+
+/// One row of [items] as tiles that scrolls sideways, as an album's does,
+/// each tile selected and opened as [selection] says.
+
+class TileRow extends StatelessWidget {
+  const TileRow({
+    super.key,
+    required this.items,
+    required this.tileExtent,
+    required this.selection,
+  });
+
+  final List<MediaItem> items;
+
+  /// The size of a tile, from the user's View preferences.
+
+  final double tileExtent;
+
+  final TileSelection selection;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: tileExtent,
+    child: ListView.separated(
+      scrollDirection: Axis.horizontal,
+      itemCount: items.length,
+      separatorBuilder: (context, index) => const Gap(4),
+      itemBuilder: (context, index) {
+        final item = items[index];
+        final selected = selection.isSelected(item);
+        return SizedBox.square(
+          dimension: tileExtent,
+          child: MediaTile(
+            item: item,
+            selected: selected,
+            showCheck: selection.showTicks && selected,
+            favourite: selection.isFavourite(item),
+            sharedOut: selection.isSharedOut(item),
+            onTap: () => selection.onTap(item, items),
+            onActivate: () => selection.onActivate(item, items),
+            onToggleFavourite: () => selection.onToggleFavourite(item),
+            onInfo: () => selection.onInfo(item),
+          ),
+        );
+      },
+    ),
+  );
+}
 
 /// A heading, with a person's portrait or an icon, the photo count and what
-/// can be done, above a row of the photos that scrolls sideways, as an
-/// album's does. A tap on a photo previews it, and the preview steps through
-/// the group's photos; Get Info there is where the people in it are named.
+/// can be done, above a row of the photos ([TileRow]). The tiles select and
+/// preview as the Library's do; the preview steps through the group's
+/// photos, and Get Info is where the people in a photo are named.
 
 class PersonSection extends StatelessWidget {
   const PersonSection({
@@ -50,7 +159,7 @@ class PersonSection extends StatelessWidget {
     this.icon,
     this.onRename,
     this.action,
-    this.onPreviewClosed,
+    required this.selection,
   });
 
   /// The person's name, or what the group is.
@@ -82,10 +191,9 @@ class PersonSection extends StatelessWidget {
 
   final Widget? action;
 
-  /// Called once a preview opened from the row is closed, since what Get
-  /// Info changed there may change the groups.
+  /// How the tiles are selected and opened.
 
-  final VoidCallback? onPreviewClosed;
+  final TileSelection selection;
 
   @override
   Widget build(BuildContext context) {
@@ -145,35 +253,7 @@ class PersonSection extends StatelessWidget {
             ],
           ),
           const Gap(8),
-          SizedBox(
-            height: tileExtent,
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              itemCount: count,
-              separatorBuilder: (context, index) => const Gap(4),
-              itemBuilder: (context, index) {
-                final item = items[index];
-                return SizedBox.square(
-                  dimension: tileExtent,
-                  child: Material(
-                    color: theme.colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(6),
-                    clipBehavior: Clip.antiAlias,
-                    child: InkWell(
-                      onTap: () async {
-                        await showPreviewDialog(context, item, items: items);
-                        onPreviewClosed?.call();
-                      },
-                      child: Tooltip(
-                        message: item.name,
-                        child: MediaThumbnail(item: item),
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
+          TileRow(items: items, tileExtent: tileExtent, selection: selection),
         ],
       ),
     );

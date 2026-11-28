@@ -105,33 +105,64 @@ extension MediaBrowserActions on MediaBrowserState {
         shownIn: 'Tags, and in Get Info,',
       );
 
-  /// Handle a tap on [item], one of the items in [visible].
+  /// Handle a tap or a click on [item], one of the items in [visible].
   ///
-  /// Normally a tap selects that one item in place of whatever was selected,
-  /// and tapping it again lets it go. With **Select several** on, a tap adds
-  /// the item to the selection or takes it out again, which makes multiple
-  /// selection work the same way with a mouse as with a finger, and holding
-  /// shift selects everything between the last tap and this one. Tapping the
-  /// background clears the selection either way.
+  /// With a mouse, as on the desktop and on the web, a click selects that
+  /// one item in place of whatever was selected; holding Ctrl, or Command on
+  /// a Mac, adds it to the selection or takes it out again, and holding
+  /// shift selects everything between the last click and this one. A double
+  /// click previews it ([_handleActivate]).
+  ///
+  /// With a finger, on a phone or tablet, a tap previews the item full
+  /// screen, stepping through [siblings] when given. Items are selected only
+  /// once **Select several** is on, when a tap adds the item to the
+  /// selection or takes it out again.
+  ///
+  /// Clicking or tapping the background clears the selection either way.
 
-  void _handleTap(MediaItem item, List<MediaItem> visible) {
+  void _handleTap(
+    MediaItem item,
+    List<MediaItem> visible, {
+    List<MediaItem>? siblings,
+  }) {
     final index = visible.indexOf(item);
-    _lastTapped = item.id;
 
-    if (!_multiSelect) {
+    if (isTouchPlatform) {
+      if (!_multiSelect) {
+        if (item.isFolder) {
+          // A folder has nothing to preview, so it is selected as before,
+          // ready for the toolbar.
+
+          updateState(() {
+            _selected
+              ..clear()
+              ..add(item.id);
+            if (index >= 0) _anchor = index;
+          });
+        } else {
+          unawaited(_handleActivate(item, siblings));
+        }
+        return;
+      }
       updateState(() {
-        final only = _selected.length == 1 && _selected.contains(item.id);
-        _selected.clear();
-        if (!only) _selected.add(item.id);
+        if (!_selected.add(item.id)) _selected.remove(item.id);
         if (index >= 0) _anchor = index;
       });
       return;
     }
 
-    final extend = HardwareKeyboard.instance.logicalKeysPressed.any(
+    final pressed = HardwareKeyboard.instance.logicalKeysPressed;
+    final extend = pressed.any(
       (key) =>
           key == LogicalKeyboardKey.shiftLeft ||
           key == LogicalKeyboardKey.shiftRight,
+    );
+    final toggle = pressed.any(
+      (key) =>
+          key == LogicalKeyboardKey.controlLeft ||
+          key == LogicalKeyboardKey.controlRight ||
+          key == LogicalKeyboardKey.metaLeft ||
+          key == LogicalKeyboardKey.metaRight,
     );
 
     updateState(() {
@@ -139,29 +170,38 @@ extension MediaBrowserActions on MediaBrowserState {
         final anchor = _anchor.clamp(0, visible.length - 1);
         final from = anchor < index ? anchor : index;
         final to = anchor < index ? index : anchor;
+        if (!toggle) _selected.clear();
         _selected.addAll(visible.sublist(from, to + 1).map((each) => each.id));
-      } else {
-        if (!_selected.add(item.id)) _selected.remove(item.id);
-        if (index >= 0) _anchor = index;
+        return;
       }
+      if (toggle) {
+        if (!_selected.add(item.id)) _selected.remove(item.id);
+      } else {
+        _selected
+          ..clear()
+          ..add(item.id);
+      }
+      if (index >= 0) _anchor = index;
     });
   }
 
-  /// Turn **Select several** on or off. Turning it off keeps only the item
-  /// tapped last, so that the selection again holds a single item.
+  /// Turn **Select several** on or off, on a phone or tablet. Turning it
+  /// off, with the same button or with Done, lets go of everything selected.
 
   void _toggleMultiSelect() {
     updateState(() {
       _multiSelect = !_multiSelect;
-      if (_multiSelect || _selected.length < 2) return;
-      final last = _lastTapped;
-      final keep = last != null && _selected.contains(last);
-      _selected.clear();
-      if (keep) _selected.add(last);
+      if (!_multiSelect) _selected.clear();
     });
   }
 
-  /// Handle a double tap: preview the file.
+  /// Whether the selected tiles are ticked as well as outlined: while
+  /// selecting several on a phone or tablet, and whenever more than one item
+  /// is selected with a mouse.
+
+  bool get _showTicks => _multiSelect || _selected.length > 1;
+
+  /// Handle a double click, or on a phone or tablet a tap: preview the file.
   ///
   /// The preview can step through [siblings], which defaults to every file
   /// this section shows, across all pages, in the order they are displayed.
@@ -177,6 +217,7 @@ extension MediaBrowserActions on MediaBrowserState {
       items: siblings ?? _sortedFiles,
       actions: _previewActions(context),
     );
+    await _catchUpAnalysed();
   }
 
   /// Preview the first selected file, ignoring any selected folders.
@@ -190,6 +231,7 @@ extension MediaBrowserActions on MediaBrowserState {
       items: _sortedFiles,
       actions: _previewActions(context),
     );
+    await _catchUpAnalysed();
   }
 
   /// Describe the first selected file.
@@ -200,7 +242,34 @@ extension MediaBrowserActions on MediaBrowserState {
   Future<void> _getInfo(BuildContext context) async {
     final files = _selectedFiles;
     if (files.isEmpty) return;
-    await showInfoDialog(context, files.first);
+    await _showInfo(context, files.first);
+  }
+
+  /// Show Get Info for [item], from the toolbar or from the button on its
+  /// tile.
+
+  Future<void> _showInfo(BuildContext context, MediaItem item) async {
+    await showInfoDialog(context, item);
+    await _catchUpAnalysed();
+  }
+
+  /// In People or Tags, take on what was said in Get Info, from the preview
+  /// or on its own, such as a person named or a tag taken off, since that
+  /// can move a photo from one group to another. Elsewhere, nothing.
+
+  Future<void> _catchUpAnalysed() async {
+    if (!mounted) return;
+    final AnalyserSection? section = switch (widget.section) {
+      LibrarySection.people => context.read<People>(),
+      LibrarySection.tags => context.read<PhotoTags>(),
+      _ => null,
+    };
+    if (section == null) return;
+    final index = context.read<MediaIndex>();
+    await section.refresh(
+      index.photos,
+      prune: !index.isTruncated && index.error == null,
+    );
   }
 
   /// Add a heart to [items], or take it away from all of them.

@@ -64,14 +64,28 @@ the same album.
 - The preview offers what the toolbar does for the photo it shows:
   Favourite, Identify People, Tag Photo, Pod Share, Share, Delete,
   Download and Get Info. Deleting from the preview closes it first.
-  On a phone the less used of these fold into a menu.
+  On a phone they sit in a bar along the bottom, the less used of them
+  in a menu.
 - Files are encrypted at rest with your Solid security key.
 - Sort by file name or by date, in either direction, or by location: the
   city or region each photo was taken in, such as Canberra, Australia, with
   the photos that do not say where under Others. The regions are bundled
   with the app from [GeoNames](https://www.geonames.org/) (CC BY 4.0), so
   where your photos were taken is never sent anywhere to name it.
-- Preview a photo full size, or play a video, in a modal dialogue.
+- Selecting and previewing follow the platform. On the desktop and the
+  web, click a photo to select it, hold Ctrl (Command on a Mac) while
+  clicking to select several, click an empty area to clear the
+  selection, and double click a photo to preview it, full size, in a
+  dialogue. On Android and iOS, tap a photo to open it full screen, with
+  its name along the top and its actions along the bottom, and swipe left
+  or right to step through the others; tap **Select several** to select
+  photos instead, and **Done** to clear the selection and stop. Library,
+  Favourites, Albums, People and Tags all behave the same way, and People
+  and Tags have the same toolbar as the others for what is selected.
+- **People** and **Tags** each have a button to delete what the analysers
+  found, so that the photos can be looked at afresh: in the selected
+  photos when some are selected, and otherwise in every photo. What you
+  said yourself in Get Info is kept.
 
 ## Storage
 
@@ -184,15 +198,16 @@ SigLIP ViT-B/16 for tags), and their answers are filed the same way, so
 People and Tags do not care which one did the work.
 
 The first time photos are to be looked at, PhotoPod asks which analyser to
-use, and says how private each keeps the photos: TeePod gives **higher
-privacy**, the Solid Community analyser **limited privacy**. The choice is
+use, and says how private each keeps the photos: TeePod gives **Premium
+Privacy Protection**, the Solid Community analyser **Standard Privacy
+Protection**. The choice is
 kept on the device (`lib/models/analyser_choice.dart`) and can be changed
 at any time with the shield in the People or Tags status line
 (`lib/dialogs/analyser_choice_dialog.dart`). When TeePod is chosen and
 cannot be reached, PhotoPod reports it rather than quietly sending the
 photos to the other analyser.
 
-- **TeePod** (higher privacy), on the desktop and Android builds. TeePod
+- **TeePod** (Premium Privacy Protection), on the desktop and Android builds. TeePod
   is an image analyser running in a trusted execution environment, a Google Cloud
   Confidential Space virtual machine whose memory its host cannot read.
   PhotoPod connects to it directly, over mutual TLS, and before it sends a
@@ -204,7 +219,7 @@ photos to the other analyser.
   [`assets/config/teepod/README.md`](assets/config/teepod/README.md), which
   explains the client certificate the build needs.
 - **The Pod Analyser** (`analyser/face_analyser`) on the Solid Community
-  server (limited privacy), in every build, and the only choice on the web,
+  server (Standard Privacy Protection), in every build, and the only choice on the web,
   which cannot reach TeePod (see
   [`support/teepod/WEB.md`](support/teepod/WEB.md)), and in any build
   without TeePod's client certificate. The photos are left, encrypted, in a
